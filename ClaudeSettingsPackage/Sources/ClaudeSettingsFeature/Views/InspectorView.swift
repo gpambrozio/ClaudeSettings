@@ -33,6 +33,15 @@ public struct InspectorView: View {
                                 .font(.system(.body, design: .monospaced))
                                 .textSelection(.enabled)
 
+                            let typeInfo = getTypeInfo(item.valueType)
+                            Text(typeInfo.0)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(typeInfo.1.opacity(0.2))
+                                .foregroundStyle(typeInfo.1)
+                                .cornerRadius(6)
+
                             if item.isDeprecated {
                                 Symbols.clockArrowCirclepath.image
                                     .foregroundStyle(.orange)
@@ -59,29 +68,6 @@ public struct InspectorView: View {
                         Text(formatValue(item.value))
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
-                    }
-
-                    Divider()
-
-                    // Type section
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Type")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-
-                        HStack {
-                            let typeInfo = getTypeInfo(item.valueType)
-                            Text(typeInfo.0)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(typeInfo.1.opacity(0.2))
-                                .foregroundStyle(typeInfo.1)
-                                .cornerRadius(6)
-
-                            Spacer()
-                        }
                     }
 
                     Divider()
