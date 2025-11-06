@@ -1,71 +1,60 @@
 import SwiftUI
 
 public struct ContentView: View {
-    @State private var viewModel = ProjectListViewModel()
+    @State private var projectListViewModel = ProjectListViewModel()
+    @State private var sidebarSelection: SidebarSelection?
+    @State private var selectedSettingKey: String?
+
+    // Create settings view model based on selection
+    private var settingsViewModel: SettingsViewModel? {
+        switch sidebarSelection {
+        case .globalSettings:
+            return SettingsViewModel(project: nil)
+        case let .project(project):
+            return SettingsViewModel(project: project)
+        case .none:
+            return nil
+        }
+    }
 
     public var body: some View {
-        NavigationSplitView {
-            // Sidebar with projects
-            List(viewModel.projects) { project in
-                NavigationLink(value: project) {
-                    VStack(alignment: .leading) {
-                        Text(project.name)
-                            .font(.headline)
-                        Text(project.path.path)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            // Sidebar: Global Settings + Projects
+            SidebarView(viewModel: projectListViewModel, selection: $sidebarSelection)
+        } content: {
+            // Content Area: Settings List
+            if let viewModel = settingsViewModel {
+                SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedSettingKey)
+                    .id(sidebarSelection?.id) // Force refresh when selection changes
+                    .task {
+                        viewModel.loadSettings()
                     }
-                }
-            }
-            .navigationTitle("Claude Projects")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Refresh") {
-                        viewModel.refresh()
-                    }
-                }
+            } else {
+                emptyContentState
             }
         } detail: {
-            if let errorMessage = viewModel.errorMessage {
-                ContentUnavailableView {
-                    Label {
-                        Text("Error")
-                    } icon: {
-                        Symbols.exclamationmarkTriangle.image
-                    }
-                } description: {
-                    Text(errorMessage)
-                }
-            } else if viewModel.isLoading {
-                ProgressView("Loading projects...")
-            } else if viewModel.projects.isEmpty {
-                ContentUnavailableView {
-                    Label {
-                        Text("No Projects")
-                    } icon: {
-                        Symbols.folder.image
-                    }
-                } description: {
-                    Text("No Claude projects found")
-                } actions: {
-                    Button("Scan for Projects") {
-                        viewModel.scanProjects()
-                    }
-                }
-            } else {
-                ContentUnavailableView {
-                    Label {
-                        Text("Select a Project")
-                    } icon: {
-                        Symbols.sidebarLeft.image
-                    }
-                } description: {
-                    Text("Choose a project from the sidebar")
-                }
-            }
+            // Inspector: Details & Actions
+            InspectorView(selectedKey: selectedSettingKey, settingsViewModel: settingsViewModel)
         }
-        .task {
-            viewModel.scanProjects()
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    @ViewBuilder
+    private var emptyContentState: some View {
+        if projectListViewModel.isLoading {
+            ProgressView("Loading projects...")
+        } else if let errorMessage = projectListViewModel.errorMessage {
+            ContentUnavailableView {
+                Label("Error", symbol: .exclamationmarkTriangle)
+            } description: {
+                Text(errorMessage)
+            }
+        } else {
+            ContentUnavailableView {
+                Label("Select Configuration", symbol: .sidebarLeft)
+            } description: {
+                Text("Choose global settings or a project from the sidebar")
+            }
         }
     }
 

@@ -358,11 +358,11 @@ Toolbar Actions:
 - [x] Add error handling for permission issues
 
 #### Milestone 1.3: Basic UI (Weeks 3-4)
-- [ ] Create main window layout (three-column)
-- [ ] Implement sidebar with global settings and project list
-- [ ] Build settings list view with basic display
-- [ ] Add project detail view
-- [ ] Implement basic navigation
+- [x] Create main window layout (three-column)
+- [x] Implement sidebar with global settings and project list
+- [x] Build settings list view with basic display
+- [x] Add project detail view
+- [x] Implement basic navigation
 
 #### Milestone 1.4: Settings Display & Validation (Weeks 4-5)
 - [ ] Parse and display settings from all files
