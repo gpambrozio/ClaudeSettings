@@ -67,3 +67,8 @@ public struct ContentView: View {
 
     public init() { }
 }
+
+#Preview("Content View - Default State") {
+    ContentView()
+        .frame(width: 1_200, height: 800)
+}

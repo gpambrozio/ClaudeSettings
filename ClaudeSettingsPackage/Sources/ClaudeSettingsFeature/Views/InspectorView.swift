@@ -294,3 +294,98 @@ public struct InspectorView: View {
         self.settingsViewModel = settingsViewModel
     }
 }
+
+// MARK: - Previews
+
+#Preview("Inspector - With Selection") {
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = [
+        SettingItem(
+            key: "editor.fontSize",
+            value: AnyCodable(16),
+            valueType: .number,
+            source: .globalSettings,
+            contributions: [
+                SourceContribution(source: .globalSettings, value: AnyCodable(14)),
+                SourceContribution(source: .projectLocal, value: AnyCodable(16)),
+            ],
+            documentation: "Controls the font size of the editor"
+        ),
+        SettingItem(
+            key: "editor.theme",
+            value: AnyCodable("dark"),
+            valueType: .string,
+            source: .projectSettings,
+            contributions: [SourceContribution(source: .projectSettings, value: AnyCodable("dark"))]
+        ),
+    ]
+
+    return InspectorView(selectedKey: "editor.fontSize", settingsViewModel: viewModel)
+        .frame(width: 300, height: 600)
+}
+
+#Preview("Inspector - Array (Additive)") {
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = [
+        SettingItem(
+            key: "files.exclude",
+            value: AnyCodable(["node_modules", ".git", "dist", "build"]),
+            valueType: .array,
+            source: .globalSettings,
+            contributions: [
+                SourceContribution(source: .globalSettings, value: AnyCodable(["node_modules", ".git"])),
+                SourceContribution(source: .projectSettings, value: AnyCodable(["dist"])),
+                SourceContribution(source: .projectLocal, value: AnyCodable(["build"])),
+            ],
+            documentation: "Files and directories to exclude from file operations"
+        ),
+    ]
+
+    return InspectorView(selectedKey: "files.exclude", settingsViewModel: viewModel)
+        .frame(width: 300, height: 600)
+}
+
+#Preview("Inspector - Deprecated Setting") {
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = [
+        SettingItem(
+            key: "deprecated.setting",
+            value: AnyCodable(true),
+            valueType: .boolean,
+            source: .globalSettings,
+            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(true))],
+            isDeprecated: true,
+            documentation: "This setting is deprecated and will be removed in version 2.0"
+        ),
+    ]
+
+    return InspectorView(selectedKey: "deprecated.setting", settingsViewModel: viewModel)
+        .frame(width: 300, height: 600)
+}
+
+#Preview("Inspector - Object Type") {
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = [
+        SettingItem(
+            key: "editor.config",
+            value: AnyCodable(["tabSize": 2, "insertSpaces": true, "detectIndentation": false]),
+            valueType: .object,
+            source: .projectSettings,
+            contributions: [
+                SourceContribution(
+                    source: .projectSettings,
+                    value: AnyCodable(["tabSize": 2, "insertSpaces": true, "detectIndentation": false])
+                ),
+            ],
+            documentation: "Editor configuration object"
+        ),
+    ]
+
+    return InspectorView(selectedKey: "editor.config", settingsViewModel: viewModel)
+        .frame(width: 300, height: 600)
+}
+
+#Preview("Inspector - Empty State") {
+    InspectorView(selectedKey: nil, settingsViewModel: nil)
+        .frame(width: 300, height: 600)
+}

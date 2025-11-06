@@ -108,3 +108,65 @@ public struct SidebarView: View {
         self._selection = selection
     }
 }
+
+#Preview("Sidebar - With Projects") {
+    @Previewable @State var selection: SidebarSelection? = .globalSettings
+    let viewModel = ProjectListViewModel()
+    viewModel.projects = [
+        ClaudeProject(
+            name: "My iOS App",
+            path: URL(fileURLWithPath: "/Users/developer/Projects/MyApp"),
+            claudeDirectory: URL(fileURLWithPath: "/Users/developer/Projects/MyApp/.claude"),
+            hasLocalSettings: true,
+            hasSharedSettings: true
+        ),
+        ClaudeProject(
+            name: "Backend Service",
+            path: URL(fileURLWithPath: "/Users/developer/Projects/Backend"),
+            claudeDirectory: URL(fileURLWithPath: "/Users/developer/Projects/Backend/.claude"),
+            hasLocalSettings: false,
+            hasSharedSettings: true
+        ),
+        ClaudeProject(
+            name: "Web Dashboard",
+            path: URL(fileURLWithPath: "/Users/developer/Projects/Dashboard"),
+            claudeDirectory: URL(fileURLWithPath: "/Users/developer/Projects/Dashboard/.claude"),
+            hasLocalSettings: true,
+            hasSharedSettings: false
+        ),
+    ]
+
+    return NavigationSplitView {
+        SidebarView(viewModel: viewModel, selection: $selection)
+    } detail: {
+        Text("Detail View")
+    }
+    .frame(width: 800, height: 600)
+}
+
+#Preview("Sidebar - Empty State") {
+    @Previewable @State var selection: SidebarSelection?
+    let viewModel = ProjectListViewModel()
+    viewModel.projects = []
+
+    return NavigationSplitView {
+        SidebarView(viewModel: viewModel, selection: $selection)
+    } detail: {
+        Text("Detail View")
+    }
+    .frame(width: 800, height: 600)
+}
+
+#Preview("Sidebar - Loading State") {
+    @Previewable @State var selection: SidebarSelection?
+    let viewModel = ProjectListViewModel()
+    viewModel.projects = []
+    viewModel.isLoading = true
+
+    return NavigationSplitView {
+        SidebarView(viewModel: viewModel, selection: $selection)
+    } detail: {
+        Text("Detail View")
+    }
+    .frame(width: 800, height: 600)
+}

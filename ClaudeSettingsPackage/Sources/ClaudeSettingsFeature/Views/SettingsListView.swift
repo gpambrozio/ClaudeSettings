@@ -325,3 +325,224 @@ struct SettingItemRow: View {
         }
     }
 }
+
+// MARK: - Previews
+
+#Preview("Settings List - With Data") {
+    @Previewable @State var selectedKey: String?
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.mergedSettings = [
+        "editor.fontSize": AnyCodable(14),
+        "editor.theme": AnyCodable("dark"),
+        "files.exclude": AnyCodable(["node_modules", ".git", "dist"]),
+        "deprecated.setting": AnyCodable(true),
+    ]
+    viewModel.settingItems = [
+        SettingItem(
+            key: "editor.fontSize",
+            value: AnyCodable(14),
+            valueType: .number,
+            source: .globalSettings,
+            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(14))]
+        ),
+        SettingItem(
+            key: "editor.theme",
+            value: AnyCodable("dark"),
+            valueType: .string,
+            source: .projectSettings,
+            overriddenBy: .projectLocal,
+            contributions: [
+                SourceContribution(source: .projectSettings, value: AnyCodable("light")),
+                SourceContribution(source: .projectLocal, value: AnyCodable("dark")),
+            ]
+        ),
+        SettingItem(
+            key: "files.exclude",
+            value: AnyCodable(["node_modules", ".git", "dist"]),
+            valueType: .array,
+            source: .globalSettings,
+            contributions: [
+                SourceContribution(source: .globalSettings, value: AnyCodable(["node_modules", ".git"])),
+                SourceContribution(source: .projectSettings, value: AnyCodable(["dist"])),
+            ]
+        ),
+        SettingItem(
+            key: "deprecated.setting",
+            value: AnyCodable(true),
+            valueType: .boolean,
+            source: .globalSettings,
+            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(true))],
+            isDeprecated: true,
+            documentation: "This setting is deprecated and will be removed in a future version"
+        ),
+    ]
+    viewModel.validationErrors = [
+        ValidationError(
+            type: .syntax,
+            message: "Invalid JSON syntax in settings file",
+            key: nil,
+            suggestion: "Check for missing commas or brackets"
+        ),
+        ValidationError(
+            type: .deprecated,
+            message: "This setting is no longer recommended",
+            key: "deprecated.setting",
+            suggestion: "Use 'new.setting' instead"
+        ),
+    ]
+
+    return NavigationStack {
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey)
+    }
+    .frame(width: 600, height: 800)
+}
+
+#Preview("Settings List - Empty") {
+    @Previewable @State var selectedKey: String?
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = []
+
+    return NavigationStack {
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey)
+    }
+    .frame(width: 600, height: 800)
+}
+
+#Preview("Settings List - Loading") {
+    @Previewable @State var selectedKey: String?
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.isLoading = true
+
+    return NavigationStack {
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey)
+    }
+    .frame(width: 600, height: 800)
+}
+
+#Preview("Validation Error Row - Syntax") {
+    ValidationErrorRow(
+        error: ValidationError(
+            type: .syntax,
+            message: "Invalid JSON syntax in settings file",
+            key: "editor.fontSize",
+            suggestion: "Check for missing commas or brackets"
+        )
+    )
+    .padding()
+}
+
+#Preview("Validation Error Row - Deprecated") {
+    ValidationErrorRow(
+        error: ValidationError(
+            type: .deprecated,
+            message: "This setting is no longer recommended",
+            key: "old.setting",
+            suggestion: "Use 'new.setting' instead"
+        )
+    )
+    .padding()
+}
+
+#Preview("Validation Error Row - Unknown Key") {
+    ValidationErrorRow(
+        error: ValidationError(
+            type: .unknownKey,
+            message: "Unknown configuration key",
+            key: "unknown.key",
+            suggestion: nil
+        )
+    )
+    .padding()
+}
+
+#Preview("Setting Item Row - String") {
+    SettingItemRow(
+        item: SettingItem(
+            key: "editor.theme",
+            value: AnyCodable("dark"),
+            valueType: .string,
+            source: .projectSettings,
+            contributions: [SourceContribution(source: .projectSettings, value: AnyCodable("dark"))]
+        ),
+        isSelected: false
+    )
+    .padding()
+}
+
+#Preview("Setting Item Row - Number") {
+    SettingItemRow(
+        item: SettingItem(
+            key: "editor.fontSize",
+            value: AnyCodable(14),
+            valueType: .number,
+            source: .globalSettings,
+            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(14))]
+        ),
+        isSelected: false
+    )
+    .padding()
+}
+
+#Preview("Setting Item Row - Array (Additive)") {
+    SettingItemRow(
+        item: SettingItem(
+            key: "files.exclude",
+            value: AnyCodable(["node_modules", ".git", "dist"]),
+            valueType: .array,
+            source: .globalSettings,
+            contributions: [
+                SourceContribution(source: .globalSettings, value: AnyCodable(["node_modules", ".git"])),
+                SourceContribution(source: .projectSettings, value: AnyCodable(["dist"])),
+            ]
+        ),
+        isSelected: false
+    )
+    .padding()
+}
+
+#Preview("Setting Item Row - Overridden") {
+    SettingItemRow(
+        item: SettingItem(
+            key: "editor.tabSize",
+            value: AnyCodable(2),
+            valueType: .number,
+            source: .globalSettings,
+            overriddenBy: .projectLocal,
+            contributions: [
+                SourceContribution(source: .globalSettings, value: AnyCodable(4)),
+                SourceContribution(source: .projectLocal, value: AnyCodable(2)),
+            ]
+        ),
+        isSelected: false
+    )
+    .padding()
+}
+
+#Preview("Setting Item Row - Deprecated") {
+    SettingItemRow(
+        item: SettingItem(
+            key: "deprecated.setting",
+            value: AnyCodable(true),
+            valueType: .boolean,
+            source: .globalSettings,
+            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(true))],
+            isDeprecated: true
+        ),
+        isSelected: false
+    )
+    .padding()
+}
+
+#Preview("Setting Item Row - Selected") {
+    SettingItemRow(
+        item: SettingItem(
+            key: "editor.fontSize",
+            value: AnyCodable(16),
+            valueType: .number,
+            source: .globalSettings,
+            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(16))]
+        ),
+        isSelected: true
+    )
+    .padding()
+}
