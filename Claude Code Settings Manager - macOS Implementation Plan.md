@@ -710,6 +710,8 @@ Toolbar Actions:
 
 ### 9.1 Unit Tests
 
+**Framework**: Swift Testing (modern macro-based testing framework)
+
 #### Core Logic Testing
 - **SettingsParser**: JSON parsing, validation, error handling
 - **SettingsRepository**: CRUD operations, merge logic, diff algorithm
@@ -717,6 +719,8 @@ Toolbar Actions:
 - **FileSystemManager**: File operations (mock FileManager)
 
 **Target Coverage**: 80%+ for business logic
+
+**Note**: Swift Testing uses `@Test` macros and modern Swift concurrency, providing better integration with async/await patterns compared to legacy XCTest.
 
 #### Test Data
 - Mock JSON files representing various configuration scenarios
@@ -746,7 +750,7 @@ Toolbar Actions:
 5. Detect validation error → show error → suggest fix
 
 #### Automated UI Testing
-- XCTest UI testing framework
+- XCUITest framework for UI automation testing
 - Test major navigation paths
 - Verify UI state after operations
 
@@ -1268,7 +1272,7 @@ This database should be:
 - **macOS Development**: Advanced (AppKit, file system APIs)
 - **JSON Parsing**: Intermediate
 - **UI/UX Design**: Intermediate (or hire designer)
-- **Testing**: Intermediate (XCTest, UI testing)
+- **Testing**: Intermediate (Swift Testing, XCUITest)
 
 ### 20.4 Team Structure (if not solo)
 
