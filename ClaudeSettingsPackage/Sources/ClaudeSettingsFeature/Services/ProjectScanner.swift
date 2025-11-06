@@ -10,32 +10,35 @@ public actor ProjectScanner {
         self.fileSystemManager = fileSystemManager
     }
 
-    /// Scan for all Claude projects by reading the ~/.claude/projects directory
+    /// Scan for all Claude projects by reading the ~/.claude.json file
     public func scanProjects() async throws -> [ClaudeProject] {
         logger.info("Starting project scan")
 
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-        let claudeProjectsDir = homeDirectory.appendingPathComponent(".claude/projects")
+        let claudeConfigFile = homeDirectory.appendingPathComponent(".claude.json")
 
-        guard await fileSystemManager.exists(at: claudeProjectsDir) else {
-            logger.warning("Claude projects directory not found at \(claudeProjectsDir.path)")
+        guard await fileSystemManager.exists(at: claudeConfigFile) else {
+            logger.warning("Claude config file not found at \(claudeConfigFile.path)")
             return []
         }
 
-        // Get all subdirectories in ~/.claude/projects
-        let projectDirs = try await fileSystemManager.contentsOfDirectory(at: claudeProjectsDir)
-            .filter { url in
-                var isDirectory: ObjCBool = false
-                FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-                return isDirectory.boolValue
-            }
+        // Read and parse the JSON file
+        let data = try await fileSystemManager.readFile(at: claudeConfigFile)
 
-        logger.debug("Found \(projectDirs.count) project directories")
+        guard
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let projectsDict = json["projects"] as? [String: Any] else {
+            logger.error("Failed to parse projects from \(claudeConfigFile.path)")
+            return []
+        }
+
+        logger.debug("Found \(projectsDict.count) projects in config")
 
         var projects: [ClaudeProject] = []
 
-        for projectDir in projectDirs {
-            if let project = await scanProjectDirectory(projectDir) {
+        for (projectPath, _) in projectsDict {
+            let projectURL = URL(fileURLWithPath: projectPath)
+            if let project = await scanProjectDirectory(projectURL) {
                 projects.append(project)
             }
         }
@@ -45,14 +48,8 @@ public actor ProjectScanner {
     }
 
     /// Scan a single project directory to extract project information
-    private func scanProjectDirectory(_ projectDir: URL) async -> ClaudeProject? {
-        logger.debug("Scanning project directory: \(projectDir.lastPathComponent)")
-
-        // Find the first JSONL file and extract the cwd
-        guard let projectPath = await extractProjectPath(from: projectDir) else {
-            logger.warning("Could not find valid project path in \(projectDir.lastPathComponent)")
-            return nil
-        }
+    private func scanProjectDirectory(_ projectPath: URL) async -> ClaudeProject? {
+        logger.debug("Scanning project directory: \(projectPath.lastPathComponent)")
 
         // Check if the project directory still exists
         guard await fileSystemManager.exists(at: projectPath) else {
@@ -98,49 +95,5 @@ public actor ProjectScanner {
             hasLocalClaudeMd: hasLocalClaudeMd,
             lastModified: lastModified
         )
-    }
-
-    /// Extract the actual project path from a project directory's JSONL files
-    private func extractProjectPath(from projectDir: URL) async -> URL? {
-        do {
-            let files = try await fileSystemManager.contentsOfDirectory(at: projectDir)
-            let jsonlFiles = files.filter { $0.pathExtension == "jsonl" }
-
-            // Try each JSONL file until we find one with a cwd
-            for jsonlFile in jsonlFiles {
-                if let cwd = await extractCWD(from: jsonlFile) {
-                    logger.debug("Found cwd in \(jsonlFile.lastPathComponent): \(cwd)")
-                    return URL(fileURLWithPath: cwd)
-                }
-            }
-        } catch {
-            logger.error("Failed to read project directory \(projectDir.path): \(error)")
-        }
-
-        return nil
-    }
-
-    /// Extract the cwd field from a JSONL file
-    private func extractCWD(from jsonlFile: URL) async -> String? {
-        do {
-            let data = try await fileSystemManager.readFile(at: jsonlFile)
-            let content = String(data: data, encoding: .utf8) ?? ""
-
-            // Parse each line as JSON
-            for line in content.components(separatedBy: .newlines) {
-                guard !line.isEmpty else { continue }
-
-                if
-                    let jsonData = line.data(using: .utf8),
-                    let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                    let cwd = json["cwd"] as? String {
-                    return cwd
-                }
-            }
-        } catch {
-            logger.debug("Failed to parse JSONL file \(jsonlFile.lastPathComponent): \(error)")
-        }
-
-        return nil
     }
 }
