@@ -22,7 +22,7 @@ public actor FileWatcher {
 
         logger.info("Starting file watcher for \(paths.count) paths")
 
-        let pathsToWatch = paths.map { $0.path } as NSArray
+        let pathsToWatch = paths.map(\.path) as NSArray
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passRetained(self).toOpaque(),
@@ -78,7 +78,7 @@ public actor FileWatcher {
             await withTaskCancellationHandler {
                 // Keep the task alive while watching
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    try? await Task.sleep(for: .seconds(1))
                 }
             } onCancel: {
                 Task {
