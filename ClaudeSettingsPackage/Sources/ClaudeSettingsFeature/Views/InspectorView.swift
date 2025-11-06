@@ -56,64 +56,33 @@ public struct InspectorView: View {
                         }
                     }
 
-                    Divider()
-
-                    // Value section
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Value")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-
-                        Text(formatValue(item.value))
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                    }
-
-                    Divider()
-
-                    // Source section
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Source")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-
-                        sourceInfo(for: item)
-                    }
-
-                    if item.isAdditive {
-                        // Show individual contributions for additive arrays
-                        ForEach(Array(item.contributions.enumerated()), id: \.offset) { _, contribution in
-                            Divider()
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Circle()
-                                        .fill(sourceColor(for: contribution.source))
-                                        .frame(width: 8, height: 8)
-                                    Text(sourceLabel(for: contribution.source))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .textCase(.uppercase)
-                                }
-
-                                Text(formatValue(contribution.value))
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    } else if let overriddenBy = item.overriddenBy {
+                    // Show all source contributions
+                    ForEach(Array(item.contributions.enumerated()), id: \.offset) { index, contribution in
                         Divider()
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Override")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
+                            HStack {
+                                Circle()
+                                    .fill(sourceColor(for: contribution.source))
+                                    .frame(width: 8, height: 8)
+                                Text(sourceLabel(for: contribution.source))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
 
-                            overrideInfo(type: overriddenBy)
+                                // Show override indicator for non-additive settings
+                                if !item.isAdditive && index < item.contributions.count - 1 {
+                                    Text("(overridden)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .italic()
+                                }
+                            }
+
+                            Text(formatValue(contribution.value))
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                                .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1.0)
                         }
                     }
 

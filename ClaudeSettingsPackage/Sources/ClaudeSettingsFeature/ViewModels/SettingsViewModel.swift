@@ -172,19 +172,20 @@ final public class SettingsViewModel {
 
             // For arrays, settings are additive across sources
             // For other types, higher precedence overrides lower precedence
+            // Track contributions for all settings to show in inspector
             let (overriddenBy, contributions): (SettingsFileType?, [SourceContribution])
             if valueType == .array && sortedSources.count > 1 {
                 // Arrays are additive - track all contributing sources with their individual values
                 overriddenBy = nil
                 contributions = sortedSources.map { SourceContribution(source: $0.0, value: $0.1) }
             } else if sortedSources.count > 1 {
-                // Non-arrays are replaced - track override
+                // Non-arrays are replaced - track both base and override for display
                 overriddenBy = activeSource.0
-                contributions = []
+                contributions = sortedSources.map { SourceContribution(source: $0.0, value: $0.1) }
             } else {
                 // Single source
                 overriddenBy = nil
-                contributions = []
+                contributions = sortedSources.map { SourceContribution(source: $0.0, value: $0.1) }
             }
 
             let item = SettingItem(
