@@ -1,3 +1,38 @@
 {
-  "enableAllProjectMcpServers": true
+  "permissions": {
+    "allow": [
+      "mcp__serena",
+      "mcp__ide__getDiagnostics",
+      "Bash(mkdir:*)",
+      "Bash(rm:*)",
+      "Bash(git:*)",
+      "Bash(find:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(swift build:*)",
+      "Bash(swift test:*)",
+      "Bash(mv:*)",
+      "Bash(grep:*)",
+      "Bash(swift package:*)",
+      "Bash(cat:*)",
+      "Bash(cp:*)",
+      "Bash(chmod:*)",
+      "Bash(ls:*)",
+      "Bash(swift:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__plugin_air-code_air-code",
+      "Skill(SwiftDevelopment:swift-compile)",
+      "Bash(scripts/xcodebuild.sh:*)",
+      "Bash(/Users/gustavoambrozio/Development/ClaudeCodePlugins/SwiftDevelopment/skills/swift-compile/scripts/xcodebuild.sh:*)"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "serena"
+  ],
+  "enabledPlugins": {
+    "MarvinOutputStyle@ClaudeCodePlugins": true,
+    "SwiftDevelopment@ClaudeCodePlugins": true
+  }
 }
