@@ -98,17 +98,48 @@ final public class SettingsViewModel {
                 logger.info("Loaded \(files.count) \(scope) files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
             } catch {
                 logger.error("Failed to load settings: \(error)")
-                errorMessage = "Failed to load settings: \(error.localizedDescription)"
+                errorMessage = userFriendlyErrorMessage(for: error)
             }
 
             isLoading = false
         }
     }
 
+    /// Convert technical errors into user-friendly messages
+    private func userFriendlyErrorMessage(for error: Error) -> String {
+        switch error {
+        case let fsError as FileSystemError:
+            switch fsError {
+            case .readFailed:
+                return "Unable to read settings file. Please check if the file exists and you have permission to access it."
+            case .writeFailed:
+                return "Unable to save settings. Please check if you have write permission for this location."
+            case .directoryCreationFailed:
+                return "Unable to create settings directory. Please check folder permissions."
+            case .directoryListFailed:
+                return "Unable to access settings directory. Please check folder permissions."
+            case .deleteFailed:
+                return "Unable to delete settings file. Please check file permissions."
+            case .copyFailed:
+                return "Unable to copy settings file. Please check file permissions."
+            case .attributeNotFound,
+                 .attributeReadFailed:
+                return "Unable to read file information. The file may be corrupted or inaccessible."
+            }
+        case let urlError as URLError:
+            return "Network or file access error: \(urlError.localizedDescription)"
+        case let decodingError as DecodingError:
+            return "Settings file contains invalid data format. Please check the JSON syntax."
+        default:
+            // Log technical details but show generic message to user
+            return "Unable to load settings. Please check that your configuration files are valid and accessible."
+        }
+    }
+
     /// Compute setting items with source tracking
     func computeSettingItems(from files: [SettingsFile]) -> [SettingItem] {
         // Build a dictionary mapping keys to their source files (sorted by precedence)
-        var keyToSources: [String: [(SettingsFileType, AnyCodable)]] = [:]
+        var keyToSources: [String: [(SettingsFileType, SettingValue)]] = [:]
 
         for file in files {
             let flattenedKeys = flattenDictionary(file.content)
@@ -130,7 +161,7 @@ final public class SettingsViewModel {
                 let lowestSource = sortedSources.first,
                 let activeSource = sortedSources.last else { continue }
 
-            let valueType = SettingValueType(from: activeSource.1.value)
+            let valueType = activeSource.1.valueType
 
             // For arrays, settings are additive across sources
             // For other types, higher precedence overrides lower precedence
@@ -168,15 +199,14 @@ final public class SettingsViewModel {
     }
 
     /// Flatten a nested dictionary to dot-notation keys
-    private func flattenDictionary(_ dict: [String: AnyCodable], prefix: String = "") -> [String: AnyCodable] {
-        var result: [String: AnyCodable] = [:]
+    private func flattenDictionary(_ dict: [String: SettingValue], prefix: String = "") -> [String: SettingValue] {
+        var result: [String: SettingValue] = [:]
 
         for (key, value) in dict {
             let fullKey = prefix.isEmpty ? key : "\(prefix).\(key)"
 
-            if let nestedDict = value.value as? [String: Any] {
-                let nestedAnyCodable = nestedDict.mapValues { AnyCodable($0) }
-                let flattened = flattenDictionary(nestedAnyCodable, prefix: fullKey)
+            if case let .object(nestedDict) = value {
+                let flattened = flattenDictionary(nestedDict, prefix: fullKey)
                 result.merge(flattened) { _, new in new }
             } else {
                 result[fullKey] = value

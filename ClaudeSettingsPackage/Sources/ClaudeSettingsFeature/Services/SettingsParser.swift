@@ -19,14 +19,14 @@ public actor SettingsParser {
         let isReadOnly = !(await fileSystemManager.isWritable(at: url))
 
         var validationErrors: [ValidationError] = []
-        var content: [String: AnyCodable] = [:]
+        var content: [String: SettingValue] = [:]
         var isValid = true
 
         // Try to parse JSON
         do {
             let jsonObject = try JSONSerialization.jsonObject(with: data)
             if let dict = jsonObject as? [String: Any] {
-                content = dict.mapValues { AnyCodable($0) }
+                content = dict.mapValues { SettingValue(any: $0) }
                 logger.debug("Successfully parsed JSON with \(content.count) keys")
             } else {
                 validationErrors.append(ValidationError(
@@ -67,7 +67,7 @@ public actor SettingsParser {
         logger.debug("Writing settings file to: \(settingsFile.path.path)")
 
         // Convert content back to native types
-        let nativeContent = settingsFile.content.mapValues(\.value)
+        let nativeContent = settingsFile.content.mapValues(\.asAny)
 
         // Serialize to JSON with pretty printing
         let jsonData = try JSONSerialization.data(
@@ -79,7 +79,7 @@ public actor SettingsParser {
     }
 
     /// Validate known settings keys and values
-    private func validateKnownSettings(_ content: [String: AnyCodable]) -> [ValidationError] {
+    private func validateKnownSettings(_ content: [String: SettingValue]) -> [ValidationError] {
         var errors: [ValidationError] = []
 
         // Check for common deprecated keys (example - extend as needed)
@@ -98,8 +98,10 @@ public actor SettingsParser {
 
         // Validate specific known settings structure
         // Example: hooks should be an object
-        if let hooks = content["hooks"]?.value {
-            if !(hooks is [String: Any]) {
+        if let hooks = content["hooks"] {
+            if case .object = hooks {
+                // Valid
+            } else {
                 errors.append(ValidationError(
                     type: .syntax,
                     message: "'hooks' must be an object",
@@ -110,14 +112,18 @@ public actor SettingsParser {
         }
 
         // Example: permissions.allow should be an array
-        if let permissions = content["permissions"]?.value as? [String: Any] {
-            if let allow = permissions["allow"], !(allow is [Any]) {
-                errors.append(ValidationError(
-                    type: .syntax,
-                    message: "'permissions.allow' must be an array",
-                    key: "permissions.allow",
-                    suggestion: "Change to an array of permission strings"
-                ))
+        if let permissions = content["permissions"], case let .object(permDict) = permissions {
+            if let allow = permDict["allow"] {
+                if case .array = allow {
+                    // Valid
+                } else {
+                    errors.append(ValidationError(
+                        type: .syntax,
+                        message: "'permissions.allow' must be an array",
+                        key: "permissions.allow",
+                        suggestion: "Change to an array of permission strings"
+                    ))
+                }
             }
         }
 

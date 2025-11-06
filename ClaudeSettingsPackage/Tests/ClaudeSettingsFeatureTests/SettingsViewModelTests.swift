@@ -14,8 +14,8 @@ struct SettingsViewModelTests {
             type: .globalSettings,
             path: URL(fileURLWithPath: "/tmp/global.json"),
             content: [
-                "theme": AnyCodable("dark"),
-                "fontSize": AnyCodable(12),
+                "theme": .string("dark"),
+                "fontSize": .int(12),
             ]
         )
 
@@ -23,8 +23,8 @@ struct SettingsViewModelTests {
             type: .projectSettings,
             path: URL(fileURLWithPath: "/tmp/project.json"),
             content: [
-                "theme": AnyCodable("light"), // Should override global
-                "tabSize": AnyCodable(2),
+                "theme": .string("light"), // Should override global
+                "tabSize": .int(2),
             ]
         )
 
@@ -35,15 +35,15 @@ struct SettingsViewModelTests {
         // Then: Higher precedence values should win
         let themeItem = items.first { $0.key == "theme" }
         #expect(themeItem != nil, "Theme setting should exist")
-        #expect(themeItem?.value.value as? String == "light", "Project theme should override global")
+        #expect(themeItem?.value == .string("light"), "Project theme should override global")
         #expect(themeItem?.overriddenBy == .projectSettings, "Should show override source")
 
         let fontSizeItem = items.first { $0.key == "fontSize" }
-        #expect(fontSizeItem?.value.value as? Int == 12, "Global fontSize should be present")
+        #expect(fontSizeItem?.value == .int(12), "Global fontSize should be present")
         #expect(fontSizeItem?.overriddenBy == nil, "Should not be overridden")
 
         let tabSizeItem = items.first { $0.key == "tabSize" }
-        #expect(tabSizeItem?.value.value as? Int == 2, "Project tabSize should be present")
+        #expect(tabSizeItem?.value == .int(2), "Project tabSize should be present")
     }
 
     /// Test that array settings track multiple contributions
@@ -55,7 +55,7 @@ struct SettingsViewModelTests {
             type: .globalSettings,
             path: URL(fileURLWithPath: "/tmp/global.json"),
             content: [
-                "permissions": AnyCodable(["Read", "Write"]),
+                "permissions": .array([.string("Read"), .string("Write")]),
             ]
         )
 
@@ -63,7 +63,7 @@ struct SettingsViewModelTests {
             type: .projectSettings,
             path: URL(fileURLWithPath: "/tmp/project.json"),
             content: [
-                "permissions": AnyCodable(["Bash"]),
+                "permissions": .array([.string("Bash")]),
             ]
         )
 
@@ -76,8 +76,11 @@ struct SettingsViewModelTests {
         #expect(permissionsItem != nil, "Permissions should exist")
 
         // Value shows highest precedence array
-        let permissions = permissionsItem?.value.value as? [Any]
-        #expect(permissions?.count == 1, "Value should be from highest precedence source")
+        if case let .array(permissions) = permissionsItem?.value {
+            #expect(permissions.count == 1, "Value should be from highest precedence source")
+        } else {
+            Issue.record("Expected array value")
+        }
 
         // But contributions show both sources
         #expect(permissionsItem?.contributions.count == 2, "Should track two contributors")
@@ -93,10 +96,10 @@ struct SettingsViewModelTests {
             type: .globalSettings,
             path: URL(fileURLWithPath: "/tmp/test.json"),
             content: [
-                "hooks": AnyCodable([
-                    "onToolCall": "echo 'tool called'",
-                    "onRead": "echo 'file read'",
-                ] as [String: Any]),
+                "hooks": .object([
+                    "onToolCall": .string("echo 'tool called'"),
+                    "onRead": .string("echo 'file read'"),
+                ]),
             ]
         )
 
@@ -107,7 +110,7 @@ struct SettingsViewModelTests {
         // Then: Should be flattened to dot notation
         let onToolCallItem = items.first { $0.key == "hooks.onToolCall" }
         #expect(onToolCallItem != nil, "Should have flattened hooks.onToolCall")
-        #expect(onToolCallItem?.value.value as? String == "echo 'tool called'")
+        #expect(onToolCallItem?.value == .string("echo 'tool called'"))
 
         let onReadItem = items.first { $0.key == "hooks.onRead" }
         #expect(onReadItem != nil, "Should have flattened hooks.onRead")
@@ -122,7 +125,7 @@ struct SettingsViewModelTests {
             type: .enterpriseManaged,
             path: URL(fileURLWithPath: "/tmp/enterprise.json"),
             content: [
-                "maxTokens": AnyCodable(1_000),
+                "maxTokens": .int(1_000),
             ]
         )
 
@@ -130,7 +133,7 @@ struct SettingsViewModelTests {
             type: .projectLocal,
             path: URL(fileURLWithPath: "/tmp/project.json"),
             content: [
-                "maxTokens": AnyCodable(5_000), // Should NOT override enterprise
+                "maxTokens": .int(5_000), // Should NOT override enterprise
             ]
         )
 
@@ -140,7 +143,7 @@ struct SettingsViewModelTests {
 
         // Then: Enterprise should win (highest precedence)
         let maxTokensItem = items.first { $0.key == "maxTokens" }
-        #expect(maxTokensItem?.value.value as? Int == 1_000, "Enterprise should win with highest precedence")
+        #expect(maxTokensItem?.value == .int(1_000), "Enterprise should win with highest precedence")
         #expect(maxTokensItem?.overriddenBy == .enterpriseManaged, "Should show enterprise as final override")
     }
 
@@ -152,13 +155,13 @@ struct SettingsViewModelTests {
         let global = SettingsFile(
             type: .globalSettings,
             path: URL(fileURLWithPath: "/tmp/global.json"),
-            content: ["setting": AnyCodable("value1")]
+            content: ["setting": .string("value1")]
         )
 
         let project = SettingsFile(
             type: .projectSettings,
             path: URL(fileURLWithPath: "/tmp/project.json"),
-            content: ["setting": AnyCodable("value2")]
+            content: ["setting": .string("value2")]
         )
 
         // When: Computing setting items

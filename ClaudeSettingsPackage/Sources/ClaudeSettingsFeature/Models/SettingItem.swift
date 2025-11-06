@@ -3,9 +3,9 @@ import Foundation
 /// Represents a contribution from a specific source file
 public struct SourceContribution: Sendable {
     public let source: SettingsFileType
-    public let value: AnyCodable
+    public let value: SettingValue
 
-    public init(source: SettingsFileType, value: AnyCodable) {
+    public init(source: SettingsFileType, value: SettingValue) {
         self.source = source
         self.value = value
     }
@@ -15,7 +15,7 @@ public struct SourceContribution: Sendable {
 public struct SettingItem: Identifiable, Sendable {
     public let id: UUID
     public let key: String
-    public let value: AnyCodable
+    public let value: SettingValue
     public let valueType: SettingValueType
     public let source: SettingsFileType
     public let overriddenBy: SettingsFileType?
@@ -26,7 +26,7 @@ public struct SettingItem: Identifiable, Sendable {
     public init(
         id: UUID = UUID(),
         key: String,
-        value: AnyCodable,
+        value: SettingValue,
         valueType: SettingValueType,
         source: SettingsFileType,
         overriddenBy: SettingsFileType? = nil,

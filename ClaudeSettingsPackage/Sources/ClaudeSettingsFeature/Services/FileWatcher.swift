@@ -7,6 +7,7 @@ public actor FileWatcher {
     private var eventStream: FSEventStreamRef?
     private var isWatching = false
     private let callback: @Sendable (URL) -> Void
+    private var watchTask: Task<Void, Never>?
 
     public init(callback: @escaping @Sendable (URL) -> Void) {
         self.callback = callback
@@ -24,9 +25,12 @@ public actor FileWatcher {
         let pathsToWatch = paths.map { $0.path } as NSArray
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
+            info: Unmanaged.passRetained(self).toOpaque(),
             retain: nil,
-            release: nil,
+            release: { info in
+                guard let info else { return }
+                Unmanaged<FileWatcher>.fromOpaque(info).release()
+            },
             copyDescription: nil
         )
 
@@ -69,6 +73,20 @@ public actor FileWatcher {
         FSEventStreamStart(stream)
         isWatching = true
 
+        // Create a task with cancellation handler to ensure cleanup
+        watchTask = Task {
+            await withTaskCancellationHandler {
+                // Keep the task alive while watching
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                }
+            } onCancel: {
+                Task {
+                    await self.stopWatching()
+                }
+            }
+        }
+
         logger.info("File watcher started")
     }
 
@@ -83,6 +101,8 @@ public actor FileWatcher {
         FSEventStreamRelease(stream)
         eventStream = nil
         isWatching = false
+        watchTask?.cancel()
+        watchTask = nil
 
         logger.info("File watcher stopped")
     }
@@ -105,8 +125,11 @@ public actor FileWatcher {
     }
 
     deinit {
-        // Note: Cannot access actor-isolated properties from deinit
-        // Callers must explicitly call stopWatching() before releasing
-        // FSEventStream cleanup requires actor isolation, which deinit doesn't have
+        // Note: Cannot directly access actor-isolated properties from deinit
+        // The watchTask cancellation handler and stopWatching() method handle cleanup
+        // Callers should explicitly call stopWatching() before releasing if immediate cleanup is needed
+        //
+        // The FSEventStream will be cleaned up when the actor is deallocated through the
+        // release callback we provided in FSEventStreamContext
     }
 }

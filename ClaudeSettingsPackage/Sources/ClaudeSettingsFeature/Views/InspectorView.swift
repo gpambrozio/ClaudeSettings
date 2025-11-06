@@ -223,49 +223,8 @@ public struct InspectorView: View {
         }
     }
 
-    private func formatValue(_ value: AnyCodable) -> String {
-        switch value.value {
-        case let string as String:
-            return "\"\(string)\""
-        case let bool as Bool:
-            return bool ? "true" : "false"
-        case let int as Int:
-            return "\(int)"
-        case let double as Double:
-            return "\(double)"
-        case let array as [Any]:
-            return formatArray(array)
-        case let dict as [String: Any]:
-            return formatDict(dict)
-        default:
-            return "null"
-        }
-    }
-
-    private func formatArray(_ array: [Any]) -> String {
-        let items = array.prefix(5).map { item -> String in
-            if let string = item as? String {
-                return "\"\(string)\""
-            } else {
-                return "\(item)"
-            }
-        }
-        let preview = items.joined(separator: ", ")
-        if array.count > 5 {
-            return "[\(preview), ... (\(array.count - 5) more)]"
-        } else {
-            return "[\(preview)]"
-        }
-    }
-
-    private func formatDict(_ dict: [String: Any]) -> String {
-        let keys = dict.keys.prefix(3).sorted()
-        let preview = keys.map { "\($0): ..." }.joined(separator: ", ")
-        if dict.count > 3 {
-            return "{ \(preview), ... (\(dict.count - 3) more) }"
-        } else {
-            return "{ \(preview) }"
-        }
+    private func formatValue(_ value: SettingValue) -> String {
+        value.formatted()
     }
 
     private func getTypeInfo(_ valueType: SettingValueType) -> (String, Color) {
@@ -300,48 +259,52 @@ public struct InspectorView: View {
 // MARK: - Previews
 
 #Preview("Inspector - With Selection") {
-    let viewModel = SettingsViewModel(project: nil)
-    viewModel.settingItems = [
+    @Previewable var settingItems: [SettingItem] = [
         SettingItem(
             key: "editor.fontSize",
-            value: AnyCodable(16),
+            value: .int(16),
             valueType: .number,
             source: .globalSettings,
             contributions: [
-                SourceContribution(source: .globalSettings, value: AnyCodable(14)),
-                SourceContribution(source: .projectLocal, value: AnyCodable(16)),
+                SourceContribution(source: .globalSettings, value: .int(14)),
+                SourceContribution(source: .projectLocal, value: .int(16)),
             ],
             documentation: "Controls the font size of the editor"
         ),
         SettingItem(
             key: "editor.theme",
-            value: AnyCodable("dark"),
+            value: .string("dark"),
             valueType: .string,
             source: .projectSettings,
-            contributions: [SourceContribution(source: .projectSettings, value: AnyCodable("dark"))]
+            contributions: [SourceContribution(source: .projectSettings, value: .string("dark"))]
         ),
     ]
+
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = settingItems
 
     return InspectorView(selectedKey: "editor.fontSize", settingsViewModel: viewModel)
         .frame(width: 300, height: 600)
 }
 
 #Preview("Inspector - Array (Additive)") {
-    let viewModel = SettingsViewModel(project: nil)
-    viewModel.settingItems = [
+    @Previewable var settingItems: [SettingItem] = [
         SettingItem(
             key: "files.exclude",
-            value: AnyCodable(["node_modules", ".git", "dist", "build"]),
+            value: .array([.string("node_modules"), .string(".git"), .string("dist"), .string("build")]),
             valueType: .array,
             source: .globalSettings,
             contributions: [
-                SourceContribution(source: .globalSettings, value: AnyCodable(["node_modules", ".git"])),
-                SourceContribution(source: .projectSettings, value: AnyCodable(["dist"])),
-                SourceContribution(source: .projectLocal, value: AnyCodable(["build"])),
+                SourceContribution(source: .globalSettings, value: .array([.string("node_modules"), .string(".git")])),
+                SourceContribution(source: .projectSettings, value: .array([.string("dist")])),
+                SourceContribution(source: .projectLocal, value: .array([.string("build")])),
             ],
             documentation: "Files and directories to exclude from file operations"
         ),
     ]
+
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = settingItems
 
     return InspectorView(selectedKey: "files.exclude", settingsViewModel: viewModel)
         .frame(width: 300, height: 600)
@@ -352,10 +315,10 @@ public struct InspectorView: View {
     viewModel.settingItems = [
         SettingItem(
             key: "deprecated.setting",
-            value: AnyCodable(true),
+            value: .bool(true),
             valueType: .boolean,
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(true))],
+            contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true,
             documentation: "This setting is deprecated and will be removed in version 2.0"
         ),
@@ -366,22 +329,24 @@ public struct InspectorView: View {
 }
 
 #Preview("Inspector - Object Type") {
-    let viewModel = SettingsViewModel(project: nil)
-    viewModel.settingItems = [
+    @Previewable var settingItems: [SettingItem] = [
         SettingItem(
             key: "editor.config",
-            value: AnyCodable(["tabSize": 2, "insertSpaces": true, "detectIndentation": false]),
+            value: .object(["tabSize": .int(2), "insertSpaces": .bool(true), "detectIndentation": .bool(false)]),
             valueType: .object,
             source: .projectSettings,
             contributions: [
                 SourceContribution(
                     source: .projectSettings,
-                    value: AnyCodable(["tabSize": 2, "insertSpaces": true, "detectIndentation": false])
+                    value: .object(["tabSize": .int(2), "insertSpaces": .bool(true), "detectIndentation": .bool(false)])
                 ),
             ],
             documentation: "Editor configuration object"
         ),
     ]
+
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = settingItems
 
     return InspectorView(selectedKey: "editor.config", settingsViewModel: viewModel)
         .frame(width: 300, height: 600)

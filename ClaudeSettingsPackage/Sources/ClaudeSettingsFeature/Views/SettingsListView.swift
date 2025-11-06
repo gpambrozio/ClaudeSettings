@@ -278,20 +278,20 @@ struct SettingItemRow: View {
     }
 
     private var valueDescription: String {
-        switch item.value.value {
-        case let string as String:
+        switch item.value {
+        case let .string(string):
             return string
-        case let bool as Bool:
+        case let .bool(bool):
             return bool ? "true" : "false"
-        case let int as Int:
+        case let .int(int):
             return "\(int)"
-        case let double as Double:
+        case let .double(double):
             return "\(double)"
-        case let array as [Any]:
+        case let .array(array):
             return "[\(array.count) items]"
-        case let dict as [String: Any]:
+        case let .object(dict):
             return "{\(dict.count) keys}"
-        default:
+        case .null:
             return "null"
         }
     }
@@ -334,38 +334,38 @@ struct SettingItemRow: View {
     viewModel.settingItems = [
         SettingItem(
             key: "editor.fontSize",
-            value: AnyCodable(14),
+            value: .int(14),
             valueType: .number,
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(14))]
+            contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
         ),
         SettingItem(
             key: "editor.theme",
-            value: AnyCodable("dark"),
+            value: .string("dark"),
             valueType: .string,
             source: .projectSettings,
             overriddenBy: .projectLocal,
             contributions: [
-                SourceContribution(source: .projectSettings, value: AnyCodable("light")),
-                SourceContribution(source: .projectLocal, value: AnyCodable("dark")),
+                SourceContribution(source: .projectSettings, value: .string("light")),
+                SourceContribution(source: .projectLocal, value: .string("dark")),
             ]
         ),
         SettingItem(
             key: "files.exclude",
-            value: AnyCodable(["node_modules", ".git", "dist"]),
+            value: .array([.string("node_modules"), .string(".git"), .string("dist")]),
             valueType: .array,
             source: .globalSettings,
             contributions: [
-                SourceContribution(source: .globalSettings, value: AnyCodable(["node_modules", ".git"])),
-                SourceContribution(source: .projectSettings, value: AnyCodable(["dist"])),
+                SourceContribution(source: .globalSettings, value: .array([.string("node_modules"), .string(".git")])),
+                SourceContribution(source: .projectSettings, value: .array([.string("dist")])),
             ]
         ),
         SettingItem(
             key: "deprecated.setting",
-            value: AnyCodable(true),
+            value: .bool(true),
             valueType: .boolean,
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(true))],
+            contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true,
             documentation: "This setting is deprecated and will be removed in a future version"
         ),
@@ -453,10 +453,10 @@ struct SettingItemRow: View {
     SettingItemRow(
         item: SettingItem(
             key: "editor.theme",
-            value: AnyCodable("dark"),
+            value: .string("dark"),
             valueType: .string,
             source: .projectSettings,
-            contributions: [SourceContribution(source: .projectSettings, value: AnyCodable("dark"))]
+            contributions: [SourceContribution(source: .projectSettings, value: .string("dark"))]
         ),
         isSelected: false
     )
@@ -467,10 +467,10 @@ struct SettingItemRow: View {
     SettingItemRow(
         item: SettingItem(
             key: "editor.fontSize",
-            value: AnyCodable(14),
+            value: .int(14),
             valueType: .number,
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(14))]
+            contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
         ),
         isSelected: false
     )
@@ -481,12 +481,12 @@ struct SettingItemRow: View {
     SettingItemRow(
         item: SettingItem(
             key: "files.exclude",
-            value: AnyCodable(["node_modules", ".git", "dist"]),
+            value: .array([.string("node_modules"), .string(".git"), .string("dist")]),
             valueType: .array,
             source: .globalSettings,
             contributions: [
-                SourceContribution(source: .globalSettings, value: AnyCodable(["node_modules", ".git"])),
-                SourceContribution(source: .projectSettings, value: AnyCodable(["dist"])),
+                SourceContribution(source: .globalSettings, value: .array([.string("node_modules"), .string(".git")])),
+                SourceContribution(source: .projectSettings, value: .array([.string("dist")])),
             ]
         ),
         isSelected: false
@@ -498,13 +498,13 @@ struct SettingItemRow: View {
     SettingItemRow(
         item: SettingItem(
             key: "editor.tabSize",
-            value: AnyCodable(2),
+            value: .int(2),
             valueType: .number,
             source: .globalSettings,
             overriddenBy: .projectLocal,
             contributions: [
-                SourceContribution(source: .globalSettings, value: AnyCodable(4)),
-                SourceContribution(source: .projectLocal, value: AnyCodable(2)),
+                SourceContribution(source: .globalSettings, value: .int(4)),
+                SourceContribution(source: .projectLocal, value: .int(2)),
             ]
         ),
         isSelected: false
@@ -516,10 +516,10 @@ struct SettingItemRow: View {
     SettingItemRow(
         item: SettingItem(
             key: "deprecated.setting",
-            value: AnyCodable(true),
+            value: .bool(true),
             valueType: .boolean,
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(true))],
+            contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true
         ),
         isSelected: false
@@ -531,10 +531,10 @@ struct SettingItemRow: View {
     SettingItemRow(
         item: SettingItem(
             key: "editor.fontSize",
-            value: AnyCodable(16),
+            value: .int(16),
             valueType: .number,
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: AnyCodable(16))]
+            contributions: [SourceContribution(source: .globalSettings, value: .int(16))]
         ),
         isSelected: true
     )
