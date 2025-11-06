@@ -8,6 +8,7 @@ public struct SettingItem: Identifiable, Sendable {
     public let valueType: SettingValueType
     public let source: SettingsFileType
     public let overriddenBy: SettingsFileType?
+    public let additionalSources: [SettingsFileType]
     public let isDeprecated: Bool
     public let documentation: String?
 
@@ -18,6 +19,7 @@ public struct SettingItem: Identifiable, Sendable {
         valueType: SettingValueType,
         source: SettingsFileType,
         overriddenBy: SettingsFileType? = nil,
+        additionalSources: [SettingsFileType] = [],
         isDeprecated: Bool = false,
         documentation: String? = nil
     ) {
@@ -27,6 +29,7 @@ public struct SettingItem: Identifiable, Sendable {
         self.valueType = valueType
         self.source = source
         self.overriddenBy = overriddenBy
+        self.additionalSources = additionalSources
         self.isDeprecated = isDeprecated
         self.documentation = documentation
     }
@@ -34,6 +37,12 @@ public struct SettingItem: Identifiable, Sendable {
     /// Whether this setting is currently active (not overridden)
     public var isActive: Bool {
         overriddenBy == nil
+    }
+
+    /// Whether this setting is additive (combines values from multiple sources)
+    /// True for array types that have additional sources
+    public var isAdditive: Bool {
+        valueType == .array && !additionalSources.isEmpty
     }
 }
 

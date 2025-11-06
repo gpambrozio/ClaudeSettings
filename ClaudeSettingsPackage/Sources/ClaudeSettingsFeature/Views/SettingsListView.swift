@@ -200,7 +200,16 @@ struct SettingItemRow: View {
                 HStack(spacing: 6) {
                     sourceIndicator(for: item.source, label: "From")
 
-                    if let overriddenBy = item.overriddenBy {
+                    if item.isAdditive {
+                        // Arrays are additive - show additional contributing sources
+                        Symbols.plus.image
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        ForEach(item.additionalSources, id: \.self) { additionalSource in
+                            sourceIndicator(for: additionalSource, label: "Plus")
+                        }
+                    } else if let overriddenBy = item.overriddenBy {
+                        // Non-arrays are overridden
                         Symbols.arrowRight.image
                             .font(.caption2)
                             .foregroundStyle(.secondary)

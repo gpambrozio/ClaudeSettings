@@ -96,7 +96,32 @@ public struct InspectorView: View {
                         sourceInfo(for: item)
                     }
 
-                    if let overriddenBy = item.overriddenBy {
+                    if item.isAdditive {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Combined Sources")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Array values are combined from multiple sources:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                ForEach([item.source] + item.additionalSources, id: \.self) { sourceType in
+                                    HStack(spacing: 8) {
+                                        Circle()
+                                            .fill(sourceColor(for: sourceType))
+                                            .frame(width: 6, height: 6)
+                                        Text(sourceLabel(for: sourceType))
+                                            .font(.caption)
+                                    }
+                                }
+                            }
+                        }
+                    } else if let overriddenBy = item.overriddenBy {
                         Divider()
 
                         VStack(alignment: .leading, spacing: 8) {

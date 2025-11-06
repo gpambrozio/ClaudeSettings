@@ -168,16 +168,32 @@ final public class SettingsViewModel {
 
             // The highest precedence source (last in sorted order) is the active one
             let activeSource = sortedSources.last!
+            let valueType = SettingValueType(from: activeSource.1.value)
 
-            // Check if this setting was overridden
-            let overriddenBy = sortedSources.count > 1 ? activeSource.0 : nil
+            // For arrays, settings are additive across sources
+            // For other types, higher precedence overrides lower precedence
+            let (overriddenBy, additionalSources): (SettingsFileType?, [SettingsFileType])
+            if valueType == .array && sortedSources.count > 1 {
+                // Arrays are additive - no override, but track all contributing sources
+                overriddenBy = nil
+                additionalSources = sortedSources.dropFirst().map(\.0)
+            } else if sortedSources.count > 1 {
+                // Non-arrays are replaced - track override
+                overriddenBy = activeSource.0
+                additionalSources = []
+            } else {
+                // Single source
+                overriddenBy = nil
+                additionalSources = []
+            }
 
             let item = SettingItem(
                 key: key,
                 value: activeSource.1,
-                valueType: SettingValueType(from: activeSource.1.value),
+                valueType: valueType,
                 source: lowestSource.0,
                 overriddenBy: overriddenBy,
+                additionalSources: additionalSources,
                 isDeprecated: false, // TODO: Implement deprecation checking
                 documentation: nil // TODO: Add documentation lookup
             )

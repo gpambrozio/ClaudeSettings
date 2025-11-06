@@ -2,7 +2,7 @@ import Foundation
 
 /// Enum representing the different types of Claude Code settings files
 /// with their precedence in the configuration hierarchy
-public enum SettingsFileType: String, Codable, CaseIterable, Sendable {
+public enum SettingsFileType: String, Codable, CaseIterable, Sendable, Hashable {
     case enterpriseManaged = "managed-settings.json"
     case globalSettings = "settings.json"
     case globalLocal = "settings.local.json"

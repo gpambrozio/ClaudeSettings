@@ -140,6 +140,7 @@ public actor SettingsParser {
     }
 
     /// Deep merge two dictionaries (recursive)
+    /// Arrays are concatenated (additive), objects are deep merged, other values are replaced
     private func deepMerge(_ base: [String: Any], _ overlay: [String: Any]) -> [String: Any] {
         var result = base
 
@@ -147,8 +148,15 @@ public actor SettingsParser {
             if
                 let existingDict = result[key] as? [String: Any],
                 let overlayDict = value as? [String: Any] {
+                // Recursively merge nested objects
                 result[key] = deepMerge(existingDict, overlayDict)
+            } else if
+                let existingArray = result[key] as? [Any],
+                let overlayArray = value as? [Any] {
+                // Concatenate arrays (settings are additive for arrays)
+                result[key] = existingArray + overlayArray
             } else {
+                // Replace other values
                 result[key] = value
             }
         }
