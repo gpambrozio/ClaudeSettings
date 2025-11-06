@@ -118,19 +118,6 @@ public struct InspectorView: View {
                                     .textSelection(.enabled)
                             }
                         }
-
-                        Divider()
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Combined Result")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            Text(formatValue(item.value))
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                        }
                     } else if let overriddenBy = item.overriddenBy {
                         Divider()
 
