@@ -25,12 +25,9 @@ public actor FileWatcher {
         let pathsToWatch = paths.map(\.path) as NSArray
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passRetained(self).toOpaque(),
+            info: Unmanaged.passUnretained(self).toOpaque(),
             retain: nil,
-            release: { info in
-                guard let info else { return }
-                Unmanaged<FileWatcher>.fromOpaque(info).release()
-            },
+            release: nil,
             copyDescription: nil
         )
 
@@ -126,10 +123,7 @@ public actor FileWatcher {
 
     deinit {
         // Note: Cannot directly access actor-isolated properties from deinit
-        // The watchTask cancellation handler and stopWatching() method handle cleanup
+        // The watchTask cancellation handler will trigger stopWatching() to clean up the FSEventStream
         // Callers should explicitly call stopWatching() before releasing if immediate cleanup is needed
-        //
-        // The FSEventStream will be cleaned up when the actor is deallocated through the
-        // release callback we provided in FSEventStreamContext
     }
 }
