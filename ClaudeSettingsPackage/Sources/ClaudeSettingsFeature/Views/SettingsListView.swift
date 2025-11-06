@@ -198,22 +198,26 @@ struct SettingItemRow: View {
                     .lineLimit(2)
 
                 HStack(spacing: 6) {
-                    sourceIndicator(for: item.source, label: "From")
-
                     if item.isAdditive {
-                        // Arrays are additive - show additional contributing sources
-                        Symbols.plus.image
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        ForEach(item.additionalSources, id: \.self) { additionalSource in
-                            sourceIndicator(for: additionalSource, label: "Plus")
+                        // Arrays are additive - show all contributing sources
+                        ForEach(Array(item.contributions.enumerated()), id: \.offset) { index, contribution in
+                            if index > 0 {
+                                Symbols.plus.image
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            sourceIndicator(for: contribution.source, label: "From")
                         }
-                    } else if let overriddenBy = item.overriddenBy {
-                        // Non-arrays are overridden
-                        Symbols.arrowRight.image
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        sourceIndicator(for: overriddenBy, label: "Overridden by")
+                    } else {
+                        sourceIndicator(for: item.source, label: "From")
+
+                        if let overriddenBy = item.overriddenBy {
+                            // Non-arrays are overridden
+                            Symbols.arrowRight.image
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            sourceIndicator(for: overriddenBy, label: "Overridden by")
+                        }
                     }
                 }
             }

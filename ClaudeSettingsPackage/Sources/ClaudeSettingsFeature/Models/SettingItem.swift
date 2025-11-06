@@ -1,5 +1,16 @@
 import Foundation
 
+/// Represents a contribution from a specific source file
+public struct SourceContribution: Sendable {
+    public let source: SettingsFileType
+    public let value: AnyCodable
+
+    public init(source: SettingsFileType, value: AnyCodable) {
+        self.source = source
+        self.value = value
+    }
+}
+
 /// Represents a single setting with its value, type, and source information
 public struct SettingItem: Identifiable, Sendable {
     public let id: UUID
@@ -8,7 +19,7 @@ public struct SettingItem: Identifiable, Sendable {
     public let valueType: SettingValueType
     public let source: SettingsFileType
     public let overriddenBy: SettingsFileType?
-    public let additionalSources: [SettingsFileType]
+    public let contributions: [SourceContribution]
     public let isDeprecated: Bool
     public let documentation: String?
 
@@ -19,7 +30,7 @@ public struct SettingItem: Identifiable, Sendable {
         valueType: SettingValueType,
         source: SettingsFileType,
         overriddenBy: SettingsFileType? = nil,
-        additionalSources: [SettingsFileType] = [],
+        contributions: [SourceContribution] = [],
         isDeprecated: Bool = false,
         documentation: String? = nil
     ) {
@@ -29,7 +40,7 @@ public struct SettingItem: Identifiable, Sendable {
         self.valueType = valueType
         self.source = source
         self.overriddenBy = overriddenBy
-        self.additionalSources = additionalSources
+        self.contributions = contributions
         self.isDeprecated = isDeprecated
         self.documentation = documentation
     }
@@ -40,9 +51,9 @@ public struct SettingItem: Identifiable, Sendable {
     }
 
     /// Whether this setting is additive (combines values from multiple sources)
-    /// True for array types that have additional sources
+    /// True for array types that have multiple contributions
     public var isAdditive: Bool {
-        valueType == .array && !additionalSources.isEmpty
+        valueType == .array && contributions.count > 1
     }
 }
 

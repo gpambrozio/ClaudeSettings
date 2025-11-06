@@ -97,29 +97,39 @@ public struct InspectorView: View {
                     }
 
                     if item.isAdditive {
+                        // Show individual contributions for additive arrays
+                        ForEach(Array(item.contributions.enumerated()), id: \.offset) { _, contribution in
+                            Divider()
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Circle()
+                                        .fill(sourceColor(for: contribution.source))
+                                        .frame(width: 8, height: 8)
+                                    Text(sourceLabel(for: contribution.source))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .textCase(.uppercase)
+                                }
+
+                                Text(formatValue(contribution.value))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+
                         Divider()
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Combined Sources")
+                            Text("Combined Result")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Array values are combined from multiple sources:")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-
-                                ForEach([item.source] + item.additionalSources, id: \.self) { sourceType in
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(sourceColor(for: sourceType))
-                                            .frame(width: 6, height: 6)
-                                        Text(sourceLabel(for: sourceType))
-                                            .font(.caption)
-                                    }
-                                }
-                            }
+                            Text(formatValue(item.value))
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
                         }
                     } else if let overriddenBy = item.overriddenBy {
                         Divider()
