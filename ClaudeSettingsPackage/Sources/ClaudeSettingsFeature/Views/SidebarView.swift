@@ -53,19 +53,14 @@ public struct SidebarView: View {
                                 Text(project.name)
                                     .font(.headline)
 
-                                Text(project.path.path)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-
                                 HStack(spacing: 8) {
                                     if project.hasSharedSettings {
-                                        Label("settings.json", symbol: .docText)
+                                        Text("project")
                                             .font(.caption2)
                                             .foregroundStyle(.green)
                                     }
                                     if project.hasLocalSettings {
-                                        Label("local", symbol: .docText)
+                                        Text("local")
                                             .font(.caption2)
                                             .foregroundStyle(.orange)
                                     }

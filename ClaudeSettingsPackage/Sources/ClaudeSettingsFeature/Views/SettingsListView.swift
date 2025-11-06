@@ -192,10 +192,16 @@ struct SettingItemRow: View {
                     }
                 }
 
-                Text(valueDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    valueTypeIndicator
+
+                    Text(valueDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    Spacer()
+                }
 
                 HStack(spacing: 6) {
                     if item.isAdditive {
@@ -223,8 +229,6 @@ struct SettingItemRow: View {
             }
 
             Spacer()
-
-            valueTypeIndicator
         }
         .padding(.vertical, 4)
     }

@@ -110,7 +110,7 @@ public struct InspectorView: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
 
-                        VStack(spacing: 8) {
+                        HStack(spacing: 8) {
                             Button("Copy Value") {
                                 copyToClipboard(formatValue(item.value))
                             }
@@ -129,6 +129,8 @@ public struct InspectorView: View {
                             .buttonStyle(.bordered)
                             .frame(maxWidth: .infinity)
                             .tint(.red)
+
+                            Spacer()
                         }
                     }
 
