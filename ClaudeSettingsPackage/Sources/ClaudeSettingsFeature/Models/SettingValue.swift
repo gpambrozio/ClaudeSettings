@@ -15,12 +15,12 @@ public enum SettingValue: Codable, Sendable, Hashable {
 
         if container.decodeNil() {
             self = .null
-        } else if let bool = try? container.decode(Bool.self) {
-            self = .bool(bool)
         } else if let int = try? container.decode(Int.self) {
             self = .int(int)
         } else if let double = try? container.decode(Double.self) {
             self = .double(double)
+        } else if let bool = try? container.decode(Bool.self) {
+            self = .bool(bool)
         } else if let string = try? container.decode(String.self) {
             self = .string(string)
         } else if let array = try? container.decode([SettingValue].self) {
