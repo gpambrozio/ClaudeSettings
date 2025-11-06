@@ -31,6 +31,28 @@
   "enabledMcpjsonServers": [
     "serena"
   ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read file_path; if echo \"$file_path\" | grep -q '\\.swift$'; then swiftformat \"$file_path\"; fi; }"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol|mcp__serena__replace_regex|mcp__serena__delete_lines|mcp__serena__replace_lines",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.relative_path' | { read relative_path; if echo \"$relative_path\" | grep -q '\\.swift$'; then swiftformat \"$relative_path\"; fi; }"
+          }
+        ]
+      }
+    ]
+  },
   "enabledPlugins": {
     "MarvinOutputStyle@ClaudeCodePlugins": true,
     "SwiftDevelopment@ClaudeCodePlugins": true

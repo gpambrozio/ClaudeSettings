@@ -109,6 +109,44 @@ struct ClaudeSettingsApp: App {
 }
 ```
 
+### SF Symbols Usage
+
+This project uses the [SFSymbolsMacro](https://github.com/lukepistrol/SFSymbolsMacro) library for type-safe SF Symbol management:
+
+#### Using Symbols
+
+- **Never use string literals** for SF Symbols (enforced by SwiftLint rule)
+- **Always use the `Symbols` enum** from `MacVoiceHooksPackage/Sources/MacVoiceHooksFeature/Symbols.swift`
+- Symbols are kept in **alphabetical order** within the enum
+
+#### Examples
+
+```swift
+// ✅ Correct - Use Symbols enum
+Label("Settings", symbol: .gearshape)
+Symbols.micFill.image
+stateMachine.state.icon.image
+
+// ❌ Wrong - Don't use string literals
+Label("Settings", systemImage: "gearshape")
+Image(systemName: "mic.fill")
+```
+
+#### Adding New Symbols
+
+1. Add the new case to `Symbols` enum in alphabetical order
+2. Use camelCase for the case name
+3. Specify raw value only if different from case name
+4. Make sure to keep the enum `public` for cross-module access
+
+```swift
+@SFSymbol
+public enum Symbols: String {
+    case micFill = "mic.fill"  // Raw value needed
+    case terminal             // Raw value same as case name
+}
+```
+
 ### Asset Management
 - **App-Level Assets**: `ClaudeSettings/Assets.xcassets/` (app icon with multiple sizes, accent color)
 - **Feature Assets**: Add `Resources/` folder to SPM package if needed
