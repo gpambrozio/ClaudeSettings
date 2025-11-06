@@ -18,7 +18,7 @@ public struct InspectorView: View {
 
     @ViewBuilder
     private func settingDetails(key: String, viewModel: SettingsViewModel) -> some View {
-        if let value = viewModel.mergedSettings[key] {
+        if let item = viewModel.settingItems.first(where: { $0.key == key }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     // Key section
@@ -28,9 +28,23 @@ public struct InspectorView: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
 
-                        Text(key)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
+                        HStack {
+                            Text(item.key)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+
+                            if item.isDeprecated {
+                                Symbols.clockArrowCirclepath.image
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                            }
+
+                            if !item.isActive {
+                                Symbols.exclamationmarkTriangle.image
+                                    .foregroundStyle(.yellow)
+                                    .font(.caption)
+                            }
+                        }
                     }
 
                     Divider()
@@ -42,7 +56,7 @@ public struct InspectorView: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
 
-                        Text(formatValue(value))
+                        Text(formatValue(item.value))
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
                     }
@@ -57,7 +71,7 @@ public struct InspectorView: View {
                             .textCase(.uppercase)
 
                         HStack {
-                            let typeInfo = getTypeInfo(value)
+                            let typeInfo = getTypeInfo(item.valueType)
                             Text(typeInfo.0)
                                 .font(.caption)
                                 .padding(.horizontal, 8)
@@ -79,10 +93,35 @@ public struct InspectorView: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
 
-                        // TODO: Implement source tracking in Phase 1.4
-                        Text("Merged Configuration")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        sourceInfo(for: item)
+                    }
+
+                    if let overriddenBy = item.overriddenBy {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Override")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+
+                            overrideInfo(type: overriddenBy)
+                        }
+                    }
+
+                    if let documentation = item.documentation {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Documentation")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+
+                            Text(documentation)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Divider()
@@ -96,7 +135,7 @@ public struct InspectorView: View {
 
                         VStack(spacing: 8) {
                             Button("Copy Value") {
-                                copyToClipboard(formatValue(value))
+                                copyToClipboard(formatValue(item.value))
                             }
                             .buttonStyle(.bordered)
                             .frame(maxWidth: .infinity)
@@ -122,6 +161,77 @@ public struct InspectorView: View {
             }
         } else {
             emptyState
+        }
+    }
+
+    @ViewBuilder
+    private func sourceInfo(for item: SettingItem) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(sourceColor(for: item.source))
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sourceLabel(for: item.source))
+                    .font(.body)
+
+                Text(item.source.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func overrideInfo(type: SettingsFileType) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(sourceColor(for: type))
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sourceLabel(for: type))
+                    .font(.body)
+
+                Text("This value overrides the original")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func sourceLabel(for type: SettingsFileType) -> String {
+        switch type {
+        case .globalSettings:
+            return "Global Settings"
+        case .globalLocal:
+            return "Global Local"
+        case .projectSettings:
+            return "Project Settings"
+        case .projectLocal:
+            return "Project Local"
+        case .enterpriseManaged:
+            return "Enterprise Managed"
+        case .globalMemory,
+             .projectMemory,
+             .projectLocalMemory:
+            return "Memory File"
+        }
+    }
+
+    private func sourceColor(for type: SettingsFileType) -> Color {
+        switch type {
+        case .enterpriseManaged:
+            return .purple
+        case .globalSettings,
+             .globalLocal,
+             .globalMemory:
+            return .blue
+        case .projectSettings,
+             .projectLocal,
+             .projectMemory,
+             .projectLocalMemory:
+            return .green
         }
     }
 
@@ -179,20 +289,19 @@ public struct InspectorView: View {
         }
     }
 
-    private func getTypeInfo(_ value: AnyCodable) -> (String, Color) {
-        switch value.value {
-        case is String:
+    private func getTypeInfo(_ valueType: SettingValueType) -> (String, Color) {
+        switch valueType {
+        case .string:
             return ("String", .blue)
-        case is Bool:
+        case .boolean:
             return ("Boolean", .green)
-        case is Int,
-             is Double:
+        case .number:
             return ("Number", .orange)
-        case is [Any]:
+        case .array:
             return ("Array", .purple)
-        case is [String: Any]:
+        case .object:
             return ("Object", .pink)
-        default:
+        case .null:
             return ("Null", .gray)
         }
     }

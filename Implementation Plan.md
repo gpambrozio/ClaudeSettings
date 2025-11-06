@@ -365,11 +365,11 @@ Toolbar Actions:
 - [x] Implement basic navigation
 
 #### Milestone 1.4: Settings Display & Validation (Weeks 4-5)
-- [ ] Parse and display settings from all files
-- [ ] Implement hierarchy resolution (show effective settings)
-- [ ] Add JSON syntax validation
-- [ ] Show validation errors in UI
-- [ ] Color code settings by source
+- [x] Parse and display settings from all files
+- [x] Implement hierarchy resolution (show effective settings)
+- [x] Add JSON syntax validation
+- [x] Show validation errors in UI
+- [x] Color code settings by source
 
 #### Milestone 1.5: Basic Edit Operations (Weeks 5-6)
 - [ ] Implement edit functionality for individual settings

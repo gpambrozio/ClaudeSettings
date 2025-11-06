@@ -11,6 +11,8 @@ final public class SettingsViewModel {
 
     public var settingsFiles: [SettingsFile] = []
     public var mergedSettings: [String: AnyCodable] = [:]
+    public var settingItems: [SettingItem] = []
+    public var validationErrors: [ValidationError] = []
     public var isLoading = false
     public var errorMessage: String?
 
@@ -40,8 +42,28 @@ final public class SettingsViewModel {
                 }
 
                 var files: [SettingsFile] = []
+                let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 
-                // Load project settings
+                // Load global settings first (they form the base layer)
+                let globalSettingsPath = homeDirectory.appendingPathComponent(".claude/settings.json")
+                if await fileSystemManager.exists(at: globalSettingsPath) {
+                    let file = try await parser.parseSettingsFile(
+                        at: globalSettingsPath,
+                        type: .globalSettings
+                    )
+                    files.append(file)
+                }
+
+                let globalLocalPath = homeDirectory.appendingPathComponent(".claude/settings.local.json")
+                if await fileSystemManager.exists(at: globalLocalPath) {
+                    let file = try await parser.parseSettingsFile(
+                        at: globalLocalPath,
+                        type: .globalLocal
+                    )
+                    files.append(file)
+                }
+
+                // Load project settings (these override global settings)
                 let projectSettingsPath = project.claudeDirectory.appendingPathComponent("settings.json")
                 if await fileSystemManager.exists(at: projectSettingsPath) {
                     let file = try await parser.parseSettingsFile(
@@ -62,7 +84,9 @@ final public class SettingsViewModel {
 
                 settingsFiles = files
                 mergedSettings = await parser.mergeSettings(files)
-                logger.info("Loaded \(files.count) settings files")
+                settingItems = computeSettingItems(from: files)
+                validationErrors = files.flatMap(\.validationErrors)
+                logger.info("Loaded \(files.count) settings files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
             } catch {
                 logger.error("Failed to load settings: \(error)")
                 errorMessage = "Failed to load settings: \(error.localizedDescription)"
@@ -107,7 +131,9 @@ final public class SettingsViewModel {
 
                 settingsFiles = files
                 mergedSettings = await parser.mergeSettings(files)
-                logger.info("Loaded \(files.count) global settings files")
+                settingItems = computeSettingItems(from: files)
+                validationErrors = files.flatMap(\.validationErrors)
+                logger.info("Loaded \(files.count) global settings files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
             } catch {
                 logger.error("Failed to load global settings: \(error)")
                 errorMessage = "Failed to load settings: \(error.localizedDescription)"
@@ -115,6 +141,70 @@ final public class SettingsViewModel {
 
             isLoading = false
         }
+    }
+
+    /// Compute setting items with source tracking
+    private func computeSettingItems(from files: [SettingsFile]) -> [SettingItem] {
+        // Build a dictionary mapping keys to their source files (sorted by precedence)
+        var keyToSources: [String: [(SettingsFileType, AnyCodable)]] = [:]
+
+        for file in files {
+            let flattenedKeys = flattenDictionary(file.content)
+            for (key, value) in flattenedKeys {
+                if keyToSources[key] == nil {
+                    keyToSources[key] = []
+                }
+                keyToSources[key]?.append((file.type, value))
+            }
+        }
+
+        // Sort each key's sources by precedence and create SettingItems
+        var items: [SettingItem] = []
+
+        for (key, sources) in keyToSources {
+            let sortedSources = sources.sorted { $0.0.precedence < $1.0.precedence }
+
+            guard let lowestSource = sortedSources.first else { continue }
+
+            // The highest precedence source (last in sorted order) is the active one
+            let activeSource = sortedSources.last!
+
+            // Check if this setting was overridden
+            let overriddenBy = sortedSources.count > 1 ? activeSource.0 : nil
+
+            let item = SettingItem(
+                key: key,
+                value: activeSource.1,
+                valueType: SettingValueType(from: activeSource.1.value),
+                source: lowestSource.0,
+                overriddenBy: overriddenBy,
+                isDeprecated: false, // TODO: Implement deprecation checking
+                documentation: nil // TODO: Add documentation lookup
+            )
+
+            items.append(item)
+        }
+
+        return items.sorted { $0.key < $1.key }
+    }
+
+    /// Flatten a nested dictionary to dot-notation keys
+    private func flattenDictionary(_ dict: [String: AnyCodable], prefix: String = "") -> [String: AnyCodable] {
+        var result: [String: AnyCodable] = [:]
+
+        for (key, value) in dict {
+            let fullKey = prefix.isEmpty ? key : "\(prefix).\(key)"
+
+            if let nestedDict = value.value as? [String: Any] {
+                let nestedAnyCodable = nestedDict.mapValues { AnyCodable($0) }
+                let flattened = flattenDictionary(nestedAnyCodable, prefix: fullKey)
+                result.merge(flattened) { _, new in new }
+            } else {
+                result[fullKey] = value
+            }
+        }
+
+        return result
     }
 }
 

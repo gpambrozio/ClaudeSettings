@@ -45,20 +45,38 @@ public struct SettingsListView: View {
     @ViewBuilder
     private var settingsContent: some View {
         List(selection: $selectedKey) {
+            // Validation Errors Section (if any)
+            if !settingsViewModel.validationErrors.isEmpty {
+                Section {
+                    ForEach(settingsViewModel.validationErrors) { error in
+                        ValidationErrorRow(error: error)
+                    }
+                } header: {
+                    HStack {
+                        Label("Validation Errors", symbol: .exclamationmarkTriangle)
+                            .foregroundStyle(.red)
+                        Spacer()
+                        Text("\(settingsViewModel.validationErrors.count) errors")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+
+            // Settings Section
             Section {
-                ForEach(sortedSettingKeys, id: \.self) { key in
-                    SettingRow(
-                        key: key,
-                        value: settingsViewModel.mergedSettings[key]!,
-                        isSelected: selectedKey == key
+                ForEach(settingsViewModel.settingItems) { item in
+                    SettingItemRow(
+                        item: item,
+                        isSelected: selectedKey == item.key
                     )
-                    .tag(key)
+                    .tag(item.key)
                 }
             } header: {
                 HStack {
-                    Text("Merged Configuration")
+                    Text("Settings")
                     Spacer()
-                    Text("\(settingsViewModel.mergedSettings.count) settings")
+                    Text("\(settingsViewModel.settingItems.count) settings")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -77,23 +95,118 @@ public struct SettingsListView: View {
     }
 }
 
-/// Individual row displaying a setting key-value pair
-struct SettingRow: View {
-    let key: String
-    let value: AnyCodable
+/// Row displaying a validation error
+struct ValidationErrorRow: View {
+    let error: ValidationError
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            errorTypeIcon.image
+                .foregroundStyle(errorColor)
+                .font(.title3)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(error.type.rawValue.capitalized)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(errorColor)
+
+                    if let key = error.key {
+                        Text("·")
+                            .foregroundStyle(.secondary)
+                        Text(key)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text(error.message)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+
+                if let suggestion = error.suggestion {
+                    Text(suggestion)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var errorTypeIcon: Symbols {
+        switch error.type {
+        case .syntax:
+            return .exclamationmarkTriangle
+        case .deprecated:
+            return .clockArrowCirclepath
+        case .conflict:
+            return .exclamationmark2
+        case .permission:
+            return .lockFill
+        case .unknownKey:
+            return .questionmarkCircle
+        }
+    }
+
+    private var errorColor: Color {
+        switch error.type {
+        case .syntax,
+             .conflict:
+            return .red
+        case .deprecated:
+            return .orange
+        case .permission:
+            return .yellow
+        case .unknownKey:
+            return .blue
+        }
+    }
+}
+
+/// Individual row displaying a setting item with source information
+struct SettingItemRow: View {
+    let item: SettingItem
     let isSelected: Bool
 
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(key)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
+                HStack(spacing: 6) {
+                    Text(item.key)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(isSelected ? .primary : .secondary)
+
+                    if item.isDeprecated {
+                        Symbols.clockArrowCirclepath.image
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                    }
+
+                    if !item.isActive {
+                        Symbols.exclamationmarkTriangle.image
+                            .foregroundStyle(.yellow)
+                            .font(.caption)
+                    }
+                }
 
                 Text(valueDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+
+                HStack(spacing: 6) {
+                    sourceIndicator(for: item.source, label: "From")
+
+                    if let overriddenBy = item.overriddenBy {
+                        Symbols.arrowRight.image
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        sourceIndicator(for: overriddenBy, label: "Overridden by")
+                    }
+                }
             }
 
             Spacer()
@@ -103,8 +216,56 @@ struct SettingRow: View {
         .padding(.vertical, 4)
     }
 
+    @ViewBuilder
+    private func sourceIndicator(for type: SettingsFileType, label: String) -> some View {
+        HStack(spacing: 2) {
+            Circle()
+                .fill(sourceColor(for: type))
+                .frame(width: 6, height: 6)
+
+            Text(sourceLabel(for: type))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func sourceLabel(for type: SettingsFileType) -> String {
+        switch type {
+        case .globalSettings:
+            return "Global"
+        case .globalLocal:
+            return "Global Local"
+        case .projectSettings:
+            return "Project"
+        case .projectLocal:
+            return "Project Local"
+        case .enterpriseManaged:
+            return "Enterprise"
+        case .globalMemory,
+             .projectMemory,
+             .projectLocalMemory:
+            return "Memory"
+        }
+    }
+
+    private func sourceColor(for type: SettingsFileType) -> Color {
+        switch type {
+        case .enterpriseManaged:
+            return .purple
+        case .globalSettings,
+             .globalLocal,
+             .globalMemory:
+            return .blue
+        case .projectSettings,
+             .projectLocal,
+             .projectMemory,
+             .projectLocalMemory:
+            return .green
+        }
+    }
+
     private var valueDescription: String {
-        switch value.value {
+        switch item.value.value {
         case let string as String:
             return string
         case let bool as Bool:
@@ -135,19 +296,18 @@ struct SettingRow: View {
     }
 
     private var valueTypeInfo: (String, Color) {
-        switch value.value {
-        case is String:
+        switch item.valueType {
+        case .string:
             return ("string", .blue)
-        case is Bool:
+        case .boolean:
             return ("bool", .green)
-        case is Int,
-             is Double:
+        case .number:
             return ("number", .orange)
-        case is [Any]:
+        case .array:
             return ("array", .purple)
-        case is [String: Any]:
+        case .object:
             return ("object", .pink)
-        default:
+        case .null:
             return ("null", .gray)
         }
     }
