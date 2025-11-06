@@ -64,7 +64,8 @@ public actor FileWatcher {
             return
         }
 
-        FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        let queue = DispatchQueue(label: "com.claudesettings.filewatcher", qos: .background)
+        FSEventStreamSetDispatchQueue(stream, queue)
         FSEventStreamStart(stream)
         isWatching = true
 
