@@ -68,10 +68,10 @@ public actor ProjectScanner {
         }
 
         // Determine what settings files exist
-        let settingsJSON = claudeDir.appendingPathComponent("settings.json")
-        let settingsLocalJSON = claudeDir.appendingPathComponent("settings.local.json")
-        let claudeMd = projectPath.appendingPathComponent("CLAUDE.md")
-        let claudeLocalMd = projectPath.appendingPathComponent("CLAUDE.local.md")
+        let settingsJSON = SettingsFileType.projectSettings.path(in: projectPath)
+        let settingsLocalJSON = SettingsFileType.projectLocal.path(in: projectPath)
+        let claudeMd = SettingsFileType.projectMemory.path(in: projectPath)
+        let claudeLocalMd = SettingsFileType.projectLocalMemory.path(in: projectPath)
 
         let hasSharedSettings = await fileSystemManager.exists(at: settingsJSON)
         let hasLocalSettings = await fileSystemManager.exists(at: settingsLocalJSON)

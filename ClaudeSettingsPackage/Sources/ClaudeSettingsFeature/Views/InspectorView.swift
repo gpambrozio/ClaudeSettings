@@ -82,7 +82,7 @@ public struct InspectorView: View {
                             Text(formatValue(contribution.value))
                                 .font(.system(.body, design: .monospaced))
                                 .textSelection(.enabled)
-                                .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1.0)
+                                .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1)
                         }
                     }
 
@@ -152,7 +152,7 @@ public struct InspectorView: View {
                 Text(sourceLabel(for: item.source))
                     .font(.body)
 
-                Text(item.source.rawValue)
+                Text(item.source.filename)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

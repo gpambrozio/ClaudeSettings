@@ -44,8 +44,19 @@ final public class SettingsViewModel {
                 var files: [SettingsFile] = []
                 let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 
-                // Load global settings first (they form the base layer)
-                let globalSettingsPath = homeDirectory.appendingPathComponent(".claude/settings.json")
+                // Load enterprise managed settings first (highest precedence, cannot be overridden)
+                for enterprisePath in SettingsFileType.enterpriseManagedPaths(homeDirectory: homeDirectory) where await fileSystemManager.exists(at: enterprisePath) {
+                    let file = try await parser.parseSettingsFile(
+                        at: enterprisePath,
+                        type: .enterpriseManaged
+                    )
+                    files.append(file)
+                    logger.info("Loaded enterprise managed settings from: \(enterprisePath.path)")
+                    break // Only load the first found enterprise settings
+                }
+
+                // Load global settings (they form the base layer)
+                let globalSettingsPath = SettingsFileType.globalSettings.path(in: homeDirectory)
                 if await fileSystemManager.exists(at: globalSettingsPath) {
                     let file = try await parser.parseSettingsFile(
                         at: globalSettingsPath,
@@ -54,7 +65,7 @@ final public class SettingsViewModel {
                     files.append(file)
                 }
 
-                let globalLocalPath = homeDirectory.appendingPathComponent(".claude/settings.local.json")
+                let globalLocalPath = SettingsFileType.globalLocal.path(in: homeDirectory)
                 if await fileSystemManager.exists(at: globalLocalPath) {
                     let file = try await parser.parseSettingsFile(
                         at: globalLocalPath,
@@ -64,7 +75,7 @@ final public class SettingsViewModel {
                 }
 
                 // Load project settings (these override global settings)
-                let projectSettingsPath = project.claudeDirectory.appendingPathComponent("settings.json")
+                let projectSettingsPath = SettingsFileType.projectSettings.path(in: project.path)
                 if await fileSystemManager.exists(at: projectSettingsPath) {
                     let file = try await parser.parseSettingsFile(
                         at: projectSettingsPath,
@@ -73,7 +84,7 @@ final public class SettingsViewModel {
                     files.append(file)
                 }
 
-                let projectLocalPath = project.claudeDirectory.appendingPathComponent("settings.local.json")
+                let projectLocalPath = SettingsFileType.projectLocal.path(in: project.path)
                 if await fileSystemManager.exists(at: projectLocalPath) {
                     let file = try await parser.parseSettingsFile(
                         at: projectLocalPath,
@@ -108,10 +119,20 @@ final public class SettingsViewModel {
                 }
 
                 var files: [SettingsFile] = []
-
                 let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-                let globalSettingsPath = homeDirectory.appendingPathComponent(".claude/settings.json")
 
+                // Load enterprise managed settings if present
+                for enterprisePath in SettingsFileType.enterpriseManagedPaths(homeDirectory: homeDirectory) where await fileSystemManager.exists(at: enterprisePath) {
+                    let file = try await parser.parseSettingsFile(
+                        at: enterprisePath,
+                        type: .enterpriseManaged
+                    )
+                    files.append(file)
+                    logger.info("Loaded enterprise managed settings from: \(enterprisePath.path)")
+                    break
+                }
+
+                let globalSettingsPath = SettingsFileType.globalSettings.path(in: homeDirectory)
                 if await fileSystemManager.exists(at: globalSettingsPath) {
                     let file = try await parser.parseSettingsFile(
                         at: globalSettingsPath,
@@ -120,7 +141,7 @@ final public class SettingsViewModel {
                     files.append(file)
                 }
 
-                let globalLocalPath = homeDirectory.appendingPathComponent(".claude/settings.local.json")
+                let globalLocalPath = SettingsFileType.globalLocal.path(in: homeDirectory)
                 if await fileSystemManager.exists(at: globalLocalPath) {
                     let file = try await parser.parseSettingsFile(
                         at: globalLocalPath,

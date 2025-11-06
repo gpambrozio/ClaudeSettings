@@ -141,6 +141,7 @@ public actor SettingsParser {
 
     /// Deep merge two dictionaries (recursive)
     /// Arrays are concatenated (additive), objects are deep merged, other values are replaced
+    /// Per Claude Code docs: arrays accumulate across configs, deny rules take precedence over allow
     private func deepMerge(_ base: [String: Any], _ overlay: [String: Any]) -> [String: Any] {
         var result = base
 
@@ -154,9 +155,11 @@ public actor SettingsParser {
                 let existingArray = result[key] as? [Any],
                 let overlayArray = value as? [Any] {
                 // Concatenate arrays (settings are additive for arrays)
+                // Note: Deduplication is intentionally NOT done here to preserve
+                // the ability to track which config contributed which values
                 result[key] = existingArray + overlayArray
             } else {
-                // Replace other values
+                // Replace other values (higher precedence overrides lower)
                 result[key] = value
             }
         }
