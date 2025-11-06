@@ -4,18 +4,7 @@ public struct ContentView: View {
     @State private var projectListViewModel = ProjectListViewModel()
     @State private var sidebarSelection: SidebarSelection?
     @State private var selectedSettingKey: String?
-
-    // Create settings view model based on selection
-    private var settingsViewModel: SettingsViewModel? {
-        switch sidebarSelection {
-        case .globalSettings:
-            return SettingsViewModel(project: nil)
-        case let .project(project):
-            return SettingsViewModel(project: project)
-        case .none:
-            return nil
-        }
-    }
+    @State private var settingsViewModel: SettingsViewModel?
 
     public var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -25,10 +14,6 @@ public struct ContentView: View {
             // Content Area: Settings List
             if let viewModel = settingsViewModel {
                 SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedSettingKey)
-                    .id(sidebarSelection?.id) // Force refresh when selection changes
-                    .task {
-                        viewModel.loadSettings()
-                    }
             } else {
                 emptyContentState
             }
@@ -37,6 +22,9 @@ public struct ContentView: View {
             InspectorView(selectedKey: selectedSettingKey, settingsViewModel: settingsViewModel)
         }
         .navigationSplitViewStyle(.balanced)
+        .onChange(of: sidebarSelection) { _, newSelection in
+            handleSelectionChange(newSelection)
+        }
     }
 
     @ViewBuilder
@@ -55,6 +43,25 @@ public struct ContentView: View {
             } description: {
                 Text("Choose global settings or a project from the sidebar")
             }
+        }
+    }
+
+    private func handleSelectionChange(_ newSelection: SidebarSelection?) {
+        // Clear selected key when changing selections
+        selectedSettingKey = nil
+
+        // Create and load the appropriate ViewModel
+        switch newSelection {
+        case .globalSettings:
+            let viewModel = SettingsViewModel(project: nil)
+            settingsViewModel = viewModel
+            viewModel.loadSettings()
+        case let .project(project):
+            let viewModel = SettingsViewModel(project: project)
+            settingsViewModel = viewModel
+            viewModel.loadSettings()
+        case .none:
+            settingsViewModel = nil
         }
     }
 
