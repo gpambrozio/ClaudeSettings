@@ -128,7 +128,7 @@ final public class SettingsViewModel {
             }
         case let urlError as URLError:
             return "Network or file access error: \(urlError.localizedDescription)"
-        case let decodingError as DecodingError:
+        case is DecodingError:
             return "Settings file contains invalid data format. Please check the JSON syntax."
         default:
             // Log technical details but show generic message to user
