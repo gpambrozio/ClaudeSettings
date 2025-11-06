@@ -23,7 +23,11 @@
       "mcp__plugin_air-code_air-code",
       "Skill(SwiftDevelopment:swift-compile)",
       "Bash(scripts/xcodebuild.sh:*)",
-      "Bash(/Users/gustavoambrozio/Development/ClaudeCodePlugins/SwiftDevelopment/skills/swift-compile/scripts/xcodebuild.sh:*)"
+      "Bash(/Users/gustavoambrozio/Development/ClaudeCodePlugins/SwiftDevelopment/skills/swift-compile/scripts/xcodebuild.sh:*)",
+      "WebSearch",
+      "WebFetch(domain:asciiwwdc.com)",
+      "Bash(python3:*)",
+      "WebFetch(domain:code.claude.com)"
     ],
     "defaultMode": "acceptEdits"
   },
