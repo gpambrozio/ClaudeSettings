@@ -309,12 +309,13 @@ struct SettingItemRow: View {
     }
 
     private var valueTypeInfo: (String, Color) {
-        switch item.valueType {
+        switch item.value {
         case .string:
             return ("string", .blue)
-        case .boolean:
+        case .bool:
             return ("bool", .green)
-        case .number:
+        case .int,
+             .double:
             return ("number", .orange)
         case .array:
             return ("array", .purple)
@@ -335,14 +336,12 @@ struct SettingItemRow: View {
         SettingItem(
             key: "editor.fontSize",
             value: .int(14),
-            valueType: .number,
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
         ),
         SettingItem(
             key: "editor.theme",
             value: .string("dark"),
-            valueType: .string,
             source: .projectSettings,
             overriddenBy: .projectLocal,
             contributions: [
@@ -353,7 +352,6 @@ struct SettingItemRow: View {
         SettingItem(
             key: "files.exclude",
             value: .array([.string("node_modules"), .string(".git"), .string("dist")]),
-            valueType: .array,
             source: .globalSettings,
             contributions: [
                 SourceContribution(source: .globalSettings, value: .array([.string("node_modules"), .string(".git")])),
@@ -363,7 +361,6 @@ struct SettingItemRow: View {
         SettingItem(
             key: "deprecated.setting",
             value: .bool(true),
-            valueType: .boolean,
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true,
@@ -454,7 +451,6 @@ struct SettingItemRow: View {
         item: SettingItem(
             key: "editor.theme",
             value: .string("dark"),
-            valueType: .string,
             source: .projectSettings,
             contributions: [SourceContribution(source: .projectSettings, value: .string("dark"))]
         ),
@@ -468,7 +464,6 @@ struct SettingItemRow: View {
         item: SettingItem(
             key: "editor.fontSize",
             value: .int(14),
-            valueType: .number,
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
         ),
@@ -482,7 +477,6 @@ struct SettingItemRow: View {
         item: SettingItem(
             key: "files.exclude",
             value: .array([.string("node_modules"), .string(".git"), .string("dist")]),
-            valueType: .array,
             source: .globalSettings,
             contributions: [
                 SourceContribution(source: .globalSettings, value: .array([.string("node_modules"), .string(".git")])),
@@ -499,7 +493,6 @@ struct SettingItemRow: View {
         item: SettingItem(
             key: "editor.tabSize",
             value: .int(2),
-            valueType: .number,
             source: .globalSettings,
             overriddenBy: .projectLocal,
             contributions: [
@@ -517,7 +510,6 @@ struct SettingItemRow: View {
         item: SettingItem(
             key: "deprecated.setting",
             value: .bool(true),
-            valueType: .boolean,
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true
@@ -532,7 +524,6 @@ struct SettingItemRow: View {
         item: SettingItem(
             key: "editor.fontSize",
             value: .int(16),
-            valueType: .number,
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(16))]
         ),

@@ -11,12 +11,11 @@ public struct SourceContribution: Sendable {
     }
 }
 
-/// Represents a single setting with its value, type, and source information
+/// Represents a single setting with its value and source information
 public struct SettingItem: Identifiable, Sendable {
     public let id: UUID
     public let key: String
     public let value: SettingValue
-    public let valueType: SettingValueType
     public let source: SettingsFileType
     public let overriddenBy: SettingsFileType?
     public let contributions: [SourceContribution]
@@ -27,7 +26,6 @@ public struct SettingItem: Identifiable, Sendable {
         id: UUID = UUID(),
         key: String,
         value: SettingValue,
-        valueType: SettingValueType,
         source: SettingsFileType,
         overriddenBy: SettingsFileType? = nil,
         contributions: [SourceContribution] = [],
@@ -37,7 +35,6 @@ public struct SettingItem: Identifiable, Sendable {
         self.id = id
         self.key = key
         self.value = value
-        self.valueType = valueType
         self.source = source
         self.overriddenBy = overriddenBy
         self.contributions = contributions
@@ -53,54 +50,9 @@ public struct SettingItem: Identifiable, Sendable {
     /// Whether this setting is additive (combines values from multiple sources)
     /// True for array types that have multiple contributions
     public var isAdditive: Bool {
-        valueType == .array && contributions.count > 1
-    }
-}
-
-/// Type of a setting value
-public enum SettingValueType: String, Sendable {
-    case string
-    case boolean
-    case number
-    case array
-    case object
-    case null
-
-    /// Initialize from a value
-    public init(from value: Any) {
-        switch value {
-        case is String:
-            self = .string
-        case is Bool:
-            self = .boolean
-        case is Int,
-             is Double,
-             is Float:
-            self = .number
-        case is [Any]:
-            self = .array
-        case is [String: Any]:
-            self = .object
-        default:
-            self = .null
+        if case .array = value {
+            return contributions.count > 1
         }
-    }
-
-    /// Display color for this type
-    public var color: String {
-        switch self {
-        case .string:
-            return "blue"
-        case .boolean:
-            return "green"
-        case .number:
-            return "orange"
-        case .array:
-            return "purple"
-        case .object:
-            return "pink"
-        case .null:
-            return "gray"
-        }
+        return false
     }
 }

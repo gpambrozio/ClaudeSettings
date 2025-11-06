@@ -33,7 +33,7 @@ public struct InspectorView: View {
                                 .font(.system(.body, design: .monospaced))
                                 .textSelection(.enabled)
 
-                            let typeInfo = getTypeInfo(item.valueType)
+                            let typeInfo = getTypeInfo(item.value)
                             Text(typeInfo.0)
                                 .font(.caption)
                                 .padding(.horizontal, 8)
@@ -227,13 +227,14 @@ public struct InspectorView: View {
         value.formatted()
     }
 
-    private func getTypeInfo(_ valueType: SettingValueType) -> (String, Color) {
-        switch valueType {
+    private func getTypeInfo(_ value: SettingValue) -> (String, Color) {
+        switch value {
         case .string:
             return ("String", .blue)
-        case .boolean:
+        case .bool:
             return ("Boolean", .green)
-        case .number:
+        case .int,
+             .double:
             return ("Number", .orange)
         case .array:
             return ("Array", .purple)
@@ -263,7 +264,6 @@ public struct InspectorView: View {
         SettingItem(
             key: "editor.fontSize",
             value: .int(16),
-            valueType: .number,
             source: .globalSettings,
             contributions: [
                 SourceContribution(source: .globalSettings, value: .int(14)),
@@ -274,7 +274,6 @@ public struct InspectorView: View {
         SettingItem(
             key: "editor.theme",
             value: .string("dark"),
-            valueType: .string,
             source: .projectSettings,
             contributions: [SourceContribution(source: .projectSettings, value: .string("dark"))]
         ),
@@ -292,7 +291,6 @@ public struct InspectorView: View {
         SettingItem(
             key: "files.exclude",
             value: .array([.string("node_modules"), .string(".git"), .string("dist"), .string("build")]),
-            valueType: .array,
             source: .globalSettings,
             contributions: [
                 SourceContribution(source: .globalSettings, value: .array([.string("node_modules"), .string(".git")])),
@@ -316,7 +314,6 @@ public struct InspectorView: View {
         SettingItem(
             key: "deprecated.setting",
             value: .bool(true),
-            valueType: .boolean,
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true,
@@ -333,7 +330,6 @@ public struct InspectorView: View {
         SettingItem(
             key: "editor.config",
             value: .object(["tabSize": .int(2), "insertSpaces": .bool(true), "detectIndentation": .bool(false)]),
-            valueType: .object,
             source: .projectSettings,
             contributions: [
                 SourceContribution(

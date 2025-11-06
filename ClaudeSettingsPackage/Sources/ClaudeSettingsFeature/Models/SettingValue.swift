@@ -56,25 +56,6 @@ public enum SettingValue: Codable, Sendable, Hashable {
         }
     }
 
-    /// Get the type of this value
-    public var valueType: SettingValueType {
-        switch self {
-        case .string:
-            return .string
-        case .int,
-             .double:
-            return .number
-        case .bool:
-            return .boolean
-        case .array:
-            return .array
-        case .object:
-            return .object
-        case .null:
-            return .null
-        }
-    }
-
     /// Convert to Any for compatibility with existing code
     public var asAny: Any {
         switch self {
