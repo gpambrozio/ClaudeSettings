@@ -6,47 +6,42 @@ import SwiftUI
 @MainActor
 @Observable
 final public class SettingsViewModel {
-    private let fileSystemManager = FileSystemManager()
+    private let fileSystemManager: FileSystemManager
     private let logger = Logger(label: "com.claudesettings.settings")
 
     public var settingsFiles: [SettingsFile] = []
-    public var mergedSettings: [String: AnyCodable] = [:]
     public var settingItems: [SettingItem] = []
     public var validationErrors: [ValidationError] = []
     public var isLoading = false
     public var errorMessage: String?
 
-    private var settingsParser: SettingsParser?
+    private let settingsParser: SettingsParser
     private let project: ClaudeProject?
 
-    public init(project: ClaudeProject? = nil) {
+    public init(project: ClaudeProject? = nil, fileSystemManager: FileSystemManager = FileSystemManager()) {
         self.project = project
+        self.fileSystemManager = fileSystemManager
         self.settingsParser = SettingsParser(fileSystemManager: fileSystemManager)
     }
 
     /// Load all settings files for the current project
     public func loadSettings() {
-        guard let project else {
-            logger.warning("No project set, loading global settings only")
-            loadGlobalSettings()
-            return
-        }
+        loadSettingsFiles(includeProject: project != nil, projectPath: project?.path)
+    }
 
+    /// Load settings files with optional project scope
+    private func loadSettingsFiles(includeProject: Bool, projectPath: URL?) {
         isLoading = true
         errorMessage = nil
 
         Task {
             do {
-                guard let parser = settingsParser else {
-                    throw SettingsViewModelError.parserNotInitialized
-                }
-
                 var files: [SettingsFile] = []
                 let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 
                 // Load enterprise managed settings first (highest precedence, cannot be overridden)
                 for enterprisePath in SettingsFileType.enterpriseManagedPaths(homeDirectory: homeDirectory) where await fileSystemManager.exists(at: enterprisePath) {
-                    let file = try await parser.parseSettingsFile(
+                    let file = try await settingsParser.parseSettingsFile(
                         at: enterprisePath,
                         type: .enterpriseManaged
                     )
@@ -58,7 +53,7 @@ final public class SettingsViewModel {
                 // Load global settings (they form the base layer)
                 let globalSettingsPath = SettingsFileType.globalSettings.path(in: homeDirectory)
                 if await fileSystemManager.exists(at: globalSettingsPath) {
-                    let file = try await parser.parseSettingsFile(
+                    let file = try await settingsParser.parseSettingsFile(
                         at: globalSettingsPath,
                         type: .globalSettings
                     )
@@ -67,37 +62,40 @@ final public class SettingsViewModel {
 
                 let globalLocalPath = SettingsFileType.globalLocal.path(in: homeDirectory)
                 if await fileSystemManager.exists(at: globalLocalPath) {
-                    let file = try await parser.parseSettingsFile(
+                    let file = try await settingsParser.parseSettingsFile(
                         at: globalLocalPath,
                         type: .globalLocal
                     )
                     files.append(file)
                 }
 
-                // Load project settings (these override global settings)
-                let projectSettingsPath = SettingsFileType.projectSettings.path(in: project.path)
-                if await fileSystemManager.exists(at: projectSettingsPath) {
-                    let file = try await parser.parseSettingsFile(
-                        at: projectSettingsPath,
-                        type: .projectSettings
-                    )
-                    files.append(file)
-                }
+                // Load project settings if requested
+                if includeProject, let projectPath {
+                    let projectSettingsPath = SettingsFileType.projectSettings.path(in: projectPath)
+                    if await fileSystemManager.exists(at: projectSettingsPath) {
+                        let file = try await settingsParser.parseSettingsFile(
+                            at: projectSettingsPath,
+                            type: .projectSettings
+                        )
+                        files.append(file)
+                    }
 
-                let projectLocalPath = SettingsFileType.projectLocal.path(in: project.path)
-                if await fileSystemManager.exists(at: projectLocalPath) {
-                    let file = try await parser.parseSettingsFile(
-                        at: projectLocalPath,
-                        type: .projectLocal
-                    )
-                    files.append(file)
+                    let projectLocalPath = SettingsFileType.projectLocal.path(in: projectPath)
+                    if await fileSystemManager.exists(at: projectLocalPath) {
+                        let file = try await settingsParser.parseSettingsFile(
+                            at: projectLocalPath,
+                            type: .projectLocal
+                        )
+                        files.append(file)
+                    }
                 }
 
                 settingsFiles = files
-                mergedSettings = await parser.mergeSettings(files)
                 settingItems = computeSettingItems(from: files)
                 validationErrors = files.flatMap(\.validationErrors)
-                logger.info("Loaded \(files.count) settings files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
+
+                let scope = includeProject ? "settings" : "global settings"
+                logger.info("Loaded \(files.count) \(scope) files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
             } catch {
                 logger.error("Failed to load settings: \(error)")
                 errorMessage = "Failed to load settings: \(error.localizedDescription)"
@@ -107,65 +105,8 @@ final public class SettingsViewModel {
         }
     }
 
-    /// Load only global settings
-    private func loadGlobalSettings() {
-        isLoading = true
-        errorMessage = nil
-
-        Task {
-            do {
-                guard let parser = settingsParser else {
-                    throw SettingsViewModelError.parserNotInitialized
-                }
-
-                var files: [SettingsFile] = []
-                let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-
-                // Load enterprise managed settings if present
-                for enterprisePath in SettingsFileType.enterpriseManagedPaths(homeDirectory: homeDirectory) where await fileSystemManager.exists(at: enterprisePath) {
-                    let file = try await parser.parseSettingsFile(
-                        at: enterprisePath,
-                        type: .enterpriseManaged
-                    )
-                    files.append(file)
-                    logger.info("Loaded enterprise managed settings from: \(enterprisePath.path)")
-                    break
-                }
-
-                let globalSettingsPath = SettingsFileType.globalSettings.path(in: homeDirectory)
-                if await fileSystemManager.exists(at: globalSettingsPath) {
-                    let file = try await parser.parseSettingsFile(
-                        at: globalSettingsPath,
-                        type: .globalSettings
-                    )
-                    files.append(file)
-                }
-
-                let globalLocalPath = SettingsFileType.globalLocal.path(in: homeDirectory)
-                if await fileSystemManager.exists(at: globalLocalPath) {
-                    let file = try await parser.parseSettingsFile(
-                        at: globalLocalPath,
-                        type: .globalLocal
-                    )
-                    files.append(file)
-                }
-
-                settingsFiles = files
-                mergedSettings = await parser.mergeSettings(files)
-                settingItems = computeSettingItems(from: files)
-                validationErrors = files.flatMap(\.validationErrors)
-                logger.info("Loaded \(files.count) global settings files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
-            } catch {
-                logger.error("Failed to load global settings: \(error)")
-                errorMessage = "Failed to load settings: \(error.localizedDescription)"
-            }
-
-            isLoading = false
-        }
-    }
-
     /// Compute setting items with source tracking
-    private func computeSettingItems(from files: [SettingsFile]) -> [SettingItem] {
+    func computeSettingItems(from files: [SettingsFile]) -> [SettingItem] {
         // Build a dictionary mapping keys to their source files (sorted by precedence)
         var keyToSources: [String: [(SettingsFileType, AnyCodable)]] = [:]
 
@@ -185,10 +126,10 @@ final public class SettingsViewModel {
         for (key, sources) in keyToSources {
             let sortedSources = sources.sorted { $0.0.precedence < $1.0.precedence }
 
-            guard let lowestSource = sortedSources.first else { continue }
+            guard
+                let lowestSource = sortedSources.first,
+                let activeSource = sortedSources.last else { continue }
 
-            // The highest precedence source (last in sorted order) is the active one
-            let activeSource = sortedSources.last!
             let valueType = SettingValueType(from: activeSource.1.value)
 
             // For arrays, settings are additive across sources
@@ -243,17 +184,5 @@ final public class SettingsViewModel {
         }
 
         return result
-    }
-}
-
-/// Errors that can occur in SettingsViewModel
-enum SettingsViewModelError: LocalizedError {
-    case parserNotInitialized
-
-    var errorDescription: String? {
-        switch self {
-        case .parserNotInitialized:
-            return "Settings parser not initialized"
-        }
     }
 }

@@ -2,29 +2,32 @@ import Foundation
 
 /// Enum representing the different types of Claude Code settings files
 /// with their precedence in the configuration hierarchy
-public enum SettingsFileType: String, Codable, CaseIterable, Sendable, Hashable {
-    case enterpriseManaged
+///
+/// Cases are ordered from lowest to highest precedence.
+/// The raw Int value represents the precedence level (higher = higher precedence).
+public enum SettingsFileType: Int, Codable, CaseIterable, Sendable, Hashable {
+    // Memory files (lowest precedence)
+    case globalMemory = 0
+    case projectMemory
+    case projectLocalMemory
+
+    // Settings files (higher precedence)
     case globalSettings
     case globalLocal
     case projectSettings
     case projectLocal
-    case globalMemory
-    case projectMemory
-    case projectLocalMemory
+
+    // Enterprise managed (highest precedence)
+    case enterpriseManaged
 
     /// Precedence level (higher number = higher precedence)
+    ///
+    /// Settings are merged according to this hierarchy, with higher precedence values overriding lower ones.
     /// Based on Claude Code docs: enterprise > project-local > project-shared > global-local > global
+    ///
+    /// The precedence is the enum's raw Int value, determined by the case declaration order.
     public var precedence: Int {
-        switch self {
-        case .enterpriseManaged: return 100 // Highest: cannot be overridden
-        case .projectLocal: return 80 // Project-specific personal settings
-        case .projectSettings: return 60 // Team-shared project settings
-        case .globalLocal: return 40 // Personal global settings
-        case .globalSettings: return 20 // Global defaults (lowest)
-        case .projectLocalMemory: return 15 // Memory files (lower than settings)
-        case .projectMemory: return 10
-        case .globalMemory: return 5
-        }
+        rawValue
     }
 
     /// Whether this file type is typically checked into version control

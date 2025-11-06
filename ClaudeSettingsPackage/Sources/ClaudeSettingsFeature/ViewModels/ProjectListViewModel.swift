@@ -6,16 +6,17 @@ import SwiftUI
 @MainActor
 @Observable
 final public class ProjectListViewModel {
-    private let fileSystemManager = FileSystemManager()
+    private let fileSystemManager: FileSystemManager
     private let logger = Logger(label: "com.claudesettings.projectlist")
 
     public var projects: [ClaudeProject] = []
     public var isLoading = false
     public var errorMessage: String?
 
-    private var projectScanner: ProjectScanner?
+    private let projectScanner: ProjectScanner
 
-    public init() {
+    public init(fileSystemManager: FileSystemManager = FileSystemManager()) {
+        self.fileSystemManager = fileSystemManager
         self.projectScanner = ProjectScanner(fileSystemManager: fileSystemManager)
     }
 
@@ -26,11 +27,7 @@ final public class ProjectListViewModel {
 
         Task {
             do {
-                guard let scanner = projectScanner else {
-                    throw ProjectListError.scannerNotInitialized
-                }
-
-                let foundProjects = try await scanner.scanProjects()
+                let foundProjects = try await projectScanner.scanProjects()
                 projects = foundProjects.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
                 logger.info("Loaded \(projects.count) projects")
             } catch {
@@ -45,17 +42,5 @@ final public class ProjectListViewModel {
     /// Reload projects
     public func refresh() {
         scanProjects()
-    }
-}
-
-/// Errors that can occur in ProjectListViewModel
-enum ProjectListError: LocalizedError {
-    case scannerNotInitialized
-
-    var errorDescription: String? {
-        switch self {
-        case .scannerNotInitialized:
-            return "Project scanner not initialized"
-        }
     }
 }

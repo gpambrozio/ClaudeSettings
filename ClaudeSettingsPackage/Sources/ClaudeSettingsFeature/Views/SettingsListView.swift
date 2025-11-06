@@ -15,7 +15,7 @@ public struct SettingsListView: View {
                 } description: {
                     Text(errorMessage)
                 }
-            } else if settingsViewModel.mergedSettings.isEmpty {
+            } else if settingsViewModel.settingItems.isEmpty {
                 ContentUnavailableView {
                     Label("No Settings", symbol: .docText)
                 } description: {
@@ -83,10 +83,6 @@ public struct SettingsListView: View {
             }
         }
         .searchable(text: .constant(""), prompt: "Search settings...")
-    }
-
-    private var sortedSettingKeys: [String] {
-        settingsViewModel.mergedSettings.keys.sorted()
     }
 
     public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>) {
@@ -335,12 +331,6 @@ struct SettingItemRow: View {
 #Preview("Settings List - With Data") {
     @Previewable @State var selectedKey: String?
     let viewModel = SettingsViewModel(project: nil)
-    viewModel.mergedSettings = [
-        "editor.fontSize": AnyCodable(14),
-        "editor.theme": AnyCodable("dark"),
-        "files.exclude": AnyCodable(["node_modules", ".git", "dist"]),
-        "deprecated.setting": AnyCodable(true),
-    ]
     viewModel.settingItems = [
         SettingItem(
             key: "editor.fontSize",

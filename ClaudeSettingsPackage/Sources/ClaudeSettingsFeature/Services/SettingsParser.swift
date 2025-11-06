@@ -123,47 +123,4 @@ public actor SettingsParser {
 
         return errors
     }
-
-    /// Merge multiple settings files according to precedence
-    public func mergeSettings(_ files: [SettingsFile]) -> [String: AnyCodable] {
-        // Sort by precedence (lowest first, so higher precedence overwrites)
-        let sortedFiles = files.sorted { $0.type.precedence < $1.type.precedence }
-
-        var merged: [String: Any] = [:]
-
-        for file in sortedFiles {
-            let nativeContent = file.content.mapValues(\.value)
-            merged = deepMerge(merged, nativeContent)
-        }
-
-        return merged.mapValues { AnyCodable($0) }
-    }
-
-    /// Deep merge two dictionaries (recursive)
-    /// Arrays are concatenated (additive), objects are deep merged, other values are replaced
-    /// Per Claude Code docs: arrays accumulate across configs, deny rules take precedence over allow
-    private func deepMerge(_ base: [String: Any], _ overlay: [String: Any]) -> [String: Any] {
-        var result = base
-
-        for (key, value) in overlay {
-            if
-                let existingDict = result[key] as? [String: Any],
-                let overlayDict = value as? [String: Any] {
-                // Recursively merge nested objects
-                result[key] = deepMerge(existingDict, overlayDict)
-            } else if
-                let existingArray = result[key] as? [Any],
-                let overlayArray = value as? [Any] {
-                // Concatenate arrays (settings are additive for arrays)
-                // Note: Deduplication is intentionally NOT done here to preserve
-                // the ability to track which config contributed which values
-                result[key] = existingArray + overlayArray
-            } else {
-                // Replace other values (higher precedence overrides lower)
-                result[key] = value
-            }
-        }
-
-        return result
-    }
 }

@@ -105,7 +105,8 @@ public actor FileWatcher {
     }
 
     deinit {
-        // Note: We can't call async methods in deinit
-        // The caller should explicitly call stopWatching() before releasing
+        // Note: Cannot access actor-isolated properties from deinit
+        // Callers must explicitly call stopWatching() before releasing
+        // FSEventStream cleanup requires actor isolation, which deinit doesn't have
     }
 }
