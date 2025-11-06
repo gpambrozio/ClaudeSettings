@@ -344,11 +344,11 @@ Toolbar Actions:
 ### Phase 1: MVP - Core Functionality (Weeks 1-6)
 
 #### Milestone 1.1: Project Setup & Foundation (Week 1)
-- [ ] Initialize Xcode project with SwiftUI App lifecycle
-- [ ] Set up Swift Package Manager dependencies
-- [ ] Configure build settings and deployment targets
+- [x] Initialize Xcode project with SwiftUI App lifecycle
+- [x] Set up Swift Package Manager dependencies
+- [x] Configure build settings and deployment targets
 - [ ] Implement basic MVVM structure
-- [ ] Set up Git repository and CI/CD placeholder
+- [x] Set up Git repository and CI/CD placeholder
 
 #### Milestone 1.2: File System Layer (Weeks 2-3)
 - [ ] Implement FileSystemManager with security-scoped bookmarks
