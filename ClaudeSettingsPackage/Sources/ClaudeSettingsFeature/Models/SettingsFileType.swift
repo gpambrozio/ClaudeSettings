@@ -110,24 +110,18 @@ public enum SettingsFileType: Int, Codable, CaseIterable, Sendable, Hashable {
     /// - Returns: The full URL path to the settings file
     public func path(in baseDirectory: URL) -> URL {
         switch self {
-        case .enterpriseManaged:
-            // Enterprise managed files are in .claude subdirectory
-            return baseDirectory.appendingPathComponent(".claude/\(filename)")
-        case .globalSettings,
-             .globalLocal:
-            // Global settings are in ~/.claude/ subdirectory
-            return baseDirectory.appendingPathComponent(".claude/\(filename)")
-        case .projectSettings,
-             .projectLocal:
-            // Project settings are in .claude/ subdirectory
-            return baseDirectory.appendingPathComponent(".claude/\(filename)")
-        case .globalMemory:
-            // Global memory file is at root of home directory
-            return baseDirectory.appendingPathComponent(filename)
-        case .projectMemory,
+        case .globalMemory,
+             .projectMemory,
              .projectLocalMemory:
-            // Project memory files are at root of project directory
+            // Memory files are at root of directory
             return baseDirectory.appendingPathComponent(filename)
+        case .enterpriseManaged,
+             .globalSettings,
+             .globalLocal,
+             .projectSettings,
+             .projectLocal:
+            // Settings files are in .claude subdirectory
+            return baseDirectory.appendingPathComponent(".claude/\(filename)")
         }
     }
 
