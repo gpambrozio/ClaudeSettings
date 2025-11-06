@@ -35,8 +35,15 @@ public actor ProjectScanner {
         logger.debug("Found \(projectsDict.count) projects in config")
 
         var projects: [ClaudeProject] = []
+        let homeDirectoryPath = homeDirectory.path
 
         for (projectPath, _) in projectsDict {
+            // Skip home directory as it represents global config, not a project
+            if projectPath == homeDirectoryPath {
+                logger.debug("Skipping home directory (global config): \(projectPath)")
+                continue
+            }
+
             let projectURL = URL(fileURLWithPath: projectPath)
             if let project = await scanProjectDirectory(projectURL) {
                 projects.append(project)
