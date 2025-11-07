@@ -142,6 +142,7 @@ final public class SettingsViewModel {
         await debouncer.cancel()
         await fileWatcher?.stopWatching()
         fileWatcher = nil
+        consecutiveReloadFailures.removeAll()
     }
 
     /// Handle file system changes with debouncing to prevent excessive reloads
@@ -204,6 +205,13 @@ final public class SettingsViewModel {
                 errorMessage = "Unable to reload \(url.lastPathComponent): \(error.localizedDescription)"
             }
         }
+    }
+
+    // MARK: - Testing Support
+
+    /// Internal test-only method to trigger file reload (exposed for testing)
+    func _testReloadChangedFile(at url: URL) async {
+        await reloadChangedFile(at: url)
     }
 
     /// Convert technical errors into user-friendly messages

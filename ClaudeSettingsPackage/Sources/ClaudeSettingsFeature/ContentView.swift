@@ -5,6 +5,7 @@ public struct ContentView: View {
     @State private var sidebarSelection: SidebarSelection?
     @State private var selectedSettingKey: String?
     @State private var settingsViewModel: SettingsViewModel?
+    @State private var selectionChangeTask: Task<Void, Never>?
 
     public var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -23,8 +24,11 @@ public struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .onChange(of: sidebarSelection) { _, newSelection in
+            // Cancel any in-flight selection change to prevent race conditions
+            selectionChangeTask?.cancel()
+
             // onChange requires synchronous callback, so wrap async operation in Task
-            Task {
+            selectionChangeTask = Task {
                 await handleSelectionChange(newSelection)
             }
         }
@@ -58,6 +62,9 @@ public struct ContentView: View {
         if let oldViewModel = settingsViewModel {
             await oldViewModel.stopFileWatcher()
         }
+
+        // Check if task was cancelled during cleanup
+        guard !Task.isCancelled else { return }
 
         // Create and load the appropriate ViewModel
         switch newSelection {

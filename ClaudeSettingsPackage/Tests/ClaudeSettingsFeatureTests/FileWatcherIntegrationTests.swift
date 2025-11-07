@@ -26,13 +26,13 @@ struct FileWatcherIntegrationTests {
         let settingsFile = try await SettingsParser(fileSystemManager: FileSystemManager()).parseSettingsFile(at: testFile, type: .globalSettings)
         viewModel.settingsFiles = [settingsFile]
 
-        // When: File becomes invalid (simulating corruption or transient issues)
-        let invalidJSON = "{ invalid json"
-        try invalidJSON.write(to: testFile, atomically: true, encoding: .utf8)
+        // When: File becomes unreadable (simulating permission issues)
+        // Make file unreadable by removing read permissions
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: testFile.path)
 
         // Simulate reload attempts that fail
         for attempt in 1...3 {
-            await viewModel.reloadChangedFile(at: testFile)
+            await viewModel._testReloadChangedFile(at: testFile)
 
             // After 3 failures, error message should be set
             if attempt >= 3 {
@@ -43,7 +43,8 @@ struct FileWatcherIntegrationTests {
             }
         }
 
-        // Cleanup
+        // Cleanup: restore permissions before deleting
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: testFile.path)
         try? FileManager.default.removeItem(at: testFile)
     }
 
@@ -68,30 +69,31 @@ struct FileWatcherIntegrationTests {
         viewModel.settingsFiles = [settingsFile]
 
         // When: File fails twice, then succeeds
-        let invalidJSON = "{ invalid"
-        try invalidJSON.write(to: testFile, atomically: true, encoding: .utf8)
-        await viewModel.reloadChangedFile(at: testFile)
-        await viewModel.reloadChangedFile(at: testFile)
+        // Make file unreadable
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: testFile.path)
+        await viewModel._testReloadChangedFile(at: testFile)
+        await viewModel._testReloadChangedFile(at: testFile)
 
         // Should not show error yet (only 2 failures)
         #expect(viewModel.errorMessage == nil, "Should not show error for 2 failures")
 
-        // Fix the file
-        try validJSON.write(to: testFile, atomically: true, encoding: .utf8)
-        await viewModel.reloadChangedFile(at: testFile)
+        // Fix the file by restoring permissions
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: testFile.path)
+        await viewModel._testReloadChangedFile(at: testFile)
 
         // Should succeed and reset counter
         #expect(viewModel.errorMessage == nil, "Should clear error on success")
 
         // Break it again - should take another 3 failures to show error
-        try invalidJSON.write(to: testFile, atomically: true, encoding: .utf8)
-        await viewModel.reloadChangedFile(at: testFile)
-        await viewModel.reloadChangedFile(at: testFile)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: testFile.path)
+        await viewModel._testReloadChangedFile(at: testFile)
+        await viewModel._testReloadChangedFile(at: testFile)
 
         // Still shouldn't show error (counter was reset)
         #expect(viewModel.errorMessage == nil, "Counter should have reset after successful reload")
 
-        // Cleanup
+        // Cleanup: restore permissions before deleting
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: testFile.path)
         try? FileManager.default.removeItem(at: testFile)
     }
 
@@ -121,7 +123,7 @@ struct FileWatcherIntegrationTests {
 
         // When: File is deleted
         try FileManager.default.removeItem(at: testFile)
-        await viewModel.reloadChangedFile(at: testFile)
+        await viewModel._testReloadChangedFile(at: testFile)
 
         // Then: File should be removed from the list
         #expect(viewModel.settingsFiles.isEmpty, "Should have removed deleted file")
@@ -173,12 +175,5 @@ struct FileWatcherIntegrationTests {
 
         // Then: Should complete without crashing
         #expect(true, "Multiple stopFileWatcher calls should be safe")
-    }
-}
-
-/// Extension to expose internal method for testing
-extension SettingsViewModel {
-    func reloadChangedFile(at url: URL) async {
-        await reloadChangedFile(at: url)
     }
 }

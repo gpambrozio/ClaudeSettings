@@ -17,6 +17,10 @@ public actor Debouncer {
 
     public init() { }
 
+    deinit {
+        task?.cancel()
+    }
+
     /// Debounce an operation by canceling any pending execution and scheduling a new one
     ///
     /// - Parameters:
