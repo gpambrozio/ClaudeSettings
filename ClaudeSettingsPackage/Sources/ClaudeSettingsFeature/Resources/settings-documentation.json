@@ -14,7 +14,8 @@
           "examples": [
             {
               "code": "{\n  \"model\": \"claude-sonnet-4-5-20250929\"\n}",
-              "description": "Set specific model version"
+              "description": "Set specific model version",
+              "id": "32c2fe51-e649-49e3-b985-bbae152b142c"
             }
           ]
         },
@@ -31,19 +32,24 @@
           "examples": [
             {
               "code": "{\n  \"statusLine\": {\n    \"enabled\": true,\n    \"format\": \"custom\"\n  }\n}",
-              "description": "Enable custom status line format"
+              "description": "Enable custom status line format",
+              "id": "4af77421-8c04-4d66-af84-d44c709fd0fb"
             }
           ]
         },
         {
           "key": "forceLoginMethod",
           "type": "string",
-          "enumValues": ["claudeai", "console"],
+          "enumValues": [
+            "claudeai",
+            "console"
+          ],
           "description": "Restrict authentication to specific account types.",
           "examples": [
             {
               "code": "{\n  \"forceLoginMethod\": \"console\"\n}",
-              "description": "Force console login method"
+              "description": "Force console login method",
+              "id": "c2eef542-7e9b-4176-a269-f4d945eb7dde"
             }
           ]
         }
@@ -58,11 +64,14 @@
           "key": "apiKeyHelper",
           "type": "string",
           "description": "Custom script that generates authentication credentials. The script should output credentials to stdout.",
-          "relatedEnvVars": ["CLAUDE_CODE_API_KEY_HELPER_TTL_MS"],
+          "relatedEnvVars": [
+            "CLAUDE_CODE_API_KEY_HELPER_TTL_MS"
+          ],
           "examples": [
             {
               "code": "{\n  \"apiKeyHelper\": \"/usr/local/bin/get-claude-token.sh\"\n}",
-              "description": "Use custom script for authentication"
+              "description": "Use custom script for authentication",
+              "id": "0de23147-16e5-467a-896a-8e82e36368f4"
             }
           ]
         },
@@ -74,7 +83,8 @@
           "examples": [
             {
               "code": "{\n  \"forceLoginOrgUUID\": \"12345678-1234-1234-1234-123456789abc\"\n}",
-              "description": "Auto-select organization"
+              "description": "Auto-select organization",
+              "id": "ae9a0a99-edfc-4f76-82de-7efdb794b1da"
             }
           ]
         }
@@ -93,7 +103,8 @@
           "examples": [
             {
               "code": "{\n  \"cleanupPeriodDays\": 60\n}",
-              "description": "Keep transcripts for 60 days"
+              "description": "Keep transcripts for 60 days",
+              "id": "07343986-7681-4f0c-b70e-a5d698122bec"
             }
           ]
         },
@@ -105,7 +116,8 @@
           "examples": [
             {
               "code": "{\n  \"includeCoAuthoredBy\": false\n}",
-              "description": "Disable co-author byline"
+              "description": "Disable co-author byline",
+              "id": "c96eb2ac-c863-45d8-9e98-849e0429734f"
             }
           ]
         },
@@ -116,7 +128,8 @@
           "examples": [
             {
               "code": "{\n  \"env\": {\n    \"NODE_ENV\": \"development\",\n    \"DEBUG\": \"true\"\n  }\n}",
-              "description": "Set development environment variables"
+              "description": "Set development environment variables",
+              "id": "341a71b9-fe48-4525-891c-900700b9d8cb"
             }
           ]
         },
@@ -128,7 +141,8 @@
           "examples": [
             {
               "code": "{\n  \"companyAnnouncements\": [\n    \"Welcome to Acme Corp development environment!\",\n    \"Remember to run tests before committing!\",\n    \"Check the wiki for coding standards.\"\n  ]\n}",
-              "description": "Configure startup messages"
+              "description": "Configure startup messages",
+              "id": "5224bb73-6285-4d17-8f3b-7e3c03a9207b"
             }
           ]
         }
@@ -158,7 +172,8 @@
           "examples": [
             {
               "code": "{\n  \"hooks\": {\n    \"postWrite\": \"echo 'File written: ${FILE_PATH}'\",\n    \"preToolExecution\": \"timestamp.sh\"\n  }\n}",
-              "description": "Add post-write and pre-execution hooks"
+              "description": "Add post-write and pre-execution hooks",
+              "id": "2297c4c7-08b3-41ea-8d50-2e663adbb7b8"
             }
           ]
         },
@@ -170,7 +185,8 @@
           "examples": [
             {
               "code": "{\n  \"disableAllHooks\": true\n}",
-              "description": "Disable all hooks"
+              "description": "Disable all hooks",
+              "id": "3500016b-cbd4-46ec-8a49-8e868778b5fb"
             }
           ]
         }
@@ -194,7 +210,8 @@
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git:*)\",\n      \"Bash(npm:*)\",\n      \"Read(src/**/*.js)\",\n      \"Edit(src/**/*.js)\",\n      \"WebFetch(domain:github.com)\"\n    ]\n  }\n}",
-              "description": "Allow common development tools"
+              "description": "Allow common development tools",
+              "id": "764e445b-392e-4473-b101-66c6ec91fa08"
             }
           ]
         },
@@ -206,7 +223,8 @@
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"ask\": [\n      \"Bash(rm:*)\",\n      \"Bash(docker:*)\",\n      \"Write(.env)\"\n    ]\n  }\n}",
-              "description": "Require confirmation for destructive operations"
+              "description": "Require confirmation for destructive operations",
+              "id": "07e56fa7-0732-4ca7-a789-8af8f753116d"
             }
           ]
         },
@@ -218,7 +236,8 @@
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"deny\": [\n      \"Read(.env)\",\n      \"Read(.env.*)\",\n      \"Read(secrets/**)\",\n      \"Bash(curl:*)\",\n      \"WebFetch(domain:internal-api.example.com)\"\n    ]\n  }\n}",
-              "description": "Block access to sensitive files and commands"
+              "description": "Block access to sensitive files and commands",
+              "id": "5e7d1236-d35d-4d97-b547-0f9357f6857f"
             }
           ]
         },
@@ -230,7 +249,8 @@
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"additionalDirectories\": [\n      \"/usr/local/lib/my-company-tools\",\n      \"~/shared-configs\"\n    ]\n  }\n}",
-              "description": "Add access to additional directories"
+              "description": "Add access to additional directories",
+              "id": "102ea426-efb4-48e5-9ee3-df91689632d0"
             }
           ]
         },
@@ -241,19 +261,23 @@
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"defaultMode\": \"acceptEdits\"\n  }\n}",
-              "description": "Start in accept edits mode"
+              "description": "Start in accept edits mode",
+              "id": "9114055a-772e-4937-ae8a-091b8005c132"
             }
           ]
         },
         {
           "key": "permissions.disableBypassPermissionsMode",
           "type": "string",
-          "enumValues": ["disable"],
+          "enumValues": [
+            "disable"
+          ],
           "description": "Prevent users from bypassing permission restrictions.",
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"disableBypassPermissionsMode\": \"disable\"\n  }\n}",
-              "description": "Disable permission bypass"
+              "description": "Disable permission bypass",
+              "id": "9884edfd-1321-46ba-9c22-9f30fbadd784"
             }
           ]
         }
@@ -273,7 +297,8 @@
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"enabled\": true\n  }\n}",
-              "description": "Enable sandbox"
+              "description": "Enable sandbox",
+              "id": "9dca8d88-9804-44d5-a129-270026e1b8a1"
             }
           ]
         },
@@ -292,7 +317,8 @@
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"allowUnsandboxedCommands\": false\n  }\n}",
-              "description": "Enforce strict sandboxing"
+              "description": "Enforce strict sandboxing",
+              "id": "b12f20ca-20d0-421a-b818-8b5e09b03fcc"
             }
           ]
         },
@@ -304,7 +330,8 @@
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"excludedCommands\": [\n      \"git\",\n      \"docker\",\n      \"npm\"\n    ]\n  }\n}",
-              "description": "Exclude commands from sandbox"
+              "description": "Exclude commands from sandbox",
+              "id": "9e1ba135-f6df-435d-8855-1a9747766a73"
             }
           ]
         },
@@ -316,7 +343,8 @@
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"allowUnixSockets\": [\n        \"/var/run/docker.sock\",\n        \"/tmp/my-app.sock\"\n      ]\n    }\n  }\n}",
-              "description": "Allow specific Unix sockets"
+              "description": "Allow specific Unix sockets",
+              "id": "c557bf8f-a2cf-4fad-8fe2-ab821e3b9b25"
             }
           ]
         },
@@ -362,7 +390,8 @@
           "examples": [
             {
               "code": "{\n  \"enableAllProjectMcpServers\": true\n}",
-              "description": "Auto-approve project MCP servers"
+              "description": "Auto-approve project MCP servers",
+              "id": "664d8b45-3719-4e0a-b9c2-66a2dbf5df79"
             }
           ]
         },
@@ -374,7 +403,8 @@
           "examples": [
             {
               "code": "{\n  \"enabledMcpjsonServers\": [\n    \"github-mcp\",\n    \"sqlite-mcp\"\n  ]\n}",
-              "description": "Enable specific MCP servers"
+              "description": "Enable specific MCP servers",
+              "id": "095610b2-6f66-478c-aded-df817f40ca3a"
             }
           ]
         },
@@ -386,7 +416,8 @@
           "examples": [
             {
               "code": "{\n  \"disabledMcpjsonServers\": [\n    \"experimental-mcp\"\n  ]\n}",
-              "description": "Disable specific MCP servers"
+              "description": "Disable specific MCP servers",
+              "id": "bc3c379f-f125-4c79-8483-02fc29f6966f"
             }
           ]
         },
@@ -399,7 +430,8 @@
           "examples": [
             {
               "code": "{\n  \"allowedMcpServers\": [\n    \"approved-internal-mcp\",\n    \"github-mcp\"\n  ]\n}",
-              "description": "Restrict to approved servers only"
+              "description": "Restrict to approved servers only",
+              "id": "5a68d8c0-d202-4837-b783-3a536d9794e4"
             }
           ]
         },
@@ -411,7 +443,8 @@
           "examples": [
             {
               "code": "{\n  \"deniedMcpServers\": [\n    \"unapproved-external-mcp\",\n    \"experimental-*\"\n  ]\n}",
-              "description": "Block specific MCP servers"
+              "description": "Block specific MCP servers",
+              "id": "dfcbf2ec-d9ea-4cec-a871-6be32a831fba"
             }
           ]
         }
@@ -431,7 +464,8 @@
           "examples": [
             {
               "code": "{\n  \"enabledPlugins\": [\n    \"swift-dev@official\",\n    \"custom-linter@company-marketplace\"\n  ]\n}",
-              "description": "Enable specific plugins"
+              "description": "Enable specific plugins",
+              "id": "88e62e71-4ecb-4896-a530-1ffbb6b3d659"
             }
           ]
         },
@@ -443,7 +477,8 @@
           "examples": [
             {
               "code": "{\n  \"extraKnownMarketplaces\": [\n    {\n      \"name\": \"company-marketplace\",\n      \"type\": \"github\",\n      \"url\": \"https://github.com/company/claude-plugins\"\n    },\n    {\n      \"name\": \"local-dev\",\n      \"type\": \"local\",\n      \"path\": \"/Users/dev/my-plugins\"\n    }\n  ]\n}",
-              "description": "Add custom plugin marketplaces"
+              "description": "Add custom plugin marketplaces",
+              "id": "e265edc0-3d25-4ecc-be5a-f4fea1c16b67"
             }
           ]
         }

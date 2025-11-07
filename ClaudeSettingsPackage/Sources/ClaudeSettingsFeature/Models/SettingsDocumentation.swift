@@ -9,14 +9,36 @@ public struct SettingsDocumentation: Codable, Sendable {
     public let tools: [ToolDocumentation]
     public let bestPractices: [BestPractice]
 
-    /// Find documentation for a specific setting key
-    public func documentation(for key: String) -> SettingDocumentation? {
+    /// O(1) lookup dictionary for fast setting retrieval
+    private let settingsByKey: [String: SettingDocumentation]
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case categories
+        case tools
+        case bestPractices
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try container.decode(String.self, forKey: .version)
+        self.categories = try container.decode([SettingCategory].self, forKey: .categories)
+        self.tools = try container.decode([ToolDocumentation].self, forKey: .tools)
+        self.bestPractices = try container.decode([BestPractice].self, forKey: .bestPractices)
+
+        // Build O(1) lookup dictionary
+        var dict = [String: SettingDocumentation]()
         for category in categories {
-            if let setting = category.settings.first(where: { $0.key == key }) {
-                return setting
+            for setting in category.settings {
+                dict[setting.key] = setting
             }
         }
-        return nil
+        self.settingsByKey = dict
+    }
+
+    /// Find documentation for a specific setting key - O(1) lookup
+    public func documentation(for key: String) -> SettingDocumentation? {
+        settingsByKey[key]
     }
 
     /// Find all settings matching a prefix (e.g., "permissions." returns all permission settings)
@@ -36,7 +58,11 @@ public struct SettingCategory: Codable, Sendable, Identifiable {
     public let settings: [SettingDocumentation]
 
     enum CodingKeys: String, CodingKey {
-        case id, name, description, platformNote, settings
+        case id
+        case name
+        case description
+        case platformNote
+        case settings
     }
 }
 
@@ -69,17 +95,32 @@ public struct SettingDocumentation: Codable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case key, type, defaultValue, description, enumValues, format
-        case itemType, platformNote, relatedEnvVars, hookTypes, patterns, examples
+        case key
+        case type
+        case defaultValue
+        case description
+        case enumValues
+        case format
+        case itemType
+        case platformNote
+        case relatedEnvVars
+        case hookTypes
+        case patterns
+        case examples
     }
 }
 
 /// An example of how to use a setting
 public struct SettingExample: Codable, Sendable, Identifiable {
+    public let id: UUID
     public let code: String
     public let description: String
 
-    public var id: String { description }
+    enum CodingKeys: String, CodingKey {
+        case id
+        case code
+        case description
+    }
 }
 
 /// Documentation for a Claude Code tool
@@ -103,17 +144,19 @@ public struct BestPractice: Codable, Sendable, Identifiable {
 
 /// Loads and caches settings documentation from the bundle
 @MainActor
-public final class DocumentationLoader: ObservableObject {
+final public class DocumentationLoader: ObservableObject {
     public static let shared = DocumentationLoader()
 
     @Published public private(set) var documentation: SettingsDocumentation?
     @Published public private(set) var isLoading = false
     @Published public private(set) var error: Error?
 
-    private init() {}
+    // Internal for testing - nonisolated so tests can create instances
+    nonisolated init() { }
 
-    /// Load documentation from the bundle
+    /// Load documentation from the bundle using async I/O
     public func load() async {
+        // Check if already loaded
         guard documentation == nil else { return }
 
         isLoading = true
@@ -124,14 +167,21 @@ public final class DocumentationLoader: ObservableObject {
                 throw DocumentationError.fileNotFound
             }
 
-            let data = try Data(contentsOf: url)
+            // Perform file I/O asynchronously (off main thread via URLSession)
+            let (data, _) = try await URLSession.shared.data(from: url)
             let decoder = JSONDecoder()
-            documentation = try decoder.decode(SettingsDocumentation.self, from: data)
+            let loadedDocs = try decoder.decode(SettingsDocumentation.self, from: data)
+
+            // Update state (already on MainActor due to class annotation)
+            documentation = loadedDocs
+            isLoading = false
+        } catch let decodingError as DecodingError {
+            error = DocumentationError.decodingFailed(decodingError)
+            isLoading = false
         } catch {
             self.error = error
+            isLoading = false
         }
-
-        isLoading = false
     }
 
     /// Find documentation for a setting key
@@ -150,7 +200,7 @@ public enum DocumentationError: LocalizedError {
         switch self {
         case .fileNotFound:
             return "Documentation file not found in bundle"
-        case .decodingFailed(let error):
+        case let .decodingFailed(error):
             return "Failed to decode documentation: \(error.localizedDescription)"
         }
     }

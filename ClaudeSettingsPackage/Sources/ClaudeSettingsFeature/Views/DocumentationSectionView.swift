@@ -13,7 +13,9 @@ struct DocumentationSectionView: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
-            if let settingDoc = documentationLoader.documentation(for: settingItem.key) {
+            if documentationLoader.isLoading {
+                loadingState
+            } else if let settingDoc = documentationLoader.documentation(for: settingItem.key) {
                 comprehensiveDocumentation(settingDoc)
             } else if let documentation = settingItem.documentation {
                 basicDocumentation(documentation)
@@ -140,6 +142,20 @@ struct DocumentationSectionView: View {
         Text(documentation)
             .font(.body)
             .foregroundStyle(.secondary)
+    }
+
+    // MARK: - Loading State
+
+    @ViewBuilder
+    private var loadingState: some View {
+        HStack {
+            ProgressView()
+                .controlSize(.small)
+            Text("Loading documentation...")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
