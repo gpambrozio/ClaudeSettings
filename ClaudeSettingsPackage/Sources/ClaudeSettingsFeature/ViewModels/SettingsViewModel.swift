@@ -17,6 +17,9 @@ final public class SettingsViewModel {
 
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
+    private var fileWatcher: FileWatcher?
+    private let debouncer = Debouncer()
+    private var consecutiveReloadFailures: [URL: Int] = [:]
 
     public init(project: ClaudeProject? = nil, fileSystemManager: FileSystemManager = FileSystemManager()) {
         self.project = project
@@ -96,6 +99,9 @@ final public class SettingsViewModel {
 
                 let scope = includeProject ? "settings" : "global settings"
                 logger.info("Loaded \(files.count) \(scope) files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
+
+                // Set up file watching for live updates
+                await setupFileWatcher()
             } catch {
                 logger.error("Failed to load settings: \(error)")
                 errorMessage = userFriendlyErrorMessage(for: error)
@@ -103,6 +109,109 @@ final public class SettingsViewModel {
 
             isLoading = false
         }
+    }
+
+    /// Set up file watcher to monitor settings files for changes
+    private func setupFileWatcher() async {
+        // Stop any existing watcher first
+        await stopFileWatcher()
+
+        // Only watch files that actually exist
+        let pathsToWatch = settingsFiles.map(\.path)
+
+        guard !pathsToWatch.isEmpty else {
+            logger.debug("No settings files to watch")
+            return
+        }
+
+        logger.info("Setting up file watcher for \(pathsToWatch.count) paths")
+
+        // FileWatcher's callback is @Sendable but not MainActor-isolated
+        // We need to explicitly hop to MainActor since this ViewModel is MainActor-isolated
+        fileWatcher = FileWatcher { [weak self] changedURL in
+            Task { @MainActor in
+                await self?.handleFileChange(at: changedURL)
+            }
+        }
+
+        await fileWatcher?.startWatching(paths: pathsToWatch)
+    }
+
+    /// Stop file watching (called when switching projects or cleaning up)
+    public func stopFileWatcher() async {
+        await debouncer.cancel()
+        await fileWatcher?.stopWatching()
+        fileWatcher = nil
+        consecutiveReloadFailures.removeAll()
+    }
+
+    /// Handle file system changes with debouncing to prevent excessive reloads
+    private func handleFileChange(at url: URL) async {
+        // Debounce: wait 200ms before reloading to handle rapid successive changes
+        await debouncer.debounce(milliseconds: 200) {
+            await self.reloadChangedFile(at: url)
+        }
+    }
+
+    /// Reload a specific settings file that changed externally
+    private func reloadChangedFile(at url: URL) async {
+        logger.info("Settings file changed externally: \(url.path)")
+
+        // Find which settings file changed
+        guard let changedFileIndex = settingsFiles.firstIndex(where: { $0.path == url }) else {
+            logger.warning("Changed file not found in loaded settings: \(url.path)")
+            return
+        }
+
+        let changedFileType = settingsFiles[changedFileIndex].type
+
+        do {
+            // Check if file still exists (might have been deleted)
+            guard await fileSystemManager.exists(at: url) else {
+                logger.info("Settings file was deleted: \(url.path)")
+                // Remove from our list
+                settingsFiles.remove(at: changedFileIndex)
+                settingItems = computeSettingItems(from: settingsFiles)
+                validationErrors = settingsFiles.flatMap(\.validationErrors)
+                return
+            }
+
+            // Reload the specific file
+            let updatedFile = try await settingsParser.parseSettingsFile(
+                at: url,
+                type: changedFileType
+            )
+
+            // Update in array
+            settingsFiles[changedFileIndex] = updatedFile
+
+            // Recompute merged settings
+            settingItems = computeSettingItems(from: settingsFiles)
+            validationErrors = settingsFiles.flatMap(\.validationErrors)
+
+            // Reset failure counter on successful reload
+            consecutiveReloadFailures[url] = 0
+
+            logger.info("Reloaded settings from: \(url.path)")
+        } catch {
+            logger.error("Failed to reload changed file: \(error)")
+
+            // Track consecutive failures to distinguish transient from persistent errors
+            consecutiveReloadFailures[url, default: 0] += 1
+
+            // Only show error message if file consistently fails to reload (likely a real problem)
+            // Transient failures during file saves are expected and shouldn't alarm the user
+            if consecutiveReloadFailures[url, default: 0] >= 3 {
+                errorMessage = "Unable to reload \(url.lastPathComponent): \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Testing Support
+
+    /// Internal test-only method to trigger file reload (exposed for testing)
+    func _testReloadChangedFile(at url: URL) async {
+        await reloadChangedFile(at: url)
     }
 
     /// Convert technical errors into user-friendly messages

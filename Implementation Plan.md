@@ -370,7 +370,7 @@ Toolbar Actions:
 - [x] Add JSON syntax validation
 - [x] Show validation errors in UI
 - [x] Color code settings by source
-- [ ] Integrate FileWatcher for live updates when settings files change
+- [x] Integrate FileWatcher for live updates when settings files change
 
 #### Milestone 1.5: Basic Edit Operations (Weeks 5-6)
 - [ ] Implement edit functionality for individual settings

@@ -424,7 +424,7 @@ public struct InspectorView: View {
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true,
-            documentation: "This setting is deprecated and will be removed in version 2.0"
+            documentation: "This setting is deprecated and will be removed in version 2"
         ),
     ]
 
