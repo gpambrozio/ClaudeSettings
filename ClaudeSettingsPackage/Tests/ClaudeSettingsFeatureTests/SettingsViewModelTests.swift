@@ -193,4 +193,275 @@ struct SettingsViewModelTests {
         // Then: Should return empty array
         #expect(items.isEmpty, "Should have no settings")
     }
+
+    /// Test hierarchical tree construction with simple flat settings
+    @Test("Hierarchical tree handles flat settings")
+    @MainActor
+    func hierarchicalFlatSettings() async throws {
+        // Given: Flat settings with no dots
+        let viewModel = SettingsViewModel()
+        let items = [
+            SettingItem(
+                key: "theme",
+                value: .string("dark"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("dark"))]
+            ),
+            SettingItem(
+                key: "fontSize",
+                value: .int(14),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
+            ),
+        ]
+
+        // When: Computing hierarchical settings
+        let hierarchy = viewModel.computeHierarchicalSettings(from: items)
+
+        // Then: Should create leaf nodes at root level
+        #expect(hierarchy.count == 2, "Should have two root nodes")
+        #expect(hierarchy[0].key == "fontSize", "First should be fontSize (alphabetical)")
+        #expect(hierarchy[0].isLeaf, "Should be a leaf node")
+        #expect(hierarchy[0].displayName == "fontSize")
+        #expect(hierarchy[1].key == "theme", "Second should be theme")
+        #expect(hierarchy[1].isLeaf, "Should be a leaf node")
+    }
+
+    /// Test hierarchical tree construction with single-level nesting
+    @Test("Hierarchical tree handles single-level nesting")
+    @MainActor
+    func hierarchicalSingleLevel() async throws {
+        // Given: Settings with single-level nesting
+        let viewModel = SettingsViewModel()
+        let items = [
+            SettingItem(
+                key: "editor.theme",
+                value: .string("dark"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("dark"))]
+            ),
+            SettingItem(
+                key: "editor.fontSize",
+                value: .int(14),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
+            ),
+        ]
+
+        // When: Computing hierarchical settings
+        let hierarchy = viewModel.computeHierarchicalSettings(from: items)
+
+        // Then: Should create parent with children
+        #expect(hierarchy.count == 1, "Should have one root node")
+        #expect(hierarchy[0].key == "editor", "Root should be editor")
+        #expect(hierarchy[0].isParent, "Should be a parent node")
+        #expect(hierarchy[0].children.count == 2, "Should have two children")
+
+        let children = hierarchy[0].children
+        #expect(children[0].key == "editor.fontSize", "First child key should be full key")
+        #expect(children[0].displayName == "fontSize", "Display name should be stripped")
+        #expect(children[0].isLeaf, "Should be a leaf")
+        #expect(children[1].displayName == "theme", "Second child display name")
+    }
+
+    /// Test hierarchical tree construction with multi-level nesting
+    @Test("Hierarchical tree handles multi-level nesting")
+    @MainActor
+    func hierarchicalMultiLevel() async throws {
+        // Given: Settings with deep nesting
+        let viewModel = SettingsViewModel()
+        let items = [
+            SettingItem(
+                key: "editor.font.family",
+                value: .string("Monaco"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("Monaco"))]
+            ),
+            SettingItem(
+                key: "editor.font.size",
+                value: .int(14),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
+            ),
+            SettingItem(
+                key: "editor.theme",
+                value: .string("dark"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("dark"))]
+            ),
+        ]
+
+        // When: Computing hierarchical settings
+        let hierarchy = viewModel.computeHierarchicalSettings(from: items)
+
+        // Then: Should create nested parent nodes
+        #expect(hierarchy.count == 1, "Should have one root node")
+        #expect(hierarchy[0].key == "editor", "Root should be editor")
+        #expect(hierarchy[0].children.count == 2, "Should have font and theme")
+
+        let editorChildren = hierarchy[0].children
+        let fontNode = editorChildren.first { $0.key == "editor.font" }
+        #expect(fontNode != nil, "Should have font parent node")
+        #expect(fontNode?.isParent == true, "Font should be a parent")
+        #expect(fontNode?.displayName == "font", "Font display name should be stripped")
+        #expect(fontNode?.children.count == 2, "Font should have two children")
+
+        let fontChildren = fontNode?.children ?? []
+        #expect(fontChildren[0].displayName == "family", "First font child display name")
+        #expect(fontChildren[1].displayName == "size", "Second font child display name")
+
+        let themeNode = editorChildren.first { $0.key == "editor.theme" }
+        #expect(themeNode?.isLeaf == true, "Theme should be a leaf")
+    }
+
+    /// Test hierarchical tree with mixed depths
+    @Test("Hierarchical tree handles mixed depths")
+    @MainActor
+    func hierarchicalMixedDepths() async throws {
+        // Given: Settings with varying nesting depths
+        let viewModel = SettingsViewModel()
+        let items = [
+            SettingItem(
+                key: "simpleValue",
+                value: .string("test"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("test"))]
+            ),
+            SettingItem(
+                key: "editor.theme",
+                value: .string("dark"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("dark"))]
+            ),
+            SettingItem(
+                key: "hooks.tool.onCall",
+                value: .string("script.sh"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("script.sh"))]
+            ),
+        ]
+
+        // When: Computing hierarchical settings
+        let hierarchy = viewModel.computeHierarchicalSettings(from: items)
+
+        // Then: Should handle mixed depths correctly
+        #expect(hierarchy.count == 3, "Should have three root nodes")
+
+        // Check flat setting
+        let simpleNode = hierarchy.first { $0.key == "simpleValue" }
+        #expect(simpleNode?.isLeaf == true, "Simple value should be leaf")
+
+        // Check single-level nesting
+        let editorNode = hierarchy.first { $0.key == "editor" }
+        #expect(editorNode?.isParent == true, "Editor should be parent")
+        #expect(editorNode?.children.count == 1, "Editor should have one child")
+
+        // Check multi-level nesting
+        let hooksNode = hierarchy.first { $0.key == "hooks" }
+        #expect(hooksNode?.isParent == true, "Hooks should be parent")
+        let toolNode = hooksNode?.children.first { $0.key == "hooks.tool" }
+        #expect(toolNode?.isParent == true, "Tool should be parent")
+        #expect(toolNode?.children.count == 1, "Tool should have one child")
+    }
+
+    /// Test hierarchical tree with multiple items under same parent
+    @Test("Hierarchical tree groups items under same parent")
+    @MainActor
+    func hierarchicalGrouping() async throws {
+        // Given: Multiple items under the same parent key
+        let viewModel = SettingsViewModel()
+        let items = [
+            SettingItem(
+                key: "hooks.onRead",
+                value: .string("read.sh"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("read.sh"))]
+            ),
+            SettingItem(
+                key: "hooks.onWrite",
+                value: .string("write.sh"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("write.sh"))]
+            ),
+            SettingItem(
+                key: "hooks.onDelete",
+                value: .string("delete.sh"),
+                source: .globalSettings,
+                contributions: [SourceContribution(source: .globalSettings, value: .string("delete.sh"))]
+            ),
+        ]
+
+        // When: Computing hierarchical settings
+        let hierarchy = viewModel.computeHierarchicalSettings(from: items)
+
+        // Then: Should group all under hooks parent
+        #expect(hierarchy.count == 1, "Should have one root node")
+        #expect(hierarchy[0].key == "hooks", "Root should be hooks")
+        #expect(hierarchy[0].children.count == 3, "Should have three children")
+
+        if case let .parent(childCount) = hierarchy[0].nodeType {
+            #expect(childCount == 3, "Parent should report correct child count")
+        } else {
+            Issue.record("Expected parent node type")
+        }
+
+        // Verify alphabetical ordering
+        let children = hierarchy[0].children
+        #expect(children[0].displayName == "onDelete", "First child alphabetically")
+        #expect(children[1].displayName == "onRead", "Second child alphabetically")
+        #expect(children[2].displayName == "onWrite", "Third child alphabetically")
+    }
+
+    /// Test hierarchical tree preserves setting items in leaf nodes
+    @Test("Hierarchical tree preserves setting items")
+    @MainActor
+    func hierarchicalPreservesItems() async throws {
+        // Given: Settings with metadata
+        let viewModel = SettingsViewModel()
+        let testItem = SettingItem(
+            key: "editor.theme",
+            value: .string("dark"),
+            source: .projectSettings,
+            overriddenBy: .projectLocal,
+            contributions: [
+                SourceContribution(source: .projectSettings, value: .string("light")),
+                SourceContribution(source: .projectLocal, value: .string("dark")),
+            ],
+            isDeprecated: true,
+            documentation: "Theme setting"
+        )
+        let items = [testItem]
+
+        // When: Computing hierarchical settings
+        let hierarchy = viewModel.computeHierarchicalSettings(from: items)
+
+        // Then: Leaf node should preserve the original item
+        let leafNode = hierarchy[0].children[0]
+        guard let preservedItem = leafNode.settingItem else {
+            Issue.record("Leaf node should have setting item")
+            return
+        }
+
+        #expect(preservedItem.key == "editor.theme", "Should preserve key")
+        #expect(preservedItem.value == .string("dark"), "Should preserve value")
+        #expect(preservedItem.source == .projectSettings, "Should preserve source")
+        #expect(preservedItem.overriddenBy == .projectLocal, "Should preserve override")
+        #expect(preservedItem.isDeprecated == true, "Should preserve deprecation status")
+        #expect(preservedItem.documentation == "Theme setting", "Should preserve documentation")
+    }
+
+    /// Test hierarchical tree with empty input
+    @Test("Hierarchical tree handles empty input")
+    @MainActor
+    func hierarchicalEmpty() async throws {
+        // Given: Empty settings array
+        let viewModel = SettingsViewModel()
+        let items: [SettingItem] = []
+
+        // When: Computing hierarchical settings
+        let hierarchy = viewModel.computeHierarchicalSettings(from: items)
+
+        // Then: Should return empty array
+        #expect(hierarchy.isEmpty, "Should return empty hierarchy")
+    }
 }

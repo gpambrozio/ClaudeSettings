@@ -4,6 +4,7 @@ import SwiftUI
 public struct SettingsListView: View {
     let settingsViewModel: SettingsViewModel
     @Binding var selectedKey: String?
+    @State private var expandedNodes: Set<String> = []
 
     public var body: some View {
         Group {
@@ -63,14 +64,14 @@ public struct SettingsListView: View {
                 }
             }
 
-            // Settings Section
+            // Settings Section (Hierarchical)
             Section {
-                ForEach(settingsViewModel.settingItems) { item in
-                    SettingItemRow(
-                        item: item,
-                        isSelected: selectedKey == item.key
+                ForEach(settingsViewModel.hierarchicalSettings) { node in
+                    HierarchicalSettingNodeView(
+                        node: node,
+                        selectedKey: $selectedKey,
+                        expandedNodes: $expandedNodes
                     )
-                    .tag(item.key)
                 }
             } header: {
                 HStack {
@@ -162,16 +163,81 @@ struct ValidationErrorRow: View {
     }
 }
 
+/// Hierarchical view for displaying setting nodes (either parent or leaf)
+struct HierarchicalSettingNodeView: View {
+    let node: HierarchicalSettingNode
+    @Binding var selectedKey: String?
+    @Binding var expandedNodes: Set<String>
+
+    var body: some View {
+        Group {
+            if node.isParent {
+                // Parent node with children - use DisclosureGroup
+                DisclosureGroup(
+                    isExpanded: Binding(
+                        get: { expandedNodes.contains(node.id) },
+                        set: { isExpanded in
+                            if isExpanded {
+                                expandedNodes.insert(node.id)
+                            } else {
+                                expandedNodes.remove(node.id)
+                            }
+                        }
+                    )
+                ) {
+                    ForEach(node.children) { childNode in
+                        HierarchicalSettingNodeView(
+                            node: childNode,
+                            selectedKey: $selectedKey,
+                            expandedNodes: $expandedNodes
+                        )
+                        .padding(.leading, 16)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(node.displayName)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .fontWeight(.medium)
+
+                        if case let .parent(childCount) = node.nodeType {
+                            Text("(\(childCount))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else if let item = node.settingItem {
+                // Leaf node - display as regular setting item row
+                SettingItemRow(
+                    item: item,
+                    isSelected: selectedKey == item.key,
+                    displayName: node.displayName
+                )
+                .tag(item.key)
+            }
+        }
+    }
+}
+
 /// Individual row displaying a setting item with source information
 struct SettingItemRow: View {
     let item: SettingItem
     let isSelected: Bool
+    let displayName: String?
+
+    init(item: SettingItem, isSelected: Bool, displayName: String? = nil) {
+        self.item = item
+        self.isSelected = isSelected
+        self.displayName = displayName
+    }
 
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(item.key)
+                    Text(displayName ?? item.key)
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(isSelected ? .primary : .secondary)
 
@@ -350,6 +416,12 @@ struct SettingItemRow: View {
             ]
         ),
         SettingItem(
+            key: "editor.tabSize",
+            value: .int(2),
+            source: .globalSettings,
+            contributions: [SourceContribution(source: .globalSettings, value: .int(2))]
+        ),
+        SettingItem(
             key: "files.exclude",
             value: .array([.string("node_modules"), .string(".git"), .string("dist")]),
             source: .globalSettings,
@@ -359,6 +431,18 @@ struct SettingItemRow: View {
             ]
         ),
         SettingItem(
+            key: "hooks.Notification",
+            value: .object(["enabled": .bool(true)]),
+            source: .projectSettings,
+            contributions: [SourceContribution(source: .projectSettings, value: .object(["enabled": .bool(true)]))]
+        ),
+        SettingItem(
+            key: "hooks.FileCreated",
+            value: .object(["script": .string("create.sh")]),
+            source: .projectSettings,
+            contributions: [SourceContribution(source: .projectSettings, value: .object(["script": .string("create.sh")]))]
+        ),
+        SettingItem(
             key: "deprecated.setting",
             value: .bool(true),
             source: .globalSettings,
@@ -366,7 +450,14 @@ struct SettingItemRow: View {
             isDeprecated: true,
             documentation: "This setting is deprecated and will be removed in a future version"
         ),
+        SettingItem(
+            key: "simpleValue",
+            value: .string("test"),
+            source: .globalSettings,
+            contributions: [SourceContribution(source: .globalSettings, value: .string("test"))]
+        ),
     ]
+    viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
     viewModel.validationErrors = [
         ValidationError(
             type: .syntax,

@@ -11,6 +11,7 @@ final public class SettingsViewModel {
 
     public var settingsFiles: [SettingsFile] = []
     public var settingItems: [SettingItem] = []
+    public var hierarchicalSettings: [HierarchicalSettingNode] = []
     public var validationErrors: [ValidationError] = []
     public var isLoading = false
     public var errorMessage: String?
@@ -95,6 +96,7 @@ final public class SettingsViewModel {
 
                 settingsFiles = files
                 settingItems = computeSettingItems(from: files)
+                hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
                 validationErrors = files.flatMap(\.validationErrors)
 
                 let scope = includeProject ? "settings" : "global settings"
@@ -172,6 +174,7 @@ final public class SettingsViewModel {
                 // Remove from our list
                 settingsFiles.remove(at: changedFileIndex)
                 settingItems = computeSettingItems(from: settingsFiles)
+                hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
                 validationErrors = settingsFiles.flatMap(\.validationErrors)
                 return
             }
@@ -187,6 +190,7 @@ final public class SettingsViewModel {
 
             // Recompute merged settings
             settingItems = computeSettingItems(from: settingsFiles)
+            hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
             validationErrors = settingsFiles.flatMap(\.validationErrors)
 
             // Reset failure counter on successful reload
@@ -320,5 +324,170 @@ final public class SettingsViewModel {
         }
 
         return result
+    }
+
+    /// Compute hierarchical settings tree from flat setting items
+    ///
+    /// This function transforms a flat list of dot-notation settings (e.g., "editor.theme", "editor.fontSize")
+    /// into a hierarchical tree structure suitable for display in a collapsible outline view.
+    ///
+    /// **Algorithm Overview:**
+    /// 1. Group settings by their root key (first component before the dot)
+    /// 2. For each root group:
+    ///    - If it contains a single setting with no dots, create a leaf node
+    ///    - Otherwise, create a parent node and recursively build children
+    /// 3. Return sorted root nodes
+    ///
+    /// **Examples:**
+    /// ```
+    /// Input: ["editor.theme", "editor.fontSize", "files.exclude"]
+    /// Output:
+    ///   - editor (parent)
+    ///     - theme (leaf)
+    ///     - fontSize (leaf)
+    ///   - files (parent)
+    ///     - exclude (leaf)
+    ///
+    /// Input: ["simpleValue", "nested.deep.value"]
+    /// Output:
+    ///   - simpleValue (leaf at root)
+    ///   - nested (parent)
+    ///     - deep (parent)
+    ///       - value (leaf)
+    /// ```
+    ///
+    /// - Parameter items: Flat array of setting items with dot-notation keys
+    /// - Returns: Array of root-level hierarchical nodes, sorted alphabetically by key
+    func computeHierarchicalSettings(from items: [SettingItem]) -> [HierarchicalSettingNode] {
+        // Group settings by their root key (first component before dot)
+        var rootGroups: [String: [SettingItem]] = [:]
+
+        for item in items {
+            let components = item.key.split(separator: ".", maxSplits: 1)
+            let rootKey = String(components[0])
+
+            if rootGroups[rootKey] == nil {
+                rootGroups[rootKey] = []
+            }
+            rootGroups[rootKey]?.append(item)
+        }
+
+        // Build hierarchical nodes
+        var rootNodes: [HierarchicalSettingNode] = []
+
+        for (rootKey, groupItems) in rootGroups.sorted(by: { $0.key < $1.key }) {
+            if groupItems.count == 1 && !groupItems[0].key.contains(".") {
+                // Single item without dots - it's a leaf node at root level
+                let item = groupItems[0]
+                let node = HierarchicalSettingNode(
+                    id: item.key,
+                    key: item.key,
+                    displayName: item.key,
+                    nodeType: .leaf(item: item)
+                )
+                rootNodes.append(node)
+            } else {
+                // Multiple items or nested items - create parent node
+                let children = buildChildNodes(for: groupItems, parentKey: rootKey)
+                let node = HierarchicalSettingNode(
+                    id: rootKey,
+                    key: rootKey,
+                    displayName: rootKey,
+                    nodeType: .parent(childCount: children.count),
+                    children: children
+                )
+                rootNodes.append(node)
+            }
+        }
+
+        return rootNodes
+    }
+
+    /// Build child nodes recursively for a group of settings
+    ///
+    /// This is a recursive helper function that builds the child nodes for a given parent key.
+    /// It works by stripping the parent prefix from each setting key and grouping by the next
+    /// component, then recursively building deeper levels.
+    ///
+    /// **Algorithm:**
+    /// 1. Strip the parent key prefix (e.g., "editor." from "editor.theme")
+    /// 2. Group remaining keys by their next component
+    /// 3. For each group:
+    ///    - If it's a single item with no more dots, create a leaf node
+    ///    - Otherwise, create a parent node and recurse
+    ///
+    /// **Example:**
+    /// ```
+    /// parentKey: "editor"
+    /// items: ["editor.theme", "editor.font.size", "editor.font.family"]
+    ///
+    /// After stripping "editor.":
+    ///   - "theme" -> single leaf
+    ///   - "font.size", "font.family" -> group under "font"
+    ///
+    /// Output:
+    ///   - theme (leaf, displayName: "theme")
+    ///   - font (parent, displayName: "font")
+    ///     - size (leaf, displayName: "size")
+    ///     - family (leaf, displayName: "family")
+    /// ```
+    ///
+    /// **Edge Case Handling:**
+    /// Lines 413-415 handle the defensive case where an item's key doesn't start with
+    /// `parentKey + "."`. This shouldn't happen given the grouping logic, but ensures
+    /// robustness if the function is called with unexpected input.
+    ///
+    /// - Parameter items: Setting items that should all have keys starting with `parentKey`
+    /// - Parameter parentKey: The parent key prefix to strip (e.g., "editor", "editor.font")
+    /// - Returns: Array of child nodes, sorted alphabetically by display name
+    private func buildChildNodes(for items: [SettingItem], parentKey: String) -> [HierarchicalSettingNode] {
+        // Group items by their next key component after removing parent prefix
+        var groups: [String: [SettingItem]] = [:]
+
+        for item in items {
+            // Remove parent key and dot from the beginning
+            let remainingKey = item.key.hasPrefix(parentKey + ".")
+                ? String(item.key.dropFirst(parentKey.count + 1))
+                : item.key
+
+            let components = remainingKey.split(separator: ".", maxSplits: 1)
+            let nextKey = String(components[0])
+
+            if groups[nextKey] == nil {
+                groups[nextKey] = []
+            }
+            groups[nextKey]?.append(item)
+        }
+
+        // Build nodes for each group
+        var nodes: [HierarchicalSettingNode] = []
+
+        for (nextKey, groupItems) in groups.sorted(by: { $0.key < $1.key }) {
+            if groupItems.count == 1 && groupItems[0].key == "\(parentKey).\(nextKey)" {
+                // This is a leaf node
+                let item = groupItems[0]
+                let node = HierarchicalSettingNode(
+                    id: item.key,
+                    key: item.key,
+                    displayName: nextKey,
+                    nodeType: .leaf(item: item)
+                )
+                nodes.append(node)
+            } else {
+                // This has more nesting - create parent node
+                let fullKey = "\(parentKey).\(nextKey)"
+                let children = buildChildNodes(for: groupItems, parentKey: fullKey)
+                let node = HierarchicalSettingNode(
+                    id: fullKey,
+                    key: fullKey,
+                    displayName: nextKey,
+                    nodeType: .parent(childCount: children.count),
+                    children: children
+                )
+                nodes.append(node)
+            }
+        }
+
+        return nodes
     }
 }
