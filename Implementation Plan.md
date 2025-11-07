@@ -347,29 +347,30 @@ Toolbar Actions:
 - [x] Initialize Xcode project with SwiftUI App lifecycle
 - [x] Set up Swift Package Manager dependencies
 - [x] Configure build settings and deployment targets
-- [ ] Implement basic MVVM structure
+- [x] Implement basic MVVM structure
 - [x] Set up Git repository and CI/CD placeholder
 
 #### Milestone 1.2: File System Layer (Weeks 2-3)
-- [ ] Implement FileSystemManager with security-scoped bookmarks
-- [ ] Create ProjectScanner to discover `.claude` directories
-- [ ] Build SettingsParser for JSON files
-- [ ] Implement file watching with FSEvents
-- [ ] Add error handling for permission issues
+- [x] Implement FileSystemManager with security-scoped bookmarks
+- [x] Create ProjectScanner to discover `.claude` directories
+- [x] Build SettingsParser for JSON files
+- [x] Implement file watching with FSEvents
+- [x] Add error handling for permission issues
 
 #### Milestone 1.3: Basic UI (Weeks 3-4)
-- [ ] Create main window layout (three-column)
-- [ ] Implement sidebar with global settings and project list
-- [ ] Build settings list view with basic display
-- [ ] Add project detail view
-- [ ] Implement basic navigation
+- [x] Create main window layout (three-column)
+- [x] Implement sidebar with global settings and project list
+- [x] Build settings list view with basic display
+- [x] Add project detail view
+- [x] Implement basic navigation
 
 #### Milestone 1.4: Settings Display & Validation (Weeks 4-5)
-- [ ] Parse and display settings from all files
-- [ ] Implement hierarchy resolution (show effective settings)
-- [ ] Add JSON syntax validation
-- [ ] Show validation errors in UI
-- [ ] Color code settings by source
+- [x] Parse and display settings from all files
+- [x] Implement hierarchy resolution (show effective settings)
+- [x] Add JSON syntax validation
+- [x] Show validation errors in UI
+- [x] Color code settings by source
+- [ ] Integrate FileWatcher for live updates when settings files change
 
 #### Milestone 1.5: Basic Edit Operations (Weeks 5-6)
 - [ ] Implement edit functionality for individual settings

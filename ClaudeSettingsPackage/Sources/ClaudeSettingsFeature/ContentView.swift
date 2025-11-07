@@ -1,9 +1,74 @@
 import SwiftUI
 
 public struct ContentView: View {
+    @State private var projectListViewModel = ProjectListViewModel()
+    @State private var sidebarSelection: SidebarSelection?
+    @State private var selectedSettingKey: String?
+    @State private var settingsViewModel: SettingsViewModel?
+
     public var body: some View {
-        Text("Hello, World!")
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            // Sidebar: Global Settings + Projects
+            SidebarView(viewModel: projectListViewModel, selection: $sidebarSelection)
+        } content: {
+            // Content Area: Settings List
+            if let viewModel = settingsViewModel {
+                SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedSettingKey)
+            } else {
+                emptyContentState
+            }
+        } detail: {
+            // Inspector: Details & Actions
+            InspectorView(selectedKey: selectedSettingKey, settingsViewModel: settingsViewModel)
+        }
+        .navigationSplitViewStyle(.balanced)
+        .onChange(of: sidebarSelection) { _, newSelection in
+            handleSelectionChange(newSelection)
+        }
     }
 
-    public init() {}
+    @ViewBuilder
+    private var emptyContentState: some View {
+        if projectListViewModel.isLoading {
+            ProgressView("Loading projects...")
+        } else if let errorMessage = projectListViewModel.errorMessage {
+            ContentUnavailableView {
+                Label("Error", symbol: .exclamationmarkTriangle)
+            } description: {
+                Text(errorMessage)
+            }
+        } else {
+            ContentUnavailableView {
+                Label("Select Configuration", symbol: .sidebarLeft)
+            } description: {
+                Text("Choose global settings or a project from the sidebar")
+            }
+        }
+    }
+
+    private func handleSelectionChange(_ newSelection: SidebarSelection?) {
+        // Clear selected key when changing selections
+        selectedSettingKey = nil
+
+        // Create and load the appropriate ViewModel
+        switch newSelection {
+        case .globalSettings:
+            let viewModel = SettingsViewModel(project: nil)
+            settingsViewModel = viewModel
+            viewModel.loadSettings()
+        case let .project(project):
+            let viewModel = SettingsViewModel(project: project)
+            settingsViewModel = viewModel
+            viewModel.loadSettings()
+        case .none:
+            settingsViewModel = nil
+        }
+    }
+
+    public init() { }
+}
+
+#Preview("Content View - Default State") {
+    ContentView()
+        .frame(width: 1_200, height: 800)
 }
