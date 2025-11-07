@@ -28,7 +28,8 @@
       "WebFetch(domain:asciiwwdc.com)",
       "Bash(python3:*)",
       "WebFetch(domain:code.claude.com)",
-      "Bash(/Users/gustavoambrozio/Development/ClaudeCodePlugins/SwiftDevelopment/skills/swift-compile/scripts/swift.sh test:*)"
+      "Bash(/Users/gustavoambrozio/Development/ClaudeCodePlugins/SwiftDevelopment/skills/swift-compile/scripts/swift.sh test:*)",
+      "SlashCommand(/git:resolve-conflicts:*)"
     ],
     "defaultMode": "acceptEdits"
   },
