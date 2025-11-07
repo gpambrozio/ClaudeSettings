@@ -18,7 +18,8 @@ final public class SettingsViewModel {
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
     private var fileWatcher: FileWatcher?
-    private var debounceTask: Task<Void, Never>?
+    private let debouncer = Debouncer()
+    private var consecutiveReloadFailures: [URL: Int] = [:]
 
     public init(project: ClaudeProject? = nil, fileSystemManager: FileSystemManager = FileSystemManager()) {
         self.project = project
@@ -125,6 +126,8 @@ final public class SettingsViewModel {
 
         logger.info("Setting up file watcher for \(pathsToWatch.count) paths")
 
+        // FileWatcher's callback is @Sendable but not MainActor-isolated
+        // We need to explicitly hop to MainActor since this ViewModel is MainActor-isolated
         fileWatcher = FileWatcher { [weak self] changedURL in
             Task { @MainActor in
                 await self?.handleFileChange(at: changedURL)
@@ -136,24 +139,16 @@ final public class SettingsViewModel {
 
     /// Stop file watching (called when switching projects or cleaning up)
     public func stopFileWatcher() async {
-        debounceTask?.cancel()
-        debounceTask = nil
+        await debouncer.cancel()
         await fileWatcher?.stopWatching()
         fileWatcher = nil
     }
 
     /// Handle file system changes with debouncing to prevent excessive reloads
     private func handleFileChange(at url: URL) async {
-        // Cancel any pending reload
-        debounceTask?.cancel()
-
         // Debounce: wait 200ms before reloading to handle rapid successive changes
-        debounceTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(200))
-
-            guard !Task.isCancelled else { return }
-
-            await reloadChangedFile(at: url)
+        await debouncer.debounce(milliseconds: 200) {
+            await self.reloadChangedFile(at: url)
         }
     }
 
@@ -193,11 +188,21 @@ final public class SettingsViewModel {
             settingItems = computeSettingItems(from: settingsFiles)
             validationErrors = settingsFiles.flatMap(\.validationErrors)
 
+            // Reset failure counter on successful reload
+            consecutiveReloadFailures[url] = 0
+
             logger.info("Reloaded settings from: \(url.path)")
         } catch {
             logger.error("Failed to reload changed file: \(error)")
-            // Don't update errorMessage for transient issues during external edits
-            // The file might be temporarily in an invalid state while being saved
+
+            // Track consecutive failures to distinguish transient from persistent errors
+            consecutiveReloadFailures[url, default: 0] += 1
+
+            // Only show error message if file consistently fails to reload (likely a real problem)
+            // Transient failures during file saves are expected and shouldn't alarm the user
+            if consecutiveReloadFailures[url, default: 0] >= 3 {
+                errorMessage = "Unable to reload \(url.lastPathComponent): \(error.localizedDescription)"
+            }
         }
     }
 

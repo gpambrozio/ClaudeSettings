@@ -15,7 +15,7 @@ final public class ProjectListViewModel {
 
     private let projectScanner: ProjectScanner
     private var fileWatcher: FileWatcher?
-    private var debounceTask: Task<Void, Never>?
+    private let debouncer = Debouncer()
 
     public init(fileSystemManager: FileSystemManager = FileSystemManager()) {
         self.fileSystemManager = fileSystemManager
@@ -65,7 +65,10 @@ final public class ProjectListViewModel {
 
         logger.info("Setting up file watcher for .claude.json")
 
+        // FileWatcher's callback is @Sendable but not MainActor-isolated
+        // We need to explicitly hop to MainActor since this ViewModel is MainActor-isolated
         fileWatcher = FileWatcher { [weak self] _ in
+            // Only watching one file (.claude.json), so URL parameter is always that file
             Task { @MainActor in
                 await self?.handleConfigFileChange()
             }
@@ -76,25 +79,17 @@ final public class ProjectListViewModel {
 
     /// Stop file watching
     public func stopFileWatcher() async {
-        debounceTask?.cancel()
-        debounceTask = nil
+        await debouncer.cancel()
         await fileWatcher?.stopWatching()
         fileWatcher = nil
     }
 
     /// Handle changes to .claude.json with debouncing
     private func handleConfigFileChange() async {
-        // Cancel any pending reload
-        debounceTask?.cancel()
-
         // Debounce: wait 200ms before reloading
-        debounceTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(200))
-
-            guard !Task.isCancelled else { return }
-
-            logger.info(".claude.json changed externally, refreshing project list")
-            refresh()
+        await debouncer.debounce(milliseconds: 200) {
+            self.logger.info(".claude.json changed externally, refreshing project list")
+            self.refresh()
         }
     }
 }

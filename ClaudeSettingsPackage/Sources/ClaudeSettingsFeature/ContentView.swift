@@ -23,7 +23,10 @@ public struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .onChange(of: sidebarSelection) { _, newSelection in
-            handleSelectionChange(newSelection)
+            // onChange requires synchronous callback, so wrap async operation in Task
+            Task {
+                await handleSelectionChange(newSelection)
+            }
         }
     }
 
@@ -46,15 +49,14 @@ public struct ContentView: View {
         }
     }
 
-    private func handleSelectionChange(_ newSelection: SidebarSelection?) {
+    private func handleSelectionChange(_ newSelection: SidebarSelection?) async {
         // Clear selected key when changing selections
         selectedSettingKey = nil
 
         // Clean up the old view model's file watcher before replacing it
+        // Wait for cleanup to complete to avoid race conditions
         if let oldViewModel = settingsViewModel {
-            Task {
-                await oldViewModel.stopFileWatcher()
-            }
+            await oldViewModel.stopFileWatcher()
         }
 
         // Create and load the appropriate ViewModel
