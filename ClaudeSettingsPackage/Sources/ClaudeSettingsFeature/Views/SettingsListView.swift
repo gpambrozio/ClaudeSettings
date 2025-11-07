@@ -197,7 +197,7 @@ struct HierarchicalSettingNodeView: View {
                     HStack(spacing: 6) {
                         Text(node.displayName)
                             .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(selectedKey == node.key ? .primary : .secondary)
                             .fontWeight(.medium)
 
                         if case let .parent(childCount) = node.nodeType {
@@ -207,7 +207,12 @@ struct HierarchicalSettingNodeView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectedKey = node.key
+                    }
                 }
+                .tag(node.key)
             } else if let item = node.settingItem {
                 // Leaf node - display as regular setting item row
                 SettingItemRow(

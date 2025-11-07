@@ -188,6 +188,22 @@ final public class DocumentationLoader: ObservableObject {
     public func documentation(for key: String) -> SettingDocumentation? {
         documentation?.documentation(for: key)
     }
+
+    /// Find documentation for a setting key, falling back to parent key if not found
+    public func documentationWithFallback(for key: String) -> SettingDocumentation? {
+        // Try exact match first
+        if let doc = documentation(for: key) {
+            return doc
+        }
+
+        // If not found, try parent key (strip last component after last dot)
+        guard let lastDotIndex = key.lastIndex(of: ".") else {
+            return nil // No parent to fall back to
+        }
+
+        let parentKey = String(key[..<lastDotIndex])
+        return documentation(for: parentKey)
+    }
 }
 
 // MARK: - Errors

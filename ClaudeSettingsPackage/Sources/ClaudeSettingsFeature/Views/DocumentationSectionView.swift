@@ -15,7 +15,7 @@ struct DocumentationSectionView: View {
 
             if documentationLoader.isLoading {
                 loadingState
-            } else if let settingDoc = documentationLoader.documentation(for: settingItem.key) {
+            } else if let settingDoc = documentationLoader.documentationWithFallback(for: settingItem.key) {
                 comprehensiveDocumentation(settingDoc)
             } else if let documentation = settingItem.documentation {
                 basicDocumentation(documentation)

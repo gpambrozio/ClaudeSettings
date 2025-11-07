@@ -20,123 +20,323 @@ public struct InspectorView: View {
     @ViewBuilder
     private func settingDetails(key: String, viewModel: SettingsViewModel) -> some View {
         if let item = viewModel.settingItems.first(where: { $0.key == key }) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Key section
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Key")
+            // Leaf node with actual setting value
+            leafNodeDetails(item: item)
+        } else if let doc = documentationLoader.documentation(for: key) {
+            // Parent node with documentation
+            parentNodeDetails(key: key, documentation: doc)
+        } else {
+            // Parent node without documentation
+            parentNodeWithoutDocumentation(key: key, viewModel: viewModel)
+        }
+    }
+
+    @ViewBuilder
+    private func leafNodeDetails(item: SettingItem) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Key section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Key")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    HStack {
+                        Text(item.key)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+
+                        let typeInfo = getTypeInfo(item.value)
+                        Text(typeInfo.0)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(typeInfo.1.opacity(0.2))
+                            .foregroundStyle(typeInfo.1)
+                            .cornerRadius(6)
 
-                        HStack {
-                            Text(item.key)
-                                .font(.system(.body, design: .monospaced))
-                                .textSelection(.enabled)
-
-                            let typeInfo = getTypeInfo(item.value)
-                            Text(typeInfo.0)
+                        if item.isDeprecated {
+                            Symbols.clockArrowCirclepath.image
+                                .foregroundStyle(.orange)
                                 .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(typeInfo.1.opacity(0.2))
-                                .foregroundStyle(typeInfo.1)
-                                .cornerRadius(6)
+                        }
 
-                            if item.isDeprecated {
-                                Symbols.clockArrowCirclepath.image
-                                    .foregroundStyle(.orange)
-                                    .font(.caption)
-                            }
-
-                            if !item.isActive {
-                                Symbols.exclamationmarkTriangle.image
-                                    .foregroundStyle(.yellow)
-                                    .font(.caption)
-                            }
+                        if !item.isActive {
+                            Symbols.exclamationmarkTriangle.image
+                                .foregroundStyle(.yellow)
+                                .font(.caption)
                         }
                     }
+                }
 
-                    // Show all source contributions
-                    ForEach(Array(item.contributions.enumerated()), id: \.offset) { index, contribution in
-                        Divider()
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Circle()
-                                    .fill(sourceColor(for: contribution.source))
-                                    .frame(width: 8, height: 8)
-                                Text(sourceLabel(for: contribution.source))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .textCase(.uppercase)
-
-                                // Show override indicator for non-additive settings
-                                if !item.isAdditive && index < item.contributions.count - 1 {
-                                    Text("(overridden)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .italic()
-                                }
-                            }
-
-                            Text(formatValue(contribution.value))
-                                .font(.system(.body, design: .monospaced))
-                                .textSelection(.enabled)
-                                .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1)
-                        }
-                    }
-
-                    // Documentation section
-                    if documentationLoader.documentation(for: item.key) != nil || item.documentation != nil {
-                        Divider()
-
-                        DocumentationSectionView(
-                            settingItem: item,
-                            documentationLoader: documentationLoader
-                        )
-                    }
-
+                // Show all source contributions
+                ForEach(Array(item.contributions.enumerated()), id: \.offset) { index, contribution in
                     Divider()
 
-                    // Actions section
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Actions")
+                        HStack {
+                            Circle()
+                                .fill(sourceColor(for: contribution.source))
+                                .frame(width: 8, height: 8)
+                            Text(sourceLabel(for: contribution.source))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+
+                            // Show override indicator for non-additive settings
+                            if !item.isAdditive && index < item.contributions.count - 1 {
+                                Text("(overridden)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .italic()
+                            }
+                        }
+
+                        Text(formatValue(contribution.value))
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                            .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1)
+                    }
+                }
+
+                // Documentation section
+                if documentationLoader.documentationWithFallback(for: item.key) != nil || item.documentation != nil {
+                    Divider()
+
+                    DocumentationSectionView(
+                        settingItem: item,
+                        documentationLoader: documentationLoader
+                    )
+                }
+
+                Divider()
+
+                // Actions section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Actions")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    HStack(spacing: 8) {
+                        Button("Copy Value") {
+                            copyToClipboard(formatValue(item.value))
+                        }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+
+                        Button("Edit") {
+                            // TODO: Implement in Phase 1.5
+                        }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+
+                        Button("Delete") {
+                            // TODO: Implement in Phase 1.5
+                        }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                        .tint(.red)
+
+                        Spacer()
+                    }
+                }
+
+                Spacer()
+            }
+            .padding()
+        }
+    }
+
+    @ViewBuilder
+    private func parentNodeDetails(key: String, documentation: SettingDocumentation) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Key section for parent node
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Key")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    HStack {
+                        Text(key)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+
+                        Text(documentation.typeDescription)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.pink.opacity(0.2))
+                            .foregroundStyle(.pink)
+                            .cornerRadius(6)
+                    }
+                }
 
-                        HStack(spacing: 8) {
-                            Button("Copy Value") {
-                                copyToClipboard(formatValue(item.value))
+                Divider()
+
+                // Documentation section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Documentation")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    // Type and default value
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Type:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(documentation.typeDescription)
+                                .font(.callout.monospaced())
+                        }
+
+                        if let defaultValue = documentation.defaultValue {
+                            HStack {
+                                Text("Default:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(defaultValue)
+                                    .font(.callout.monospaced())
                             }
-                            .buttonStyle(.bordered)
-                            .frame(maxWidth: .infinity)
+                        }
 
-                            Button("Edit") {
-                                // TODO: Implement in Phase 1.5
+                        if let platformNote = documentation.platformNote {
+                            HStack {
+                                Symbols.exclamationmarkCircle.image
+                                    .font(.caption2)
+                                Text(platformNote)
+                                    .font(.caption)
                             }
-                            .buttonStyle(.bordered)
-                            .frame(maxWidth: .infinity)
-
-                            Button("Delete") {
-                                // TODO: Implement in Phase 1.5
-                            }
-                            .buttonStyle(.bordered)
-                            .frame(maxWidth: .infinity)
-                            .tint(.red)
-
-                            Spacer()
+                            .foregroundStyle(.orange)
                         }
                     }
 
-                    Spacer()
+                    // Description
+                    Text(documentation.description)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+
+                    // Hook types (specific to hooks setting)
+                    if let hookTypes = documentation.hookTypes, !hookTypes.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Available hook types:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            ForEach(hookTypes, id: \.self) { hookType in
+                                Text("• \(hookType)")
+                                    .font(.callout.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    // Related environment variables
+                    if let envVars = documentation.relatedEnvVars, !envVars.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Related environment variables:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            ForEach(envVars, id: \.self) { envVar in
+                                Text("• \(envVar)")
+                                    .font(.callout.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    // Patterns (for permissions)
+                    if let patterns = documentation.patterns, !patterns.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Pattern syntax:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            ForEach(patterns, id: \.self) { pattern in
+                                Text("• \(pattern)")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    // Examples
+                    if !documentation.examples.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Examples:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            ForEach(documentation.examples) { example in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(example.description)
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+
+                                    Text(example.code)
+                                        .font(.callout.monospaced())
+                                        .padding(8)
+                                        .background(Color.primary.opacity(0.05))
+                                        .cornerRadius(4)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                    }
                 }
-                .padding()
+
+                Spacer()
             }
-        } else {
-            emptyState
+            .padding()
         }
+    }
+
+    @ViewBuilder
+    private func parentNodeWithoutDocumentation(key: String, viewModel: SettingsViewModel) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Key section for parent node
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Key")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    Text(key)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Parent Setting")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    Text("This is a parent setting that contains \(childCount(for: key, in: viewModel)) child settings.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+
+                    Text("Select a child setting to view its details, or expand this node to see all children.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding()
+        }
+    }
+
+    private func childCount(for key: String, in viewModel: SettingsViewModel) -> Int {
+        viewModel.settingItems.filter { $0.key.hasPrefix(key + ".") }.count
     }
 
     @ViewBuilder
