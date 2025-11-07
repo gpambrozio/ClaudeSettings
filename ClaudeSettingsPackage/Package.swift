@@ -28,6 +28,9 @@ let package = Package(
                 .product(name: "SFSymbolsMacro", package: "SFSymbolsMacro"),
                 .product(name: "Logging", package: "swift-log"),
             ],
+            resources: [
+                .process("Resources")
+            ],
             plugins: [
                 .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins"),
             ]

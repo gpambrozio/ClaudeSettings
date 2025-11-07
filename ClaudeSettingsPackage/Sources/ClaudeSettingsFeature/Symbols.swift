@@ -9,6 +9,7 @@ public enum Symbols: String {
     case docText = "doc.text"
     case ellipsisCircle = "ellipsis.circle"
     case exclamationmark2 = "exclamationmark.2"
+    case exclamationmarkCircle = "exclamationmark.circle"
     case exclamationmarkTriangle = "exclamationmark.triangle"
     case folder
     case gearshape

@@ -1,0 +1,546 @@
+{
+  "version": "2025-11",
+  "categories": [
+    {
+      "id": "model-behavior",
+      "name": "Model & Behavior",
+      "description": "Configure Claude's model selection and response behavior",
+      "settings": [
+        {
+          "key": "model",
+          "type": "string",
+          "defaultValue": "Auto-selected based on availability",
+          "description": "Override the default Claude model for all sessions.",
+          "examples": [
+            {
+              "code": "{\n  \"model\": \"claude-sonnet-4-5-20250929\"\n}",
+              "description": "Set specific model version"
+            }
+          ]
+        },
+        {
+          "key": "outputStyle",
+          "type": "string",
+          "description": "Adjust system prompt behavior and response formatting.",
+          "examples": []
+        },
+        {
+          "key": "statusLine",
+          "type": "object",
+          "description": "Configure custom context information displayed in the status line.",
+          "examples": [
+            {
+              "code": "{\n  \"statusLine\": {\n    \"enabled\": true,\n    \"format\": \"custom\"\n  }\n}",
+              "description": "Enable custom status line format"
+            }
+          ]
+        },
+        {
+          "key": "forceLoginMethod",
+          "type": "string",
+          "enumValues": ["claudeai", "console"],
+          "description": "Restrict authentication to specific account types.",
+          "examples": [
+            {
+              "code": "{\n  \"forceLoginMethod\": \"console\"\n}",
+              "description": "Force console login method"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "authentication",
+      "name": "Authentication",
+      "description": "Control authentication methods and organization selection",
+      "settings": [
+        {
+          "key": "apiKeyHelper",
+          "type": "string",
+          "description": "Custom script that generates authentication credentials. The script should output credentials to stdout.",
+          "relatedEnvVars": ["CLAUDE_CODE_API_KEY_HELPER_TTL_MS"],
+          "examples": [
+            {
+              "code": "{\n  \"apiKeyHelper\": \"/usr/local/bin/get-claude-token.sh\"\n}",
+              "description": "Use custom script for authentication"
+            }
+          ]
+        },
+        {
+          "key": "forceLoginOrgUUID",
+          "type": "string",
+          "format": "uuid",
+          "description": "Automatically select a specific organization during login.",
+          "examples": [
+            {
+              "code": "{\n  \"forceLoginOrgUUID\": \"12345678-1234-1234-1234-123456789abc\"\n}",
+              "description": "Auto-select organization"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "workspace",
+      "name": "Workspace Management",
+      "description": "Configure workspace behavior, cleanup, and environment",
+      "settings": [
+        {
+          "key": "cleanupPeriodDays",
+          "type": "number",
+          "defaultValue": "30",
+          "description": "Retention period (in days) for chat transcripts before automatic cleanup.",
+          "examples": [
+            {
+              "code": "{\n  \"cleanupPeriodDays\": 60\n}",
+              "description": "Keep transcripts for 60 days"
+            }
+          ]
+        },
+        {
+          "key": "includeCoAuthoredBy",
+          "type": "boolean",
+          "defaultValue": "true",
+          "description": "Include co-author byline in Git commits made by Claude Code.",
+          "examples": [
+            {
+              "code": "{\n  \"includeCoAuthoredBy\": false\n}",
+              "description": "Disable co-author byline"
+            }
+          ]
+        },
+        {
+          "key": "env",
+          "type": "object",
+          "description": "Environment variables applied to every Claude Code session.",
+          "examples": [
+            {
+              "code": "{\n  \"env\": {\n    \"NODE_ENV\": \"development\",\n    \"DEBUG\": \"true\"\n  }\n}",
+              "description": "Set development environment variables"
+            }
+          ]
+        },
+        {
+          "key": "companyAnnouncements",
+          "type": "array",
+          "itemType": "string",
+          "description": "Startup messages displayed to users, rotated randomly.",
+          "examples": [
+            {
+              "code": "{\n  \"companyAnnouncements\": [\n    \"Welcome to Acme Corp development environment!\",\n    \"Remember to run tests before committing!\",\n    \"Check the wiki for coding standards.\"\n  ]\n}",
+              "description": "Configure startup messages"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tool-integration",
+      "name": "Tool Integration",
+      "description": "Configure hooks and tool execution behavior",
+      "settings": [
+        {
+          "key": "hooks",
+          "type": "object",
+          "description": "Custom commands executed before/after tool execution.",
+          "hookTypes": [
+            "preToolExecution",
+            "postToolExecution",
+            "preRead",
+            "postWrite",
+            "preEdit",
+            "postEdit",
+            "preBash",
+            "postBash",
+            "preWebFetch",
+            "postWebFetch"
+          ],
+          "examples": [
+            {
+              "code": "{\n  \"hooks\": {\n    \"postWrite\": \"echo 'File written: ${FILE_PATH}'\",\n    \"preToolExecution\": \"timestamp.sh\"\n  }\n}",
+              "description": "Add post-write and pre-execution hooks"
+            }
+          ]
+        },
+        {
+          "key": "disableAllHooks",
+          "type": "boolean",
+          "defaultValue": "false",
+          "description": "Disable all hook functionality globally.",
+          "examples": [
+            {
+              "code": "{\n  \"disableAllHooks\": true\n}",
+              "description": "Disable all hooks"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "permissions",
+      "name": "Permission System",
+      "description": "Control tool access and file permissions",
+      "settings": [
+        {
+          "key": "permissions.allow",
+          "type": "array",
+          "itemType": "string",
+          "description": "Grant explicit tool use permissions without prompting. Supports tool patterns like 'ToolName(pattern)'.",
+          "patterns": [
+            "Bash(command:*) - Prefix matching for bash commands",
+            "Read(glob/pattern/**) - Glob patterns for file operations",
+            "WebFetch(domain:example.com) - Domain restrictions"
+          ],
+          "examples": [
+            {
+              "code": "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git:*)\",\n      \"Bash(npm:*)\",\n      \"Read(src/**/*.js)\",\n      \"Edit(src/**/*.js)\",\n      \"WebFetch(domain:github.com)\"\n    ]\n  }\n}",
+              "description": "Allow common development tools"
+            }
+          ]
+        },
+        {
+          "key": "permissions.ask",
+          "type": "array",
+          "itemType": "string",
+          "description": "Request user confirmation before allowing tool use.",
+          "examples": [
+            {
+              "code": "{\n  \"permissions\": {\n    \"ask\": [\n      \"Bash(rm:*)\",\n      \"Bash(docker:*)\",\n      \"Write(.env)\"\n    ]\n  }\n}",
+              "description": "Require confirmation for destructive operations"
+            }
+          ]
+        },
+        {
+          "key": "permissions.deny",
+          "type": "array",
+          "itemType": "string",
+          "description": "Block specific tools or file patterns completely.",
+          "examples": [
+            {
+              "code": "{\n  \"permissions\": {\n    \"deny\": [\n      \"Read(.env)\",\n      \"Read(.env.*)\",\n      \"Read(secrets/**)\",\n      \"Bash(curl:*)\",\n      \"WebFetch(domain:internal-api.example.com)\"\n    ]\n  }\n}",
+              "description": "Block access to sensitive files and commands"
+            }
+          ]
+        },
+        {
+          "key": "permissions.additionalDirectories",
+          "type": "array",
+          "itemType": "string",
+          "description": "Expand Claude's working directory access beyond the current project.",
+          "examples": [
+            {
+              "code": "{\n  \"permissions\": {\n    \"additionalDirectories\": [\n      \"/usr/local/lib/my-company-tools\",\n      \"~/shared-configs\"\n    ]\n  }\n}",
+              "description": "Add access to additional directories"
+            }
+          ]
+        },
+        {
+          "key": "permissions.defaultMode",
+          "type": "string",
+          "description": "Permission mode to use on startup (e.g., 'acceptEdits').",
+          "examples": [
+            {
+              "code": "{\n  \"permissions\": {\n    \"defaultMode\": \"acceptEdits\"\n  }\n}",
+              "description": "Start in accept edits mode"
+            }
+          ]
+        },
+        {
+          "key": "permissions.disableBypassPermissionsMode",
+          "type": "string",
+          "enumValues": ["disable"],
+          "description": "Prevent users from bypassing permission restrictions.",
+          "examples": [
+            {
+              "code": "{\n  \"permissions\": {\n    \"disableBypassPermissionsMode\": \"disable\"\n  }\n}",
+              "description": "Disable permission bypass"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sandbox",
+      "name": "Sandbox Configuration",
+      "description": "Configure command sandboxing for filesystem and network isolation",
+      "platformNote": "Only available on macOS and Linux",
+      "settings": [
+        {
+          "key": "sandbox.enabled",
+          "type": "boolean",
+          "defaultValue": "false",
+          "description": "Activate command sandboxing.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"enabled\": true\n  }\n}",
+              "description": "Enable sandbox"
+            }
+          ]
+        },
+        {
+          "key": "sandbox.autoAllowBashIfSandboxed",
+          "type": "boolean",
+          "defaultValue": "true",
+          "description": "Automatically approve Bash commands when they run in the sandbox.",
+          "examples": []
+        },
+        {
+          "key": "sandbox.allowUnsandboxedCommands",
+          "type": "boolean",
+          "defaultValue": "true",
+          "description": "Allow commands to escape the sandbox when necessary. Set to false for strict enterprise policies.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"allowUnsandboxedCommands\": false\n  }\n}",
+              "description": "Enforce strict sandboxing"
+            }
+          ]
+        },
+        {
+          "key": "sandbox.excludedCommands",
+          "type": "array",
+          "itemType": "string",
+          "description": "Commands that always run outside the sandbox (prefix matching).",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"excludedCommands\": [\n      \"git\",\n      \"docker\",\n      \"npm\"\n    ]\n  }\n}",
+              "description": "Exclude commands from sandbox"
+            }
+          ]
+        },
+        {
+          "key": "sandbox.network.allowUnixSockets",
+          "type": "array",
+          "itemType": "string",
+          "description": "Unix socket paths accessible within the sandbox.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"allowUnixSockets\": [\n        \"/var/run/docker.sock\",\n        \"/tmp/my-app.sock\"\n      ]\n    }\n  }\n}",
+              "description": "Allow specific Unix sockets"
+            }
+          ]
+        },
+        {
+          "key": "sandbox.network.allowLocalBinding",
+          "type": "boolean",
+          "defaultValue": "false",
+          "platformNote": "macOS only",
+          "description": "Allow binding to localhost ports within the sandbox.",
+          "examples": []
+        },
+        {
+          "key": "sandbox.network.httpProxyPort",
+          "type": "number",
+          "description": "Custom HTTP proxy port for sandbox network requests.",
+          "examples": []
+        },
+        {
+          "key": "sandbox.network.socksProxyPort",
+          "type": "number",
+          "description": "Custom SOCKS proxy port for sandbox network requests.",
+          "examples": []
+        },
+        {
+          "key": "sandbox.enableWeakerNestedSandbox",
+          "type": "boolean",
+          "defaultValue": "false",
+          "description": "Reduce sandbox security for Docker/container environments where full isolation causes issues.",
+          "examples": []
+        }
+      ]
+    },
+    {
+      "id": "mcp",
+      "name": "MCP Server Configuration",
+      "description": "Configure Model Context Protocol servers",
+      "settings": [
+        {
+          "key": "enableAllProjectMcpServers",
+          "type": "boolean",
+          "defaultValue": "false",
+          "description": "Automatically approve all MCP servers defined in project-level configuration.",
+          "examples": [
+            {
+              "code": "{\n  \"enableAllProjectMcpServers\": true\n}",
+              "description": "Auto-approve project MCP servers"
+            }
+          ]
+        },
+        {
+          "key": "enabledMcpjsonServers",
+          "type": "array",
+          "itemType": "string",
+          "description": "List of specific MCP servers to approve/enable.",
+          "examples": [
+            {
+              "code": "{\n  \"enabledMcpjsonServers\": [\n    \"github-mcp\",\n    \"sqlite-mcp\"\n  ]\n}",
+              "description": "Enable specific MCP servers"
+            }
+          ]
+        },
+        {
+          "key": "disabledMcpjsonServers",
+          "type": "array",
+          "itemType": "string",
+          "description": "List of specific MCP servers to reject/disable.",
+          "examples": [
+            {
+              "code": "{\n  \"disabledMcpjsonServers\": [\n    \"experimental-mcp\"\n  ]\n}",
+              "description": "Disable specific MCP servers"
+            }
+          ]
+        },
+        {
+          "key": "allowedMcpServers",
+          "type": "array",
+          "itemType": "string",
+          "defaultValue": "undefined (no restrictions)",
+          "description": "Enterprise allowlist. Only listed servers can be used.",
+          "examples": [
+            {
+              "code": "{\n  \"allowedMcpServers\": [\n    \"approved-internal-mcp\",\n    \"github-mcp\"\n  ]\n}",
+              "description": "Restrict to approved servers only"
+            }
+          ]
+        },
+        {
+          "key": "deniedMcpServers",
+          "type": "array",
+          "itemType": "string",
+          "description": "Enterprise denylist. Listed servers are blocked. Takes precedence over allowlist.",
+          "examples": [
+            {
+              "code": "{\n  \"deniedMcpServers\": [\n    \"unapproved-external-mcp\",\n    \"experimental-*\"\n  ]\n}",
+              "description": "Block specific MCP servers"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "plugins",
+      "name": "Plugin System",
+      "description": "Configure plugin enablement and marketplaces",
+      "settings": [
+        {
+          "key": "enabledPlugins",
+          "type": "array",
+          "itemType": "string",
+          "format": "plugin-name@marketplace-name",
+          "description": "Control which plugins are enabled.",
+          "examples": [
+            {
+              "code": "{\n  \"enabledPlugins\": [\n    \"swift-dev@official\",\n    \"custom-linter@company-marketplace\"\n  ]\n}",
+              "description": "Enable specific plugins"
+            }
+          ]
+        },
+        {
+          "key": "extraKnownMarketplaces",
+          "type": "array",
+          "itemType": "object",
+          "description": "Define additional plugin sources beyond the official marketplace. Supports GitHub repositories, Git URLs, and local directories.",
+          "examples": [
+            {
+              "code": "{\n  \"extraKnownMarketplaces\": [\n    {\n      \"name\": \"company-marketplace\",\n      \"type\": \"github\",\n      \"url\": \"https://github.com/company/claude-plugins\"\n    },\n    {\n      \"name\": \"local-dev\",\n      \"type\": \"local\",\n      \"path\": \"/Users/dev/my-plugins\"\n    }\n  ]\n}",
+              "description": "Add custom plugin marketplaces"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "Bash",
+      "requiresPermission": true,
+      "description": "Execute shell commands"
+    },
+    {
+      "name": "Edit",
+      "requiresPermission": true,
+      "description": "Modify existing files"
+    },
+    {
+      "name": "Write",
+      "requiresPermission": true,
+      "description": "Create new files or overwrite existing ones"
+    },
+    {
+      "name": "Read",
+      "requiresPermission": false,
+      "description": "Read file contents"
+    },
+    {
+      "name": "Glob",
+      "requiresPermission": false,
+      "description": "Find files by pattern matching"
+    },
+    {
+      "name": "Grep",
+      "requiresPermission": false,
+      "description": "Search file contents by regex"
+    },
+    {
+      "name": "NotebookEdit",
+      "requiresPermission": true,
+      "description": "Edit Jupyter notebook cells"
+    },
+    {
+      "name": "NotebookRead",
+      "requiresPermission": false,
+      "description": "Read Jupyter notebooks"
+    },
+    {
+      "name": "WebFetch",
+      "requiresPermission": true,
+      "description": "Fetch content from URLs"
+    },
+    {
+      "name": "WebSearch",
+      "requiresPermission": true,
+      "description": "Search the web"
+    },
+    {
+      "name": "SlashCommand",
+      "requiresPermission": true,
+      "description": "Execute custom slash commands"
+    },
+    {
+      "name": "Task",
+      "requiresPermission": false,
+      "description": "Delegate work to specialized subagents"
+    },
+    {
+      "name": "TodoWrite",
+      "requiresPermission": false,
+      "description": "Manage task lists"
+    }
+  ],
+  "bestPractices": [
+    {
+      "title": "Use Layered Configuration",
+      "description": "Organize settings across user, project, local, and managed levels for proper separation of concerns."
+    },
+    {
+      "title": "Protect Sensitive Data",
+      "description": "Always deny access to sensitive files using permissions.deny patterns."
+    },
+    {
+      "title": "Use Specific Permissions",
+      "description": "Prefer specific permissions over wildcards to maintain security."
+    },
+    {
+      "title": "Enable Sandboxing for Security",
+      "description": "Use sandbox mode in environments requiring isolation."
+    },
+    {
+      "title": "Document Project-Level Settings",
+      "description": "Add comments to settings files to explain team conventions."
+    },
+    {
+      "title": "Version Control Considerations",
+      "description": "Commit shared settings, gitignore personal preferences and credentials."
+    }
+  ]
+}

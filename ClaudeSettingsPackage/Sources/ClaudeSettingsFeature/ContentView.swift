@@ -5,6 +5,7 @@ public struct ContentView: View {
     @State private var sidebarSelection: SidebarSelection?
     @State private var selectedSettingKey: String?
     @State private var settingsViewModel: SettingsViewModel?
+    @StateObject private var documentationLoader = DocumentationLoader.shared
 
     public var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -19,9 +20,16 @@ public struct ContentView: View {
             }
         } detail: {
             // Inspector: Details & Actions
-            InspectorView(selectedKey: selectedSettingKey, settingsViewModel: settingsViewModel)
+            InspectorView(
+                selectedKey: selectedSettingKey,
+                settingsViewModel: settingsViewModel,
+                documentationLoader: documentationLoader
+            )
         }
         .navigationSplitViewStyle(.balanced)
+        .task {
+            await documentationLoader.load()
+        }
         .onChange(of: sidebarSelection) { _, newSelection in
             handleSelectionChange(newSelection)
         }
