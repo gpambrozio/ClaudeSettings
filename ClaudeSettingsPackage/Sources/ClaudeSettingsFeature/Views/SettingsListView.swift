@@ -212,7 +212,8 @@ struct HierarchicalSettingNodeView: View {
                 // Leaf node - display as regular setting item row
                 SettingItemRow(
                     item: item,
-                    isSelected: selectedKey == item.key
+                    isSelected: selectedKey == item.key,
+                    displayName: node.displayName
                 )
                 .tag(item.key)
             }
@@ -224,12 +225,13 @@ struct HierarchicalSettingNodeView: View {
 struct SettingItemRow: View {
     let item: SettingItem
     let isSelected: Bool
+    let displayName: String?
 
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(item.key)
+                    Text(displayName ?? item.key)
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(isSelected ? .primary : .secondary)
 
@@ -537,7 +539,8 @@ struct SettingItemRow: View {
             source: .projectSettings,
             contributions: [SourceContribution(source: .projectSettings, value: .string("dark"))]
         ),
-        isSelected: false
+        isSelected: false,
+        displayName: nil
     )
     .padding()
 }
@@ -550,7 +553,8 @@ struct SettingItemRow: View {
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
         ),
-        isSelected: false
+        isSelected: false,
+        displayName: nil
     )
     .padding()
 }
@@ -566,7 +570,8 @@ struct SettingItemRow: View {
                 SourceContribution(source: .projectSettings, value: .array([.string("dist")])),
             ]
         ),
-        isSelected: false
+        isSelected: false,
+        displayName: nil
     )
     .padding()
 }
@@ -583,7 +588,8 @@ struct SettingItemRow: View {
                 SourceContribution(source: .projectLocal, value: .int(2)),
             ]
         ),
-        isSelected: false
+        isSelected: false,
+        displayName: nil
     )
     .padding()
 }
@@ -597,7 +603,8 @@ struct SettingItemRow: View {
             contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true
         ),
-        isSelected: false
+        isSelected: false,
+        displayName: nil
     )
     .padding()
 }
@@ -610,7 +617,8 @@ struct SettingItemRow: View {
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(16))]
         ),
-        isSelected: true
+        isSelected: true,
+        displayName: nil
     )
     .padding()
 }
