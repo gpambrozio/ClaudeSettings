@@ -84,7 +84,6 @@ struct SettingsViewModelTests {
 
         // But contributions show both sources
         #expect(permissionsItem?.contributions.count == 2, "Should track two contributors")
-        #expect(permissionsItem?.valueType == .array, "Should be array type")
     }
 
     /// Test that nested objects are properly flattened

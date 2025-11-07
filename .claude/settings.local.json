@@ -27,7 +27,8 @@
       "WebSearch",
       "WebFetch(domain:asciiwwdc.com)",
       "Bash(python3:*)",
-      "WebFetch(domain:code.claude.com)"
+      "WebFetch(domain:code.claude.com)",
+      "Bash(/Users/gustavoambrozio/Development/ClaudeCodePlugins/SwiftDevelopment/skills/swift-compile/scripts/swift.sh test:*)"
     ],
     "defaultMode": "acceptEdits"
   },

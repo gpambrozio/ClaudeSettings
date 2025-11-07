@@ -50,6 +50,13 @@ public struct ContentView: View {
         // Clear selected key when changing selections
         selectedSettingKey = nil
 
+        // Clean up the old view model's file watcher before replacing it
+        if let oldViewModel = settingsViewModel {
+            Task {
+                await oldViewModel.stopFileWatcher()
+            }
+        }
+
         // Create and load the appropriate ViewModel
         switch newSelection {
         case .globalSettings:

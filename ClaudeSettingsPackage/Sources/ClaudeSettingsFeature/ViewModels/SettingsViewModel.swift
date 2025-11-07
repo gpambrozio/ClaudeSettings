@@ -17,6 +17,8 @@ final public class SettingsViewModel {
 
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
+    private var fileWatcher: FileWatcher?
+    private var debounceTask: Task<Void, Never>?
 
     public init(project: ClaudeProject? = nil, fileSystemManager: FileSystemManager = FileSystemManager()) {
         self.project = project
@@ -96,12 +98,106 @@ final public class SettingsViewModel {
 
                 let scope = includeProject ? "settings" : "global settings"
                 logger.info("Loaded \(files.count) \(scope) files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
+
+                // Set up file watching for live updates
+                await setupFileWatcher()
             } catch {
                 logger.error("Failed to load settings: \(error)")
                 errorMessage = userFriendlyErrorMessage(for: error)
             }
 
             isLoading = false
+        }
+    }
+
+    /// Set up file watcher to monitor settings files for changes
+    private func setupFileWatcher() async {
+        // Stop any existing watcher first
+        await stopFileWatcher()
+
+        // Only watch files that actually exist
+        let pathsToWatch = settingsFiles.map(\.path)
+
+        guard !pathsToWatch.isEmpty else {
+            logger.debug("No settings files to watch")
+            return
+        }
+
+        logger.info("Setting up file watcher for \(pathsToWatch.count) paths")
+
+        fileWatcher = FileWatcher { [weak self] changedURL in
+            Task { @MainActor in
+                await self?.handleFileChange(at: changedURL)
+            }
+        }
+
+        await fileWatcher?.startWatching(paths: pathsToWatch)
+    }
+
+    /// Stop file watching (called when switching projects or cleaning up)
+    public func stopFileWatcher() async {
+        debounceTask?.cancel()
+        debounceTask = nil
+        await fileWatcher?.stopWatching()
+        fileWatcher = nil
+    }
+
+    /// Handle file system changes with debouncing to prevent excessive reloads
+    private func handleFileChange(at url: URL) async {
+        // Cancel any pending reload
+        debounceTask?.cancel()
+
+        // Debounce: wait 200ms before reloading to handle rapid successive changes
+        debounceTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+
+            guard !Task.isCancelled else { return }
+
+            await reloadChangedFile(at: url)
+        }
+    }
+
+    /// Reload a specific settings file that changed externally
+    private func reloadChangedFile(at url: URL) async {
+        logger.info("Settings file changed externally: \(url.path)")
+
+        // Find which settings file changed
+        guard let changedFileIndex = settingsFiles.firstIndex(where: { $0.path == url }) else {
+            logger.warning("Changed file not found in loaded settings: \(url.path)")
+            return
+        }
+
+        let changedFileType = settingsFiles[changedFileIndex].type
+
+        do {
+            // Check if file still exists (might have been deleted)
+            guard await fileSystemManager.exists(at: url) else {
+                logger.info("Settings file was deleted: \(url.path)")
+                // Remove from our list
+                settingsFiles.remove(at: changedFileIndex)
+                settingItems = computeSettingItems(from: settingsFiles)
+                validationErrors = settingsFiles.flatMap(\.validationErrors)
+                return
+            }
+
+            // Reload the specific file
+            let updatedFile = try await settingsParser.parseSettingsFile(
+                at: url,
+                type: changedFileType
+            )
+
+            // Update in array
+            settingsFiles[changedFileIndex] = updatedFile
+
+            // Recompute merged settings
+            settingItems = computeSettingItems(from: settingsFiles)
+            validationErrors = settingsFiles.flatMap(\.validationErrors)
+
+            logger.info("Reloaded settings from: \(url.path)")
+        } catch {
+            logger.error("Failed to reload changed file: \(error)")
+            // Don't update errorMessage for transient issues during external edits
+            // The file might be temporarily in an invalid state while being saved
         }
     }
 
