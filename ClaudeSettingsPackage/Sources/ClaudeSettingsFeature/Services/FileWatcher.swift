@@ -125,5 +125,6 @@ public actor FileWatcher {
         // Note: Cannot directly access actor-isolated properties from deinit
         // The watchTask cancellation handler will trigger stopWatching() to clean up the FSEventStream
         // Callers should explicitly call stopWatching() before releasing if immediate cleanup is needed
+        watchTask?.cancel()
     }
 }
