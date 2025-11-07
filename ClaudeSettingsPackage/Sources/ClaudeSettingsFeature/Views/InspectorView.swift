@@ -87,120 +87,14 @@ public struct InspectorView: View {
                         }
                     }
 
-                    // Documentation section - show comprehensive docs if available
-                    if let settingDoc = documentationLoader.documentation(for: item.key) {
+                    // Documentation section
+                    if documentationLoader.documentation(for: item.key) != nil || item.documentation != nil {
                         Divider()
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Documentation")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            // Type and default value
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text("Type:")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text(settingDoc.typeDescription)
-                                        .font(.caption.monospaced())
-                                }
-
-                                if let defaultValue = settingDoc.defaultValue {
-                                    HStack {
-                                        Text("Default:")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        Text(defaultValue)
-                                            .font(.caption.monospaced())
-                                    }
-                                }
-
-                                if let platformNote = settingDoc.platformNote {
-                                    HStack {
-                                        Symbols.exclamationmarkCircle.image
-                                            .font(.caption2)
-                                        Text(platformNote)
-                                            .font(.caption)
-                                    }
-                                    .foregroundStyle(.orange)
-                                }
-                            }
-
-                            // Description
-                            Text(settingDoc.description)
-                                .font(.caption)
-                                .foregroundStyle(.primary)
-
-                            // Related environment variables
-                            if let envVars = settingDoc.relatedEnvVars, !envVars.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Related environment variables:")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                    ForEach(envVars, id: \.self) { envVar in
-                                        Text("• \(envVar)")
-                                            .font(.caption.monospaced())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-
-                            // Patterns (for permissions)
-                            if let patterns = settingDoc.patterns, !patterns.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Pattern syntax:")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                    ForEach(patterns, id: \.self) { pattern in
-                                        Text("• \(pattern)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-
-                            // Examples
-                            if !settingDoc.examples.isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Examples:")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                    ForEach(settingDoc.examples) { example in
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(example.description)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-
-                                            Text(example.code)
-                                                .font(.caption.monospaced())
-                                                .padding(8)
-                                                .background(Color.primary.opacity(0.05))
-                                                .cornerRadius(4)
-                                                .textSelection(.enabled)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else if let documentation = item.documentation {
-                        // Fallback to basic documentation if no comprehensive docs available
-                        Divider()
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Documentation")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            Text(documentation)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        DocumentationSectionView(
+                            settingItem: item,
+                            documentationLoader: documentationLoader
+                        )
                     }
 
                     Divider()
