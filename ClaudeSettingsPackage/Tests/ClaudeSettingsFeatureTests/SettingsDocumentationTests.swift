@@ -120,6 +120,107 @@ struct SettingsDocumentationLookupTests {
     }
 }
 
+// MARK: - Documentation Fallback Tests
+
+@Suite("Settings Documentation Fallback")
+struct SettingsDocumentationFallbackTests {
+    var loader: DocumentationLoader
+
+    init() async throws {
+        self.loader = DocumentationLoader()
+        await loader.load()
+
+        // Ensure documentation loaded
+        let docs = await MainActor.run { loader.documentation }
+        try #require(docs != nil)
+    }
+
+    @Test("Fallback returns exact match when available")
+    func exactMatchPreferred() async throws {
+        // permissions.allow has its own documentation
+        let doc = await MainActor.run {
+            loader.documentationWithFallback(for: "permissions.allow")
+        }
+
+        #expect(doc != nil)
+        #expect(doc?.key == "permissions.allow")
+        #expect(doc?.type == "array")
+    }
+
+    @Test("Fallback returns parent documentation when child not found")
+    func fallbackToParent() async throws {
+        // "hooks.postWrite" doesn't have specific documentation, should fall back to "hooks"
+        let doc = await MainActor.run {
+            loader.documentationWithFallback(for: "hooks.postWrite")
+        }
+
+        #expect(doc != nil)
+        #expect(doc?.key == "hooks")
+        #expect(doc?.type == "object")
+    }
+
+    @Test("Fallback returns nil when parent also not found")
+    func noFallbackAvailable() async throws {
+        let doc = await MainActor.run {
+            loader.documentationWithFallback(for: "nonexistent.child.setting")
+        }
+
+        #expect(doc == nil)
+    }
+
+    @Test("Fallback returns nil for root key without documentation")
+    func noParentForRootKey() async throws {
+        let doc = await MainActor.run {
+            loader.documentationWithFallback(for: "nonexistent")
+        }
+
+        #expect(doc == nil)
+    }
+
+    @Test("Fallback works for deeply nested keys")
+    func deeplyNestedFallback() async throws {
+        // Test a deeply nested key that doesn't exist but has parent documentation
+        // "permissions.allow.someDeepKey" should fall back to "permissions.allow"
+        let doc = await MainActor.run {
+            loader.documentationWithFallback(for: "permissions.allow.someDeepKey")
+        }
+
+        #expect(doc != nil)
+        #expect(doc?.key == "permissions.allow")
+    }
+
+    @Test("Fallback works for permission child keys")
+    func permissionChildFallback() async throws {
+        // "permissions.deny.specificRule" should fall back to "permissions.deny"
+        let doc = await MainActor.run {
+            loader.documentationWithFallback(for: "permissions.deny.specificRule")
+        }
+
+        #expect(doc != nil)
+        #expect(doc?.key == "permissions.deny")
+        #expect(doc?.type == "array")
+    }
+
+    @Test("Regular documentation method still works without fallback")
+    func regularDocumentationStillWorks() async throws {
+        // Verify the original method doesn't have fallback behavior
+        let docWithFallback = await MainActor.run {
+            loader.documentationWithFallback(for: "hooks.postWrite")
+        }
+
+        let docWithoutFallback = await MainActor.run {
+            loader.documentation(for: "hooks.postWrite")
+        }
+
+        // With fallback should find parent
+        #expect(docWithFallback != nil)
+        #expect(docWithFallback?.key == "hooks")
+
+        // Without fallback should return nil
+        #expect(docWithoutFallback == nil)
+    }
+}
+
 // MARK: - Documentation Content Tests
 
 @Suite("Settings Documentation Content")
