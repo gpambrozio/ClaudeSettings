@@ -227,6 +227,12 @@ struct SettingItemRow: View {
     let isSelected: Bool
     let displayName: String?
 
+    init(item: SettingItem, isSelected: Bool, displayName: String? = nil) {
+        self.item = item
+        self.isSelected = isSelected
+        self.displayName = displayName
+    }
+
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
@@ -539,8 +545,7 @@ struct SettingItemRow: View {
             source: .projectSettings,
             contributions: [SourceContribution(source: .projectSettings, value: .string("dark"))]
         ),
-        isSelected: false,
-        displayName: nil
+        isSelected: false
     )
     .padding()
 }
@@ -553,8 +558,7 @@ struct SettingItemRow: View {
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
         ),
-        isSelected: false,
-        displayName: nil
+        isSelected: false
     )
     .padding()
 }
@@ -570,8 +574,7 @@ struct SettingItemRow: View {
                 SourceContribution(source: .projectSettings, value: .array([.string("dist")])),
             ]
         ),
-        isSelected: false,
-        displayName: nil
+        isSelected: false
     )
     .padding()
 }
@@ -588,8 +591,7 @@ struct SettingItemRow: View {
                 SourceContribution(source: .projectLocal, value: .int(2)),
             ]
         ),
-        isSelected: false,
-        displayName: nil
+        isSelected: false
     )
     .padding()
 }
@@ -603,8 +605,7 @@ struct SettingItemRow: View {
             contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
             isDeprecated: true
         ),
-        isSelected: false,
-        displayName: nil
+        isSelected: false
     )
     .padding()
 }
@@ -617,8 +618,7 @@ struct SettingItemRow: View {
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(16))]
         ),
-        isSelected: true,
-        displayName: nil
+        isSelected: true
     )
     .padding()
 }

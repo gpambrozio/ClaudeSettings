@@ -327,6 +327,37 @@ final public class SettingsViewModel {
     }
 
     /// Compute hierarchical settings tree from flat setting items
+    ///
+    /// This function transforms a flat list of dot-notation settings (e.g., "editor.theme", "editor.fontSize")
+    /// into a hierarchical tree structure suitable for display in a collapsible outline view.
+    ///
+    /// **Algorithm Overview:**
+    /// 1. Group settings by their root key (first component before the dot)
+    /// 2. For each root group:
+    ///    - If it contains a single setting with no dots, create a leaf node
+    ///    - Otherwise, create a parent node and recursively build children
+    /// 3. Return sorted root nodes
+    ///
+    /// **Examples:**
+    /// ```
+    /// Input: ["editor.theme", "editor.fontSize", "files.exclude"]
+    /// Output:
+    ///   - editor (parent)
+    ///     - theme (leaf)
+    ///     - fontSize (leaf)
+    ///   - files (parent)
+    ///     - exclude (leaf)
+    ///
+    /// Input: ["simpleValue", "nested.deep.value"]
+    /// Output:
+    ///   - simpleValue (leaf at root)
+    ///   - nested (parent)
+    ///     - deep (parent)
+    ///       - value (leaf)
+    /// ```
+    ///
+    /// - Parameter items: Flat array of setting items with dot-notation keys
+    /// - Returns: Array of root-level hierarchical nodes, sorted alphabetically by key
     func computeHierarchicalSettings(from items: [SettingItem]) -> [HierarchicalSettingNode] {
         // Group settings by their root key (first component before dot)
         var rootGroups: [String: [SettingItem]] = [:]
@@ -373,6 +404,42 @@ final public class SettingsViewModel {
     }
 
     /// Build child nodes recursively for a group of settings
+    ///
+    /// This is a recursive helper function that builds the child nodes for a given parent key.
+    /// It works by stripping the parent prefix from each setting key and grouping by the next
+    /// component, then recursively building deeper levels.
+    ///
+    /// **Algorithm:**
+    /// 1. Strip the parent key prefix (e.g., "editor." from "editor.theme")
+    /// 2. Group remaining keys by their next component
+    /// 3. For each group:
+    ///    - If it's a single item with no more dots, create a leaf node
+    ///    - Otherwise, create a parent node and recurse
+    ///
+    /// **Example:**
+    /// ```
+    /// parentKey: "editor"
+    /// items: ["editor.theme", "editor.font.size", "editor.font.family"]
+    ///
+    /// After stripping "editor.":
+    ///   - "theme" -> single leaf
+    ///   - "font.size", "font.family" -> group under "font"
+    ///
+    /// Output:
+    ///   - theme (leaf, displayName: "theme")
+    ///   - font (parent, displayName: "font")
+    ///     - size (leaf, displayName: "size")
+    ///     - family (leaf, displayName: "family")
+    /// ```
+    ///
+    /// **Edge Case Handling:**
+    /// Lines 413-415 handle the defensive case where an item's key doesn't start with
+    /// `parentKey + "."`. This shouldn't happen given the grouping logic, but ensures
+    /// robustness if the function is called with unexpected input.
+    ///
+    /// - Parameter items: Setting items that should all have keys starting with `parentKey`
+    /// - Parameter parentKey: The parent key prefix to strip (e.g., "editor", "editor.font")
+    /// - Returns: Array of child nodes, sorted alphabetically by display name
     private func buildChildNodes(for items: [SettingItem], parentKey: String) -> [HierarchicalSettingNode] {
         // Group items by their next key component after removing parent prefix
         var groups: [String: [SettingItem]] = [:]

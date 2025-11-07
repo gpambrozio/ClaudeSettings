@@ -29,18 +29,12 @@ public struct HierarchicalSettingNode: Identifiable, Sendable {
 
     /// Returns true if this node is a parent with children
     public var isParent: Bool {
-        if case .parent = nodeType {
-            return true
-        }
-        return false
+        if case .parent = nodeType { true } else { false }
     }
 
     /// Returns true if this node is a leaf with an actual setting value
     public var isLeaf: Bool {
-        if case .leaf = nodeType {
-            return true
-        }
-        return false
+        if case .leaf = nodeType { true } else { false }
     }
 
     /// Returns the setting item if this is a leaf node
