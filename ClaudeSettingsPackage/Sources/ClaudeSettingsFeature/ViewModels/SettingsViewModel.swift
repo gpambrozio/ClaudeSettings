@@ -11,6 +11,7 @@ final public class SettingsViewModel {
 
     public var settingsFiles: [SettingsFile] = []
     public var settingItems: [SettingItem] = []
+    public var hierarchicalSettings: [HierarchicalSettingNode] = []
     public var validationErrors: [ValidationError] = []
     public var isLoading = false
     public var errorMessage: String?
@@ -95,6 +96,7 @@ final public class SettingsViewModel {
 
                 settingsFiles = files
                 settingItems = computeSettingItems(from: files)
+                hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
                 validationErrors = files.flatMap(\.validationErrors)
 
                 let scope = includeProject ? "settings" : "global settings"
@@ -172,6 +174,7 @@ final public class SettingsViewModel {
                 // Remove from our list
                 settingsFiles.remove(at: changedFileIndex)
                 settingItems = computeSettingItems(from: settingsFiles)
+                hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
                 validationErrors = settingsFiles.flatMap(\.validationErrors)
                 return
             }
@@ -187,6 +190,7 @@ final public class SettingsViewModel {
 
             // Recompute merged settings
             settingItems = computeSettingItems(from: settingsFiles)
+            hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
             validationErrors = settingsFiles.flatMap(\.validationErrors)
 
             // Reset failure counter on successful reload
@@ -320,5 +324,103 @@ final public class SettingsViewModel {
         }
 
         return result
+    }
+
+    /// Compute hierarchical settings tree from flat setting items
+    func computeHierarchicalSettings(from items: [SettingItem]) -> [HierarchicalSettingNode] {
+        // Group settings by their root key (first component before dot)
+        var rootGroups: [String: [SettingItem]] = [:]
+
+        for item in items {
+            let components = item.key.split(separator: ".", maxSplits: 1)
+            let rootKey = String(components[0])
+
+            if rootGroups[rootKey] == nil {
+                rootGroups[rootKey] = []
+            }
+            rootGroups[rootKey]?.append(item)
+        }
+
+        // Build hierarchical nodes
+        var rootNodes: [HierarchicalSettingNode] = []
+
+        for (rootKey, groupItems) in rootGroups.sorted(by: { $0.key < $1.key }) {
+            if groupItems.count == 1 && !groupItems[0].key.contains(".") {
+                // Single item without dots - it's a leaf node at root level
+                let item = groupItems[0]
+                let node = HierarchicalSettingNode(
+                    id: item.key,
+                    key: item.key,
+                    displayName: item.key,
+                    nodeType: .leaf(item: item)
+                )
+                rootNodes.append(node)
+            } else {
+                // Multiple items or nested items - create parent node
+                let children = buildChildNodes(for: groupItems, parentKey: rootKey)
+                let node = HierarchicalSettingNode(
+                    id: rootKey,
+                    key: rootKey,
+                    displayName: rootKey,
+                    nodeType: .parent(childCount: children.count),
+                    children: children
+                )
+                rootNodes.append(node)
+            }
+        }
+
+        return rootNodes
+    }
+
+    /// Build child nodes recursively for a group of settings
+    private func buildChildNodes(for items: [SettingItem], parentKey: String) -> [HierarchicalSettingNode] {
+        // Group items by their next key component after removing parent prefix
+        var groups: [String: [SettingItem]] = [:]
+
+        for item in items {
+            // Remove parent key and dot from the beginning
+            let remainingKey = item.key.hasPrefix(parentKey + ".")
+                ? String(item.key.dropFirst(parentKey.count + 1))
+                : item.key
+
+            let components = remainingKey.split(separator: ".", maxSplits: 1)
+            let nextKey = String(components[0])
+
+            if groups[nextKey] == nil {
+                groups[nextKey] = []
+            }
+            groups[nextKey]?.append(item)
+        }
+
+        // Build nodes for each group
+        var nodes: [HierarchicalSettingNode] = []
+
+        for (nextKey, groupItems) in groups.sorted(by: { $0.key < $1.key }) {
+            if groupItems.count == 1 && groupItems[0].key == "\(parentKey).\(nextKey)" {
+                // This is a leaf node
+                let item = groupItems[0]
+                let node = HierarchicalSettingNode(
+                    id: item.key,
+                    key: item.key,
+                    displayName: nextKey,
+                    nodeType: .leaf(item: item)
+                )
+                nodes.append(node)
+            } else {
+                // This has more nesting - create parent node
+                let fullKey = "\(parentKey).\(nextKey)"
+                let children = buildChildNodes(for: groupItems, parentKey: fullKey)
+                let node = HierarchicalSettingNode(
+                    id: fullKey,
+                    key: fullKey,
+                    displayName: nextKey,
+                    nodeType: .parent(childCount: children.count),
+                    children: children
+                )
+                nodes.append(node)
+            }
+        }
+
+        return nodes
     }
 }
