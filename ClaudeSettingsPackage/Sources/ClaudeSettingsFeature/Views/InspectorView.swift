@@ -4,6 +4,7 @@ import SwiftUI
 public struct InspectorView: View {
     let selectedKey: String?
     let settingsViewModel: SettingsViewModel?
+    @ObservedObject var documentationLoader: DocumentationLoader
 
     public var body: some View {
         Group {
@@ -86,19 +87,14 @@ public struct InspectorView: View {
                         }
                     }
 
-                    if let documentation = item.documentation {
+                    // Documentation section
+                    if documentationLoader.documentation(for: item.key) != nil || item.documentation != nil {
                         Divider()
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Documentation")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            Text(documentation)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        DocumentationSectionView(
+                            settingItem: item,
+                            documentationLoader: documentationLoader
+                        )
                     }
 
                     Divider()
@@ -251,9 +247,14 @@ public struct InspectorView: View {
         pasteboard.setString(text, forType: .string)
     }
 
-    public init(selectedKey: String?, settingsViewModel: SettingsViewModel?) {
+    public init(
+        selectedKey: String?,
+        settingsViewModel: SettingsViewModel?,
+        documentationLoader: DocumentationLoader = .shared
+    ) {
         self.selectedKey = selectedKey
         self.settingsViewModel = settingsViewModel
+        self.documentationLoader = documentationLoader
     }
 }
 

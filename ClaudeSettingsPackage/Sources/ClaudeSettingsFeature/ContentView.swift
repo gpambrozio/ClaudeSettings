@@ -5,6 +5,7 @@ public struct ContentView: View {
     @State private var sidebarSelection: SidebarSelection?
     @State private var selectedSettingKey: String?
     @State private var settingsViewModel: SettingsViewModel?
+    @StateObject private var documentationLoader = DocumentationLoader.shared
     @State private var selectionChangeTask: Task<Void, Never>?
 
     public var body: some View {
@@ -20,9 +21,16 @@ public struct ContentView: View {
             }
         } detail: {
             // Inspector: Details & Actions
-            InspectorView(selectedKey: selectedSettingKey, settingsViewModel: settingsViewModel)
+            InspectorView(
+                selectedKey: selectedSettingKey,
+                settingsViewModel: settingsViewModel,
+                documentationLoader: documentationLoader
+            )
         }
         .navigationSplitViewStyle(.balanced)
+        .task {
+            await documentationLoader.load()
+        }
         .onChange(of: sidebarSelection) { _, newSelection in
             // Cancel any in-flight selection change to prevent race conditions
             selectionChangeTask?.cancel()

@@ -15,12 +15,12 @@ public enum SettingValue: Codable, Sendable, Hashable {
 
         if container.decodeNil() {
             self = .null
+        } else if let bool = try? container.decode(Bool.self) {
+            self = .bool(bool)
         } else if let int = try? container.decode(Int.self) {
             self = .int(int)
         } else if let double = try? container.decode(Double.self) {
             self = .double(double)
-        } else if let bool = try? container.decode(Bool.self) {
-            self = .bool(bool)
         } else if let string = try? container.decode(String.self) {
             self = .string(string)
         } else if let array = try? container.decode([SettingValue].self) {
@@ -81,14 +81,14 @@ public enum SettingValue: Codable, Sendable, Hashable {
         switch value {
         case let string as String:
             self = .string(string)
+        case let bool as Bool:
+            self = .bool(bool)
         case let int as Int:
             self = .int(int)
         case let double as Double:
             self = .double(double)
         case let float as Float:
             self = .double(Double(float))
-        case let bool as Bool:
-            self = .bool(bool)
         case let array as [Any]:
             self = .array(array.map { SettingValue(any: $0) })
         case let dict as [String: Any]:
