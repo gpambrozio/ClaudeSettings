@@ -9,8 +9,6 @@ public struct InspectorView: View {
     @State private var showDeleteConfirmation = false
     @State private var showCopySheet = false
     @State private var showMoveSheet = false
-    @State private var errorMessage: String?
-    @State private var showError = false
 
     public var body: some View {
         Group {
@@ -169,17 +167,38 @@ public struct InspectorView: View {
                 isPresented: $showDeleteConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Delete from All Files", role: .destructive) {
-                    performDelete(item: item)
+                if let viewModel = settingsViewModel {
+                    // Show delete option for each writable file that contains this setting
+                    ForEach(item.contributions, id: \.source) { contribution in
+                        if !isReadOnly(fileType: contribution.source, in: viewModel) {
+                            Button("Delete from \(contribution.source.displayName)", role: .destructive) {
+                                performDelete(item: item, from: contribution.source)
+                            }
+                        }
+                    }
+
+                    // Option to delete from all files if there are multiple
+                    if item.contributions.filter({ !isReadOnly(fileType: $0.source, in: viewModel) }).count > 1 {
+                        Divider()
+                        Button("Delete from All Files", role: .destructive) {
+                            performDeleteFromAll(item: item)
+                        }
+                    }
                 }
+
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("Are you sure you want to delete '\(item.key)' from all settings files? This action cannot be undone.")
+                Text("Choose which file to delete '\(item.key)' from. This action cannot be undone.")
             }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) { }
+            .alert("Error", isPresented: Binding(
+                get: { settingsViewModel?.errorMessage != nil },
+                set: { if !$0 { settingsViewModel?.errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {
+                    settingsViewModel?.errorMessage = nil
+                }
             } message: {
-                if let errorMessage {
+                if let errorMessage = settingsViewModel?.errorMessage {
                     Text(errorMessage)
                 }
             }
@@ -197,7 +216,7 @@ public struct InspectorView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // Get pending edit if it exists
-            let pendingEdit = settingsViewModel?.getPendingEdit(for: item)
+            let pendingEdit = settingsViewModel?.getPendingEditOrCreate(for: item)
             let isEditingThisContribution = (settingsViewModel?.isEditingMode ?? false) &&
                 pendingEdit?.targetFileType == contribution.source
 
@@ -753,20 +772,19 @@ public struct InspectorView: View {
                                 let jsonObject = try? JSONSerialization.jsonObject(with: data) {
                                 let newValue = SettingValue(any: jsonObject)
                                 viewModel.updatePendingEdit(key: item.key, value: newValue, targetFileType: pendingEdit.targetFileType)
-                                viewModel.setJsonValidationError(for: item.key, error: nil)
                             } else if !newText.isEmpty {
                                 // Show validation error for non-empty invalid JSON
-                                viewModel.setJsonValidationError(for: item.key, error: "Invalid JSON syntax")
+                                viewModel.updatePendingEdit(key: item.key, value: pendingEdit.value, targetFileType: pendingEdit.targetFileType, validationError: "Invalid JSON syntax")
                             } else {
-                                viewModel.setJsonValidationError(for: item.key, error: nil)
+                                viewModel.setValidationError(for: item.key, error: nil)
                             }
                         }
                     ))
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 100)
-                    .border(viewModel.jsonValidationErrors[item.key] != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
+                    .border(pendingEdit.validationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
 
-                    if let validationError = viewModel.jsonValidationErrors[item.key] {
+                    if let validationError = pendingEdit.validationError {
                         HStack(spacing: 4) {
                             Symbols.exclamationmarkTriangle.image
                                 .font(.caption2)
@@ -821,8 +839,7 @@ public struct InspectorView: View {
                 try await viewModel.copySetting(key: item.key, from: sourceType, to: destination)
             } catch {
                 await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    showError = true
+                    viewModel.errorMessage = error.localizedDescription
                 }
             }
         }
@@ -839,29 +856,48 @@ public struct InspectorView: View {
                 try await viewModel.moveSetting(key: item.key, from: sourceType, to: destination)
             } catch {
                 await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    showError = true
+                    viewModel.errorMessage = error.localizedDescription
                 }
             }
         }
     }
 
-    private func performDelete(item: SettingItem) {
+    private func performDelete(item: SettingItem, from fileType: SettingsFileType) {
         guard let viewModel = settingsViewModel else { return }
 
-        // Delete from all files that have this setting
         Task {
             do {
-                for contribution in item.contributions {
+                try await viewModel.deleteSetting(key: item.key, from: fileType)
+            } catch {
+                await MainActor.run {
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func performDeleteFromAll(item: SettingItem) {
+        guard let viewModel = settingsViewModel else { return }
+
+        // Delete from all writable files that have this setting
+        Task {
+            do {
+                for contribution in item.contributions where !isReadOnly(fileType: contribution.source, in: viewModel) {
                     try await viewModel.deleteSetting(key: item.key, from: contribution.source)
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    showError = true
+                    viewModel.errorMessage = error.localizedDescription
                 }
             }
         }
+    }
+
+    private func isReadOnly(fileType: SettingsFileType, in viewModel: SettingsViewModel) -> Bool {
+        if let file = viewModel.settingsFiles.first(where: { $0.type == fileType }) {
+            return file.isReadOnly
+        }
+        return false
     }
 
     public init(

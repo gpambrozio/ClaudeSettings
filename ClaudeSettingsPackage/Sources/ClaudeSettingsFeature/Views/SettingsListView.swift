@@ -49,7 +49,7 @@ public struct SettingsListView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!settingsViewModel.jsonValidationErrors.isEmpty)
+                    .disabled(settingsViewModel.pendingEdits.values.contains(where: { $0.validationError != nil }))
 
                     if !settingsViewModel.pendingEdits.isEmpty {
                         Text("\(settingsViewModel.pendingEdits.count) edited")

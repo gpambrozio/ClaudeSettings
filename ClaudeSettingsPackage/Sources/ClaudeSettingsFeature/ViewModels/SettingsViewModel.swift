@@ -4,14 +4,17 @@ import SwiftUI
 
 /// Editing state for a single setting
 public struct PendingEdit: Equatable, Identifiable {
-    public let id: String // Setting key
+    public var key: String
+    public var id: String { key } // Identifiable conformance
     public var value: SettingValue
     public var targetFileType: SettingsFileType
+    public var validationError: String? // Validation error for this edit
 
-    public init(key: String, value: SettingValue, targetFileType: SettingsFileType) {
-        self.id = key
+    public init(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil) {
+        self.key = key
         self.value = value
         self.targetFileType = targetFileType
+        self.validationError = validationError
     }
 }
 
@@ -36,9 +39,6 @@ final public class SettingsViewModel {
 
     /// Dictionary of pending edits, keyed by setting key
     public var pendingEdits: [String: PendingEdit] = [:]
-
-    /// JSON validation errors for complex types being edited
-    public var jsonValidationErrors: [String: String] = [:]
 
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
@@ -521,16 +521,15 @@ final public class SettingsViewModel {
     public func startEditing() {
         isEditingMode = true
         pendingEdits.removeAll()
-        jsonValidationErrors.removeAll()
         logger.info("Entered editing mode")
     }
 
     /// Cancel all pending edits and exit editing mode
     public func cancelEditing() {
+        let editCount = pendingEdits.count
         isEditingMode = false
         pendingEdits.removeAll()
-        jsonValidationErrors.removeAll()
-        logger.info("Cancelled editing mode - discarded \(pendingEdits.count) pending edits")
+        logger.info("Cancelled editing mode - discarded \(editCount) pending edits")
     }
 
     /// Check if a specific setting has pending edits
@@ -538,42 +537,67 @@ final public class SettingsViewModel {
         pendingEdits[key] != nil
     }
 
-    /// Get the pending edit for a setting, or create one from current value
-    public func getPendingEdit(for item: SettingItem) -> PendingEdit {
+    /// Get the pending edit for a setting, or create a temporary one from current value.
+    /// Note: This does NOT store the edit in pendingEdits - it's purely for UI display.
+    /// Use updatePendingEdit() to actually store an edit.
+    public func getPendingEditOrCreate(for item: SettingItem) -> PendingEdit {
         if let existing = pendingEdits[item.key] {
             return existing
         }
 
-        // Create new pending edit based on the active contribution (highest precedence)
+        // Create temporary pending edit based on the active contribution (highest precedence)
         let targetFileType = item.contributions.last?.source ?? item.source
         return PendingEdit(key: item.key, value: item.value, targetFileType: targetFileType)
     }
 
     /// Update a pending edit (doesn't save to disk yet)
-    public func updatePendingEdit(key: String, value: SettingValue, targetFileType: SettingsFileType) {
-        pendingEdits[key] = PendingEdit(key: key, value: value, targetFileType: targetFileType)
-        // Clear any JSON validation error for this key when value is updated successfully
-        jsonValidationErrors.removeValue(forKey: key)
-        logger.debug("Updated pending edit for '\(key)'")
+    /// - Parameters:
+    ///   - key: The setting key
+    ///   - value: The new value
+    ///   - targetFileType: The file to save to
+    ///   - validationError: Optional validation error to attach to this edit
+    public func updatePendingEdit(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil) {
+        // Validate the value before storing
+        let finalValidationError = validationError ?? validateValue(value)
+
+        pendingEdits[key] = PendingEdit(
+            key: key,
+            value: value,
+            targetFileType: targetFileType,
+            validationError: finalValidationError
+        )
+        logger.debug("Updated pending edit for '\(key)'\(finalValidationError.map { " with validation error: \($0)" } ?? "")")
     }
 
-    /// Set JSON validation error for a setting
-    public func setJsonValidationError(for key: String, error: String?) {
-        if let error = error {
-            jsonValidationErrors[key] = error
-        } else {
-            jsonValidationErrors.removeValue(forKey: key)
-        }
+    /// Validate a setting value
+    /// - Parameter value: The value to validate
+    /// - Returns: Validation error message, or nil if valid
+    private func validateValue(_ value: SettingValue) -> String? {
+        // For complex types (arrays and objects), we can't do much validation here
+        // since they're already parsed. Validation should happen before parsing.
+        // This is more of a placeholder for future type-specific validation.
+        return nil
+    }
+
+    /// Set validation error for a pending edit
+    /// - Parameters:
+    ///   - key: The setting key
+    ///   - error: The validation error message, or nil to clear
+    public func setValidationError(for key: String, error: String?) {
+        guard var edit = pendingEdits[key] else { return }
+        edit.validationError = error
+        pendingEdits[key] = edit
     }
 
     /// Save all pending edits to disk
     public func saveAllEdits() async throws {
         logger.info("Saving \(pendingEdits.count) pending edits")
 
-        // Check for any JSON validation errors before saving
-        guard jsonValidationErrors.isEmpty else {
-            let errorKeys = jsonValidationErrors.keys.joined(separator: ", ")
-            throw SettingsError.validationFailed("Cannot save: invalid JSON in settings: \(errorKeys)")
+        // Check for any validation errors before saving
+        let editsWithErrors = pendingEdits.values.filter { $0.validationError != nil }
+        guard editsWithErrors.isEmpty else {
+            let errorKeys = editsWithErrors.map { $0.key }.joined(separator: ", ")
+            throw SettingsError.validationFailed("Cannot save: validation errors in settings: \(errorKeys)")
         }
 
         // Group edits by target file type for efficient batching
@@ -596,7 +620,6 @@ final public class SettingsViewModel {
         // Clear editing state after successful save
         isEditingMode = false
         pendingEdits.removeAll()
-        jsonValidationErrors.removeAll()
 
         logger.info("Successfully saved all edits")
     }
@@ -628,7 +651,7 @@ final public class SettingsViewModel {
 
             // Update the nested value in the content dictionary
             var updatedContent = file.content
-            setNestedValue(&updatedContent, for: key, value: value)
+            try setNestedValue(&updatedContent, for: key, value: value)
 
             // Update the file
             file.content = updatedContent
@@ -643,7 +666,7 @@ final public class SettingsViewModel {
             let filePath = fileType.path(in: baseDirectory)
 
             var newContent: [String: SettingValue] = [:]
-            setNestedValue(&newContent, for: key, value: value)
+            try setNestedValue(&newContent, for: key, value: value)
 
             let newFile = SettingsFile(
                 type: fileType,
@@ -675,7 +698,10 @@ final public class SettingsViewModel {
         logger.info("Deleting setting '\(key)' from \(fileType.displayName)")
 
         guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
-            throw SettingsError.fileNotFound(fileType)
+            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            let baseDirectory = fileType.isGlobal ? homeDirectory : (project?.path ?? homeDirectory)
+            let expectedPath = fileType.path(in: baseDirectory)
+            throw SettingsError.fileNotFound(fileType, expectedPath: expectedPath)
         }
 
         var file = settingsFiles[fileIndex]
@@ -746,7 +772,8 @@ final public class SettingsViewModel {
     // MARK: - Helper Methods
 
     /// Set a nested value in a dictionary using dot notation
-    private func setNestedValue(_ dict: inout [String: SettingValue], for key: String, value: SettingValue) {
+    /// - Throws: SettingsError.typeMismatch if an existing value is not an object when we need to traverse through it
+    private func setNestedValue(_ dict: inout [String: SettingValue], for key: String, value: SettingValue) throws {
         let components = key.split(separator: ".")
         if components.count == 1 {
             dict[String(components[0])] = value
@@ -756,14 +783,25 @@ final public class SettingsViewModel {
 
             // Get or create the nested dictionary
             var nested: [String: SettingValue]
-            if case let .object(existing) = dict[firstKey] {
-                nested = existing
+            if let existingValue = dict[firstKey] {
+                // Validate that the existing value is an object
+                if case let .object(existing) = existingValue {
+                    nested = existing
+                } else {
+                    // Type mismatch - we need to traverse through this, but it's not an object
+                    throw SettingsError.typeMismatch(
+                        key: key,
+                        expected: "object",
+                        found: existingValue.typeName
+                    )
+                }
             } else {
+                // No existing value, create new object
                 nested = [:]
             }
 
             // Recursively set the value
-            setNestedValue(&nested, for: remainingKey, value: value)
+            try setNestedValue(&nested, for: remainingKey, value: value)
             dict[firstKey] = .object(nested)
         }
     }
@@ -793,21 +831,28 @@ final public class SettingsViewModel {
 
 /// Errors that can occur during settings operations
 public enum SettingsError: LocalizedError {
-    case fileNotFound(SettingsFileType)
+    case fileNotFound(SettingsFileType, expectedPath: URL?)
     case fileIsReadOnly(URL)
     case settingNotFound(String)
     case validationFailed(String)
+    case typeMismatch(key: String, expected: String, found: String)
 
     public var errorDescription: String? {
         switch self {
-        case let .fileNotFound(type):
-            return "Settings file '\(type.displayName)' not found"
+        case let .fileNotFound(type, expectedPath):
+            if let path = expectedPath {
+                return "Settings file '\(type.displayName)' not found at expected path: \(path.path)"
+            } else {
+                return "Settings file '\(type.displayName)' not found"
+            }
         case let .fileIsReadOnly(url):
             return "Cannot modify read-only file: \(url.lastPathComponent)"
         case let .settingNotFound(key):
             return "Setting '\(key)' not found"
         case let .validationFailed(message):
             return message
+        case let .typeMismatch(key, expected, found):
+            return "Type mismatch for '\(key)': expected \(expected), but found \(found)"
         }
     }
 }
