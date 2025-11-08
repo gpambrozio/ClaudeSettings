@@ -868,11 +868,20 @@ public struct InspectorView: View {
     public init(
         selectedKey: String?,
         settingsViewModel: SettingsViewModel?,
-        documentationLoader: DocumentationLoader = .shared
+        documentationLoader: DocumentationLoader = .shared,
+        // Preview-only parameters to initialize editing state
+        previewIsEditing: Bool = false,
+        previewEditedValue: SettingValue? = nil,
+        previewSelectedFileType: SettingsFileType? = nil
     ) {
         self.selectedKey = selectedKey
         self.settingsViewModel = settingsViewModel
         self.documentationLoader = documentationLoader
+
+        // Initialize @State variables for previews
+        _isEditing = State(initialValue: previewIsEditing)
+        _editedValue = State(initialValue: previewEditedValue)
+        _selectedFileType = State(initialValue: previewSelectedFileType)
     }
 }
 
@@ -965,6 +974,33 @@ public struct InspectorView: View {
 
     return InspectorView(selectedKey: "editor.config", settingsViewModel: viewModel)
         .frame(width: 300, height: 600)
+}
+
+#Preview("Inspector - Editing Boolean") {
+    @Previewable var settingItems: [SettingItem] = [
+        SettingItem(
+            key: "editor.formatOnSave",
+            value: .bool(true),
+            source: .globalSettings,
+            contributions: [
+                SourceContribution(source: .globalSettings, value: .bool(false)),
+                SourceContribution(source: .projectLocal, value: .bool(true)),
+            ],
+            documentation: "Automatically format code when saving files"
+        ),
+    ]
+
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = settingItems
+
+    return InspectorView(
+        selectedKey: "editor.formatOnSave",
+        settingsViewModel: viewModel,
+        previewIsEditing: true,
+        previewEditedValue: .bool(true),
+        previewSelectedFileType: .projectLocal
+    )
+    .frame(width: 300, height: 600)
 }
 
 #Preview("Inspector - Empty State") {
