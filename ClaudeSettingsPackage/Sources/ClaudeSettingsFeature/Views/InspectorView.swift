@@ -116,10 +116,10 @@ public struct InspectorView: View {
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                             .textCase(.uppercase)
-                                        Spacer()
                                         Symbols.chevronUpChevronDown.image
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
+                                        Spacer()
                                     }
                                 }
                                 .buttonStyle(.plain)
@@ -182,59 +182,73 @@ public struct InspectorView: View {
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
 
-                    VStack(spacing: 8) {
-                        HStack(spacing: 8) {
-                            Button("Copy Value") {
-                                copyToClipboard(formatValue(item.value))
-                            }
-                            .buttonStyle(.bordered)
-                            .frame(maxWidth: .infinity)
-
-                            if !isEditing {
-                                Button("Edit") {
-                                    startEditing(item: item)
-                                }
-                                .buttonStyle(.bordered)
-                                .frame(maxWidth: .infinity)
-                            } else {
-                                Button("Cancel") {
-                                    cancelEditing()
-                                }
-                                .buttonStyle(.bordered)
-                                .frame(maxWidth: .infinity)
-
-                                Button("Save") {
-                                    saveEdits(item: item)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .frame(maxWidth: .infinity)
-                            }
-                        }
-
-                        HStack(spacing: 8) {
-                            Button("Copy to...") {
-                                showCopySheet = true
-                            }
-                            .buttonStyle(.bordered)
-                            .frame(maxWidth: .infinity)
-                            .disabled(isEditing)
-
-                            Button("Move to...") {
-                                showMoveSheet = true
-                            }
-                            .buttonStyle(.bordered)
-                            .frame(maxWidth: .infinity)
-                            .disabled(isEditing)
-                        }
-
-                        Button("Delete") {
-                            showDeleteConfirmation = true
+                    HStack(spacing: 20) {
+                        Button(action: {
+                            copyToClipboard(formatValue(item.value))
+                        }) {
+                            Text("Copy Value")                        .padding(.horizontal, 10)
                         }
                         .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
-                        .tint(.red)
-                        .disabled(isEditing)
+
+                        if !isEditing {
+                            Button(action: {
+                                startEditing(item: item)
+                            }) {
+                                Text("Edit")                        .padding(.horizontal, 10)
+                            }
+                            .buttonStyle(.bordered)
+                        } else {
+                            Button(action: {
+                                cancelEditing()
+                            }) {
+                                Text("Cancel")                        .padding(.horizontal, 10)
+                            }
+                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity)
+
+                            Button(action: {
+                                saveEdits(item: item)
+                            }) {
+                                Text("Save")
+                                    .padding(.horizontal, 10)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+
+                        Spacer()
                     }
+
+                    HStack(spacing: 20) {
+                        Button(action: {
+                            showCopySheet = true
+                        }) {
+                            Text("Copy to...")
+                                .padding(.horizontal, 10)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isEditing)
+
+                        Button(action: {
+                            showMoveSheet = true
+                        }) {
+                            Text("Move to...")
+                                .padding(.horizontal, 10)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isEditing)
+
+                        Spacer()
+                    }
+
+                    Button(action: {
+                        showDeleteConfirmation = true
+                    }) {
+                        Text("Delete")
+                            .padding(.horizontal, 10)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .disabled(isEditing)
                 }
 
                 Spacer()
@@ -664,10 +678,10 @@ public struct InspectorView: View {
     private func typeAwareEditor(for value: SettingValue, item: SettingItem) -> some View {
         switch value {
         case let .bool(boolValue):
-            Toggle("Value", isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { if case let .bool(val) = editedValue { return val } else { return boolValue } },
                 set: { editedValue = .bool($0) }
-            ))
+            )) { EmptyView() }
             .toggleStyle(.switch)
 
         case let .string(stringValue):
@@ -1000,7 +1014,7 @@ public struct InspectorView: View {
         previewEditedValue: .bool(true),
         previewSelectedFileType: .projectLocal
     )
-    .frame(width: 300, height: 600)
+    .frame(width: 500, height: 600)
 }
 
 #Preview("Inspector - Empty State") {
