@@ -762,59 +762,11 @@ public struct InspectorView: View {
             case .array,
                  .object:
                 // For complex types, use a text editor with JSON
-                VStack(alignment: .leading, spacing: 4) {
-                    TextEditor(text: Binding(
-                        get: {
-                            // Use raw editing text if available, otherwise format the value
-                            pendingEdit.rawEditingText ?? pendingEdit.value.formatted()
-                        },
-                        set: { newText in
-                            // Always update the raw text so editing is preserved
-                            var updatedEdit = pendingEdit
-                            updatedEdit.rawEditingText = newText
-
-                            // Try to parse as JSON
-                            if
-                                let data = newText.data(using: .utf8),
-                                let jsonObject = try? JSONSerialization.jsonObject(with: data) {
-                                // Valid JSON - update the value and clear validation error
-                                let newValue = SettingValue(any: jsonObject)
-                                viewModel.updatePendingEdit(
-                                    key: item.key,
-                                    value: newValue,
-                                    targetFileType: pendingEdit.targetFileType,
-                                    validationError: nil,
-                                    rawEditingText: newText
-                                )
-                            } else if !newText.isEmpty {
-                                // Invalid JSON - keep the raw text but show validation error
-                                viewModel.updatePendingEdit(
-                                    key: item.key,
-                                    value: pendingEdit.value, // Keep old value
-                                    targetFileType: pendingEdit.targetFileType,
-                                    validationError: "Invalid JSON syntax",
-                                    rawEditingText: newText
-                                )
-                            } else {
-                                // Empty text - clear everything
-                                viewModel.setValidationError(for: item.key, error: nil)
-                            }
-                        }
-                    ))
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 100)
-                    .border(pendingEdit.validationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
-
-                    if let validationError = pendingEdit.validationError {
-                        HStack(spacing: 4) {
-                            Symbols.exclamationmarkTriangle.image
-                                .font(.caption2)
-                            Text(validationError)
-                                .font(.caption)
-                        }
-                        .foregroundStyle(.red)
-                    }
-                }
+                JSONTextEditorView(
+                    item: item,
+                    pendingEdit: pendingEdit,
+                    viewModel: viewModel
+                )
 
             case .null:
                 Text("null")
@@ -929,6 +881,89 @@ public struct InspectorView: View {
         self.selectedKey = selectedKey
         self.settingsViewModel = settingsViewModel
         self.documentationLoader = documentationLoader
+    }
+}
+
+// MARK: - JSON Text Editor Helper
+
+/// Helper view for editing JSON with local state to prevent cursor jumping
+private struct JSONTextEditorView: View {
+    let item: SettingItem
+    let pendingEdit: PendingEdit
+    let viewModel: SettingsViewModel
+
+    @State private var localText = ""
+    @State private var localValidationError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextEditor(text: $localText)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 100)
+                .border(localValidationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
+                .onChange(of: localText) { _, newText in
+                    // Validate and update the view model
+                    validateAndUpdate(newText)
+                }
+                .onAppear {
+                    // Initialize local text from pending edit
+                    localText = pendingEdit.rawEditingText ?? pendingEdit.value.formatted()
+                    localValidationError = pendingEdit.validationError
+                }
+                .onChange(of: pendingEdit.rawEditingText) { _, newRawText in
+                    // Sync external changes (like switching target file)
+                    if let newRawText = newRawText, newRawText != localText {
+                        localText = newRawText
+                    } else if newRawText == nil {
+                        localText = pendingEdit.value.formatted()
+                    }
+                }
+                .onChange(of: pendingEdit.validationError) { _, newError in
+                    localValidationError = newError
+                }
+
+            if let validationError = localValidationError {
+                HStack(spacing: 4) {
+                    Symbols.exclamationmarkTriangle.image
+                        .font(.caption2)
+                    Text(validationError)
+                        .font(.caption)
+                }
+                .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func validateAndUpdate(_ newText: String) {
+        // Try to parse as JSON
+        if
+            let data = newText.data(using: .utf8),
+            let jsonObject = try? JSONSerialization.jsonObject(with: data) {
+            // Valid JSON - update the value and clear validation error
+            let newValue = SettingValue(any: jsonObject)
+            viewModel.updatePendingEdit(
+                key: item.key,
+                value: newValue,
+                targetFileType: pendingEdit.targetFileType,
+                validationError: nil,
+                rawEditingText: newText
+            )
+            localValidationError = nil
+        } else if !newText.isEmpty {
+            // Invalid JSON - keep the raw text but show validation error
+            viewModel.updatePendingEdit(
+                key: item.key,
+                value: pendingEdit.value, // Keep old value
+                targetFileType: pendingEdit.targetFileType,
+                validationError: "Invalid JSON syntax",
+                rawEditingText: newText
+            )
+            localValidationError = "Invalid JSON syntax"
+        } else {
+            // Empty text - clear everything
+            viewModel.setValidationError(for: item.key, error: nil)
+            localValidationError = nil
+        }
     }
 }
 
