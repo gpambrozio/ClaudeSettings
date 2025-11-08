@@ -2,6 +2,19 @@ import Foundation
 import Logging
 import SwiftUI
 
+/// Editing state for a single setting
+public struct PendingEdit: Equatable, Identifiable {
+    public let id: String // Setting key
+    public var value: SettingValue
+    public var targetFileType: SettingsFileType
+
+    public init(key: String, value: SettingValue, targetFileType: SettingsFileType) {
+        self.id = key
+        self.value = value
+        self.targetFileType = targetFileType
+    }
+}
+
 /// ViewModel for managing settings of a specific project
 @MainActor
 @Observable
@@ -15,6 +28,17 @@ final public class SettingsViewModel {
     public var validationErrors: [ValidationError] = []
     public var isLoading = false
     public var errorMessage: String?
+
+    // MARK: - Editing State
+
+    /// Whether we're in editing mode (affects entire project settings view)
+    public var isEditingMode = false
+
+    /// Dictionary of pending edits, keyed by setting key
+    public var pendingEdits: [String: PendingEdit] = [:]
+
+    /// JSON validation errors for complex types being edited
+    public var jsonValidationErrors: [String: String] = [:]
 
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
@@ -491,6 +515,92 @@ final public class SettingsViewModel {
         return nodes
     }
 
+    // MARK: - Editing Mode Operations
+
+    /// Enter editing mode for the entire project
+    public func startEditing() {
+        isEditingMode = true
+        pendingEdits.removeAll()
+        jsonValidationErrors.removeAll()
+        logger.info("Entered editing mode")
+    }
+
+    /// Cancel all pending edits and exit editing mode
+    public func cancelEditing() {
+        isEditingMode = false
+        pendingEdits.removeAll()
+        jsonValidationErrors.removeAll()
+        logger.info("Cancelled editing mode - discarded \(pendingEdits.count) pending edits")
+    }
+
+    /// Check if a specific setting has pending edits
+    public func hasPendingEdit(for key: String) -> Bool {
+        pendingEdits[key] != nil
+    }
+
+    /// Get the pending edit for a setting, or create one from current value
+    public func getPendingEdit(for item: SettingItem) -> PendingEdit {
+        if let existing = pendingEdits[item.key] {
+            return existing
+        }
+
+        // Create new pending edit based on the active contribution (highest precedence)
+        let targetFileType = item.contributions.last?.source ?? item.source
+        return PendingEdit(key: item.key, value: item.value, targetFileType: targetFileType)
+    }
+
+    /// Update a pending edit (doesn't save to disk yet)
+    public func updatePendingEdit(key: String, value: SettingValue, targetFileType: SettingsFileType) {
+        pendingEdits[key] = PendingEdit(key: key, value: value, targetFileType: targetFileType)
+        // Clear any JSON validation error for this key when value is updated successfully
+        jsonValidationErrors.removeValue(forKey: key)
+        logger.debug("Updated pending edit for '\(key)'")
+    }
+
+    /// Set JSON validation error for a setting
+    public func setJsonValidationError(for key: String, error: String?) {
+        if let error = error {
+            jsonValidationErrors[key] = error
+        } else {
+            jsonValidationErrors.removeValue(forKey: key)
+        }
+    }
+
+    /// Save all pending edits to disk
+    public func saveAllEdits() async throws {
+        logger.info("Saving \(pendingEdits.count) pending edits")
+
+        // Check for any JSON validation errors before saving
+        guard jsonValidationErrors.isEmpty else {
+            let errorKeys = jsonValidationErrors.keys.joined(separator: ", ")
+            throw SettingsError.validationFailed("Cannot save: invalid JSON in settings: \(errorKeys)")
+        }
+
+        // Group edits by target file type for efficient batching
+        var editsByFile: [SettingsFileType: [(String, SettingValue)]] = [:]
+
+        for edit in pendingEdits.values {
+            if editsByFile[edit.targetFileType] == nil {
+                editsByFile[edit.targetFileType] = []
+            }
+            editsByFile[edit.targetFileType]?.append((edit.id, edit.value))
+        }
+
+        // Apply all edits
+        for (fileType, edits) in editsByFile {
+            for (key, value) in edits {
+                try await updateSetting(key: key, value: value, in: fileType)
+            }
+        }
+
+        // Clear editing state after successful save
+        isEditingMode = false
+        pendingEdits.removeAll()
+        jsonValidationErrors.removeAll()
+
+        logger.info("Successfully saved all edits")
+    }
+
     // MARK: - Edit Operations
 
     /// Update a setting value in a specific file
@@ -686,6 +796,7 @@ public enum SettingsError: LocalizedError {
     case fileNotFound(SettingsFileType)
     case fileIsReadOnly(URL)
     case settingNotFound(String)
+    case validationFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -695,6 +806,8 @@ public enum SettingsError: LocalizedError {
             return "Cannot modify read-only file: \(url.lastPathComponent)"
         case let .settingNotFound(key):
             return "Setting '\(key)' not found"
+        case let .validationFailed(message):
+            return message
         }
     }
 }

@@ -6,15 +6,11 @@ public struct InspectorView: View {
     let settingsViewModel: SettingsViewModel?
     @ObservedObject var documentationLoader: DocumentationLoader
 
-    @State private var isEditing = false
-    @State private var editedValue: SettingValue?
-    @State private var selectedFileType: SettingsFileType?
     @State private var showDeleteConfirmation = false
     @State private var showCopySheet = false
     @State private var showMoveSheet = false
     @State private var errorMessage: String?
     @State private var showError = false
-    @State private var jsonValidationError: String?
 
     public var body: some View {
         Group {
@@ -105,81 +101,58 @@ public struct InspectorView: View {
                 Divider()
 
                 // Actions section
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Actions")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
+                if let viewModel = settingsViewModel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Actions")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
 
-                    HStack(spacing: 20) {
-                        Button(action: {
-                            copyToClipboard(formatValue(item.value))
-                        }) {
-                            Text("Copy Value")
-                                .padding(.horizontal, 10)
-                        }
-                        .buttonStyle(.bordered)
-
-                        if !isEditing {
+                        HStack(spacing: 20) {
                             Button(action: {
-                                startEditing(item: item)
+                                copyToClipboard(formatValue(item.value))
                             }) {
-                                Text("Edit")
+                                Text("Copy Value")
                                     .padding(.horizontal, 10)
                             }
                             .buttonStyle(.bordered)
-                        } else {
+                            .disabled(viewModel.isEditingMode)
+
+                            Spacer()
+                        }
+
+                        HStack(spacing: 20) {
                             Button(action: {
-                                cancelEditing()
+                                showCopySheet = true
                             }) {
-                                Text("Cancel")
+                                Text("Copy to...")
                                     .padding(.horizontal, 10)
                             }
                             .buttonStyle(.bordered)
+                            .disabled(viewModel.isEditingMode)
 
                             Button(action: {
-                                saveEdits(item: item)
+                                showMoveSheet = true
                             }) {
-                                Text("Save")
+                                Text("Move to...")
                                     .padding(.horizontal, 10)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.bordered)
+                            .disabled(viewModel.isEditingMode)
+
+                            Spacer()
                         }
 
-                        Spacer()
-                    }
-
-                    HStack(spacing: 20) {
                         Button(action: {
-                            showCopySheet = true
+                            showDeleteConfirmation = true
                         }) {
-                            Text("Copy to...")
+                            Text("Delete")
                                 .padding(.horizontal, 10)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(isEditing)
-
-                        Button(action: {
-                            showMoveSheet = true
-                        }) {
-                            Text("Move to...")
-                                .padding(.horizontal, 10)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isEditing)
-
-                        Spacer()
+                        .tint(.red)
+                        .disabled(viewModel.isEditingMode)
                     }
-
-                    Button(action: {
-                        showDeleteConfirmation = true
-                    }) {
-                        Text("Delete")
-                            .padding(.horizontal, 10)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                    .disabled(isEditing)
                 }
 
                 Spacer()
@@ -223,19 +196,22 @@ public struct InspectorView: View {
         isOverridden: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Get pending edit if it exists
+            let pendingEdit = settingsViewModel?.getPendingEdit(for: item)
+            let isEditingThisContribution = (settingsViewModel?.isEditingMode ?? false) &&
+                pendingEdit?.targetFileType == contribution.source
+
             // Header: either file type selector (when editing) or label
-            if isEditing && selectedFileType == contribution.source {
-                contributionHeaderEditing(item: item)
+            if isEditingThisContribution {
+                contributionHeaderEditing(item: item, pendingEdit: pendingEdit)
             } else {
                 contributionHeaderNormal(contribution: contribution, isOverridden: isOverridden)
             }
 
             // Value: either editor (when editing) or static text
-            if isEditing && selectedFileType == contribution.source {
-                if let editedValue {
-                    typeAwareEditor(for: editedValue, item: item)
-                        .padding(.top, 4)
-                }
+            if isEditingThisContribution, let pendingEdit = pendingEdit {
+                typeAwareEditor(for: pendingEdit.value, item: item, pendingEdit: pendingEdit)
+                    .padding(.top, 4)
             } else {
                 Text(formatValue(contribution.value))
                     .font(.system(.body, design: .monospaced))
@@ -246,23 +222,24 @@ public struct InspectorView: View {
     }
 
     @ViewBuilder
-    private func contributionHeaderEditing(item: SettingItem) -> some View {
+    private func contributionHeaderEditing(item: SettingItem, pendingEdit: PendingEdit?) -> some View {
         if let viewModel = settingsViewModel {
             Menu {
                 ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
                     Button(action: {
-                        selectedFileType = fileType
-                        // Update editedValue if switching to a different contribution
-                        if let newContribution = item.contributions.first(where: { $0.source == fileType }) {
-                            editedValue = newContribution.value
+                        // Update the target file type for this pending edit
+                        // Find the value from this file's contribution, or use current edited value
+                        let newValue: SettingValue
+                        if let contribution = item.contributions.first(where: { $0.source == fileType }) {
+                            newValue = contribution.value
                         } else {
-                            // No contribution exists for this file yet, keep current edited value
-                            // This handles the case where we're switching to a new file
+                            newValue = pendingEdit?.value ?? item.value
                         }
+                        viewModel.updatePendingEdit(key: item.key, value: newValue, targetFileType: fileType)
                     }) {
                         HStack {
                             Text(fileType.displayName)
-                            if selectedFileType == fileType {
+                            if pendingEdit?.targetFileType == fileType {
                                 Symbols.checkmarkCircle.image
                             }
                         }
@@ -271,9 +248,9 @@ public struct InspectorView: View {
             } label: {
                 HStack {
                     Circle()
-                        .fill(sourceColor(for: selectedFileType ?? .globalSettings))
+                        .fill(sourceColor(for: pendingEdit?.targetFileType ?? .globalSettings))
                         .frame(width: 8, height: 8)
-                    Text(selectedFileType?.displayName ?? "Select file")
+                    Text(pendingEdit?.targetFileType.displayName ?? "Select file")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
@@ -700,106 +677,111 @@ public struct InspectorView: View {
     // MARK: - Type-Aware Editor
 
     @ViewBuilder
-    private func typeAwareEditor(for value: SettingValue, item: SettingItem) -> some View {
-        switch value {
-        case let .bool(boolValue):
-            Toggle(isOn: Binding(
-                get: { if case let .bool(val) = editedValue { return val } else { return boolValue } },
-                set: { editedValue = .bool($0) }
-            )) { EmptyView() }
-                .toggleStyle(.switch)
+    private func typeAwareEditor(for value: SettingValue, item: SettingItem, pendingEdit: PendingEdit) -> some View {
+        if let viewModel = settingsViewModel {
+            switch value {
+            case let .bool(boolValue):
+                Toggle(isOn: Binding(
+                    get: { if case let .bool(val) = pendingEdit.value { return val } else { return boolValue } },
+                    set: { viewModel.updatePendingEdit(key: item.key, value: .bool($0), targetFileType: pendingEdit.targetFileType) }
+                )) { EmptyView() }
+                    .toggleStyle(.switch)
 
-        case let .string(stringValue):
-            // Check if documentation has enum values
-            if
-                let doc = documentationLoader.documentationWithFallback(for: item.key),
-                let enumValues = doc.enumValues, !enumValues.isEmpty {
-                // Use menu for enum values
-                Menu {
-                    ForEach(enumValues, id: \.self) { enumValue in
-                        Button(enumValue) {
-                            editedValue = .string(enumValue)
+            case let .string(stringValue):
+                // Check if documentation has enum values
+                if
+                    let doc = documentationLoader.documentationWithFallback(for: item.key),
+                    let enumValues = doc.enumValues, !enumValues.isEmpty {
+                    // Use menu for enum values
+                    Menu {
+                        ForEach(enumValues, id: \.self) { enumValue in
+                            Button(enumValue) {
+                                viewModel.updatePendingEdit(key: item.key, value: .string(enumValue), targetFileType: pendingEdit.targetFileType)
+                            }
                         }
-                    }
-                } label: {
-                    HStack {
-                        if case let .string(currentValue) = editedValue {
-                            Text(currentValue)
-                                .font(.system(.body, design: .monospaced))
-                        } else {
-                            Text(stringValue)
-                                .font(.system(.body, design: .monospaced))
+                    } label: {
+                        HStack {
+                            if case let .string(currentValue) = pendingEdit.value {
+                                Text(currentValue)
+                                    .font(.system(.body, design: .monospaced))
+                            } else {
+                                Text(stringValue)
+                                    .font(.system(.body, design: .monospaced))
+                            }
+                            Spacer()
+                            Symbols.chevronUpChevronDown.image
+                                .font(.caption2)
                         }
-                        Spacer()
-                        Symbols.chevronUpChevronDown.image
-                            .font(.caption2)
+                        .padding(8)
+                        .background(Color.primary.opacity(0.05))
+                        .cornerRadius(4)
                     }
-                    .padding(8)
-                    .background(Color.primary.opacity(0.05))
-                    .cornerRadius(4)
+                    .buttonStyle(.plain)
+                } else {
+                    // Regular text field
+                    TextField("Value", text: Binding(
+                        get: { if case let .string(val) = pendingEdit.value { return val } else { return stringValue } },
+                        set: { viewModel.updatePendingEdit(key: item.key, value: .string($0), targetFileType: pendingEdit.targetFileType) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
                 }
-                .buttonStyle(.plain)
-            } else {
-                // Regular text field
-                TextField("Value", text: Binding(
-                    get: { if case let .string(val) = editedValue { return val } else { return stringValue } },
-                    set: { editedValue = .string($0) }
-                ))
-                .textFieldStyle(.roundedBorder)
-            }
 
-        case let .int(intValue):
-            TextField("Value", value: Binding(
-                get: { if case let .int(val) = editedValue { return val } else { return intValue } },
-                set: { editedValue = .int($0) }
-            ), format: .number)
-                .textFieldStyle(.roundedBorder)
+            case let .int(intValue):
+                TextField("Value", value: Binding(
+                    get: { if case let .int(val) = pendingEdit.value { return val } else { return intValue } },
+                    set: { viewModel.updatePendingEdit(key: item.key, value: .int($0), targetFileType: pendingEdit.targetFileType) }
+                ), format: .number)
+                    .textFieldStyle(.roundedBorder)
 
-        case let .double(doubleValue):
-            TextField("Value", value: Binding(
-                get: { if case let .double(val) = editedValue { return val } else { return doubleValue } },
-                set: { editedValue = .double($0) }
-            ), format: .number)
-                .textFieldStyle(.roundedBorder)
+            case let .double(doubleValue):
+                TextField("Value", value: Binding(
+                    get: { if case let .double(val) = pendingEdit.value { return val } else { return doubleValue } },
+                    set: { viewModel.updatePendingEdit(key: item.key, value: .double($0), targetFileType: pendingEdit.targetFileType) }
+                ), format: .number)
+                    .textFieldStyle(.roundedBorder)
 
-        case .array,
-             .object:
-            // For complex types, use a text editor with JSON
-            VStack(alignment: .leading, spacing: 4) {
-                TextEditor(text: Binding(
-                    get: { editedValue?.formatted() ?? value.formatted() },
-                    set: { newText in
-                        // Try to parse as JSON
-                        jsonValidationError = nil
-                        if
-                            let data = newText.data(using: .utf8),
-                            let jsonObject = try? JSONSerialization.jsonObject(with: data) {
-                            editedValue = SettingValue(any: jsonObject)
-                        } else if !newText.isEmpty {
-                            // Show validation error for non-empty invalid JSON
-                            jsonValidationError = "Invalid JSON syntax"
+            case .array,
+                 .object:
+                // For complex types, use a text editor with JSON
+                VStack(alignment: .leading, spacing: 4) {
+                    TextEditor(text: Binding(
+                        get: { pendingEdit.value.formatted() },
+                        set: { newText in
+                            // Try to parse as JSON
+                            if
+                                let data = newText.data(using: .utf8),
+                                let jsonObject = try? JSONSerialization.jsonObject(with: data) {
+                                let newValue = SettingValue(any: jsonObject)
+                                viewModel.updatePendingEdit(key: item.key, value: newValue, targetFileType: pendingEdit.targetFileType)
+                                viewModel.setJsonValidationError(for: item.key, error: nil)
+                            } else if !newText.isEmpty {
+                                // Show validation error for non-empty invalid JSON
+                                viewModel.setJsonValidationError(for: item.key, error: "Invalid JSON syntax")
+                            } else {
+                                viewModel.setJsonValidationError(for: item.key, error: nil)
+                            }
                         }
-                    }
-                ))
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 100)
-                .border(jsonValidationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
+                    ))
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 100)
+                    .border(viewModel.jsonValidationErrors[item.key] != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
 
-                if let jsonValidationError {
-                    HStack(spacing: 4) {
-                        Symbols.exclamationmarkTriangle.image
-                            .font(.caption2)
-                        Text(jsonValidationError)
-                            .font(.caption)
+                    if let validationError = viewModel.jsonValidationErrors[item.key] {
+                        HStack(spacing: 4) {
+                            Symbols.exclamationmarkTriangle.image
+                                .font(.caption2)
+                            Text(validationError)
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.red)
                     }
-                    .foregroundStyle(.red)
                 }
-            }
 
-        case .null:
-            Text("null")
-                .font(.system(.body, design: .monospaced))
-                .foregroundStyle(.secondary)
+            case .null:
+                Text("null")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -823,51 +805,6 @@ public struct InspectorView: View {
                 return !file.isReadOnly
             }
             return true // Can create new files
-        }
-    }
-
-    // MARK: - Edit Actions
-
-    private func startEditing(item: SettingItem) {
-        isEditing = true
-        editedValue = item.value
-        jsonValidationError = nil
-
-        // Default to the highest precedence contribution
-        if let lastContribution = item.contributions.last {
-            selectedFileType = lastContribution.source
-        } else {
-            selectedFileType = item.source
-        }
-    }
-
-    private func cancelEditing() {
-        isEditing = false
-        editedValue = nil
-        selectedFileType = nil
-        jsonValidationError = nil
-    }
-
-    private func saveEdits(item: SettingItem) {
-        guard
-            let viewModel = settingsViewModel,
-            let editedValue = editedValue,
-            let selectedFileType = selectedFileType else { return }
-
-        Task {
-            do {
-                try await viewModel.updateSetting(key: item.key, value: editedValue, in: selectedFileType)
-                await MainActor.run {
-                    isEditing = false
-                    self.editedValue = nil
-                    self.selectedFileType = nil
-                }
-            } catch {
-                await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    showError = true
-                }
-            }
         }
     }
 
@@ -930,20 +867,11 @@ public struct InspectorView: View {
     public init(
         selectedKey: String?,
         settingsViewModel: SettingsViewModel?,
-        documentationLoader: DocumentationLoader = .shared,
-        // Preview-only parameters to initialize editing state
-        previewIsEditing: Bool = false,
-        previewEditedValue: SettingValue? = nil,
-        previewSelectedFileType: SettingsFileType? = nil
+        documentationLoader: DocumentationLoader = .shared
     ) {
         self.selectedKey = selectedKey
         self.settingsViewModel = settingsViewModel
         self.documentationLoader = documentationLoader
-
-        // Initialize @State variables for previews
-        _isEditing = State(initialValue: previewIsEditing)
-        _editedValue = State(initialValue: previewEditedValue)
-        _selectedFileType = State(initialValue: previewSelectedFileType)
     }
 }
 
@@ -1055,12 +983,17 @@ public struct InspectorView: View {
     let viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = settingItems
 
+    // Start editing mode and create pending edit
+    viewModel.isEditingMode = true
+    viewModel.pendingEdits["editor.formatOnSave"] = PendingEdit(
+        key: "editor.formatOnSave",
+        value: .bool(true),
+        targetFileType: .projectLocal
+    )
+
     return InspectorView(
         selectedKey: "editor.formatOnSave",
-        settingsViewModel: viewModel,
-        previewIsEditing: true,
-        previewEditedValue: .bool(true),
-        previewSelectedFileType: .projectLocal
+        settingsViewModel: viewModel
     )
     .frame(width: 500, height: 600)
 }
