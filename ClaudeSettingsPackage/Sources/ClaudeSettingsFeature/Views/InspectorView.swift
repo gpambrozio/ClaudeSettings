@@ -86,21 +86,62 @@ public struct InspectorView: View {
                     Divider()
 
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Circle()
-                                .fill(sourceColor(for: contribution.source))
-                                .frame(width: 8, height: 8)
-                            Text(sourceLabel(for: contribution.source))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            // Show override indicator for non-additive settings
-                            if !item.isAdditive && index < item.contributions.count - 1 {
-                                Text("(overridden)")
+                        // Show file type selector when editing this contribution, otherwise show label
+                        if isEditing && selectedFileType == contribution.source {
+                            // File type selector replaces the header when editing
+                            if let viewModel = settingsViewModel {
+                                Menu {
+                                    ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
+                                        Button(action: {
+                                            selectedFileType = fileType
+                                            // Update editedValue if switching to a different contribution
+                                            if let contribution = item.contributions.first(where: { $0.source == fileType }) {
+                                                editedValue = contribution.value
+                                            }
+                                        }) {
+                                            HStack {
+                                                Text(fileType.displayName)
+                                                if selectedFileType == fileType {
+                                                    Symbols.checkmarkCircle.image
+                                                }
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Circle()
+                                            .fill(sourceColor(for: selectedFileType ?? .globalSettings))
+                                            .frame(width: 8, height: 8)
+                                        Text(selectedFileType?.displayName ?? "Select file")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .textCase(.uppercase)
+                                        Spacer()
+                                        Symbols.chevronUpChevronDown.image
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } else {
+                            // Normal header when not editing
+                            HStack {
+                                Circle()
+                                    .fill(sourceColor(for: contribution.source))
+                                    .frame(width: 8, height: 8)
+                                Text(sourceLabel(for: contribution.source))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .italic()
+                                    .textCase(.uppercase)
+
+                                // Show override indicator for non-additive settings
+                                if !item.isAdditive && index < item.contributions.count - 1 {
+                                    Text("(overridden)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .italic()
+                                }
                             }
                         }
 
@@ -133,55 +174,6 @@ public struct InspectorView: View {
                 }
 
                 Divider()
-
-                // File type selector (shown when editing)
-                if isEditing {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Edit Target")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-
-                        if let viewModel = settingsViewModel {
-                            Menu {
-                                ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
-                                    Button(action: {
-                                        selectedFileType = fileType
-                                        // Update editedValue if switching to a different contribution
-                                        if let contribution = item.contributions.first(where: { $0.source == fileType }) {
-                                            editedValue = contribution.value
-                                        }
-                                    }) {
-                                        HStack {
-                                            Text(fileType.displayName)
-                                            if selectedFileType == fileType {
-                                                Symbols.checkmarkCircle.image
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                HStack {
-                                    Circle()
-                                        .fill(sourceColor(for: selectedFileType ?? .globalSettings))
-                                        .frame(width: 8, height: 8)
-                                    Text(selectedFileType?.displayName ?? "Select file")
-                                        .font(.body)
-                                    Spacer()
-                                    Symbols.chevronUpChevronDown.image
-                                        .font(.caption2)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 6)
-                                .background(Color.secondary.opacity(0.1))
-                                .cornerRadius(6)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    Divider()
-                }
 
                 // Actions section
                 VStack(alignment: .leading, spacing: 8) {
