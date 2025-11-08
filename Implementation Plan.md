@@ -373,8 +373,9 @@ Toolbar Actions:
 - [x] Integrate FileWatcher for live updates when settings files change
 
 #### Milestone 1.5: Basic Edit Operations (Weeks 5-6)
-- [ ] Implement edit functionality for individual settings. Consider the type when building the UI. For example, a boolean should use a `Toggle`. If the documentation mentions a list of possible values for a string build it as a `Menu`
+- [ ] Implement edit functionality for individual settings. Editing sould happen in the existing inspector view itself, not on a separate view. Consider the type when building the UI. For example, a boolean should use a `Toggle`. If the documentation mentions a list of possible values for a string build it as a `Menu`
 - [ ] Add copy setting to another file
+- [ ] Add move setting to another file
 - [ ] Add delete setting operation
 - [ ] Implement undo/redo
 - [ ] Add confirmation dialogs for destructive operations
