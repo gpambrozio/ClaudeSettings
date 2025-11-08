@@ -764,18 +764,39 @@ public struct InspectorView: View {
                 // For complex types, use a text editor with JSON
                 VStack(alignment: .leading, spacing: 4) {
                     TextEditor(text: Binding(
-                        get: { pendingEdit.value.formatted() },
+                        get: {
+                            // Use raw editing text if available, otherwise format the value
+                            pendingEdit.rawEditingText ?? pendingEdit.value.formatted()
+                        },
                         set: { newText in
+                            // Always update the raw text so editing is preserved
+                            var updatedEdit = pendingEdit
+                            updatedEdit.rawEditingText = newText
+
                             // Try to parse as JSON
                             if
                                 let data = newText.data(using: .utf8),
                                 let jsonObject = try? JSONSerialization.jsonObject(with: data) {
+                                // Valid JSON - update the value and clear validation error
                                 let newValue = SettingValue(any: jsonObject)
-                                viewModel.updatePendingEdit(key: item.key, value: newValue, targetFileType: pendingEdit.targetFileType)
+                                viewModel.updatePendingEdit(
+                                    key: item.key,
+                                    value: newValue,
+                                    targetFileType: pendingEdit.targetFileType,
+                                    validationError: nil,
+                                    rawEditingText: newText
+                                )
                             } else if !newText.isEmpty {
-                                // Show validation error for non-empty invalid JSON
-                                viewModel.updatePendingEdit(key: item.key, value: pendingEdit.value, targetFileType: pendingEdit.targetFileType, validationError: "Invalid JSON syntax")
+                                // Invalid JSON - keep the raw text but show validation error
+                                viewModel.updatePendingEdit(
+                                    key: item.key,
+                                    value: pendingEdit.value, // Keep old value
+                                    targetFileType: pendingEdit.targetFileType,
+                                    validationError: "Invalid JSON syntax",
+                                    rawEditingText: newText
+                                )
                             } else {
+                                // Empty text - clear everything
                                 viewModel.setValidationError(for: item.key, error: nil)
                             }
                         }

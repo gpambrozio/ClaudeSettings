@@ -9,12 +9,14 @@ public struct PendingEdit: Equatable, Identifiable {
     public var value: SettingValue
     public var targetFileType: SettingsFileType
     public var validationError: String? // Validation error for this edit
+    public var rawEditingText: String? // Raw text being edited (for JSON complex types)
 
-    public init(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil) {
+    public init(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
         self.key = key
         self.value = value
         self.targetFileType = targetFileType
         self.validationError = validationError
+        self.rawEditingText = rawEditingText
     }
 }
 
@@ -556,7 +558,8 @@ final public class SettingsViewModel {
     ///   - value: The new value
     ///   - targetFileType: The file to save to
     ///   - validationError: Optional validation error to attach to this edit
-    public func updatePendingEdit(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil) {
+    ///   - rawEditingText: Optional raw text being edited (for JSON complex types)
+    public func updatePendingEdit(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
         // Validate the value before storing
         let finalValidationError = validationError ?? validateValue(value)
 
@@ -564,7 +567,8 @@ final public class SettingsViewModel {
             key: key,
             value: value,
             targetFileType: targetFileType,
-            validationError: finalValidationError
+            validationError: finalValidationError,
+            rawEditingText: rawEditingText
         )
         logger.debug("Updated pending edit for '\(key)'\(finalValidationError.map { " with validation error: \($0)" } ?? "")")
     }
