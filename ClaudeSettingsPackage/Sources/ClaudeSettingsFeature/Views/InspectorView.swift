@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Inspector view showing details and actions for the selected item
@@ -5,6 +6,11 @@ public struct InspectorView: View {
     let selectedKey: String?
     let settingsViewModel: SettingsViewModel?
     @ObservedObject var documentationLoader: DocumentationLoader
+
+    @State private var showDeleteConfirmation = false
+    @State private var showCopySheet = false
+    @State private var showMoveSheet = false
+    @State private var showErrorAlert = false
 
     public var body: some View {
         Group {
@@ -74,30 +80,12 @@ public struct InspectorView: View {
                 ForEach(Array(item.contributions.enumerated()), id: \.offset) { index, contribution in
                     Divider()
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Circle()
-                                .fill(sourceColor(for: contribution.source))
-                                .frame(width: 8, height: 8)
-                            Text(sourceLabel(for: contribution.source))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            // Show override indicator for non-additive settings
-                            if !item.isAdditive && index < item.contributions.count - 1 {
-                                Text("(overridden)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .italic()
-                            }
-                        }
-
-                        Text(formatValue(contribution.value))
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                            .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1)
-                    }
+                    contributionRow(
+                        contribution: contribution,
+                        item: item,
+                        index: index,
+                        isOverridden: !item.isAdditive && index < item.contributions.count - 1
+                    )
                 }
 
                 // Documentation section
@@ -113,40 +101,300 @@ public struct InspectorView: View {
                 Divider()
 
                 // Actions section
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Actions")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
+                if let viewModel = settingsViewModel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Actions")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
 
-                    HStack(spacing: 8) {
-                        Button("Copy Value") {
-                            copyToClipboard(formatValue(item.value))
+                        HStack(spacing: 20) {
+                            Button(action: {
+                                copyToClipboard(formatValue(item.value))
+                            }) {
+                                Text("Copy Value")
+                                    .padding(.horizontal, 10)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(viewModel.isEditingMode)
+
+                            Spacer()
+                        }
+
+                        HStack(spacing: 20) {
+                            Button(action: {
+                                showCopySheet = true
+                            }) {
+                                Text("Copy to...")
+                                    .padding(.horizontal, 10)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(viewModel.isEditingMode)
+
+                            Button(action: {
+                                showMoveSheet = true
+                            }) {
+                                Text("Move to...")
+                                    .padding(.horizontal, 10)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(viewModel.isEditingMode)
+
+                            Spacer()
+                        }
+
+                        Button(action: {
+                            showDeleteConfirmation = true
+                        }) {
+                            Text("Delete")
+                                .padding(.horizontal, 10)
                         }
                         .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
-
-                        Button("Edit") {
-                            // TODO: Implement in Phase 1.5
-                        }
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
-
-                        Button("Delete") {
-                            // TODO: Implement in Phase 1.5
-                        }
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
                         .tint(.red)
-
-                        Spacer()
+                        .disabled(viewModel.isEditingMode)
                     }
                 }
 
                 Spacer()
             }
             .padding()
+            .sheet(isPresented: $showCopySheet) {
+                copyMoveSheet(item: item, mode: .copy)
+            }
+            .sheet(isPresented: $showMoveSheet) {
+                copyMoveSheet(item: item, mode: .move)
+            }
+            .confirmationDialog(
+                "Delete Setting",
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                if let viewModel = settingsViewModel {
+                    // Show delete option for each writable file that contains this setting
+                    ForEach(item.contributions, id: \.source) { contribution in
+                        if !isReadOnly(fileType: contribution.source, in: viewModel) {
+                            Button("Delete from \(contribution.source.displayName)", role: .destructive) {
+                                performDelete(item: item, from: contribution.source)
+                            }
+                        }
+                    }
+
+                    // Option to delete from all files if there are multiple
+                    if item.contributions.filter({ !isReadOnly(fileType: $0.source, in: viewModel) }).count > 1 {
+                        Divider()
+                        Button("Delete from All Files", role: .destructive) {
+                            performDeleteFromAll(item: item)
+                        }
+                    }
+                }
+
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Choose which file to delete '\(item.key)' from. This action cannot be undone.")
+            }
+            .alert("Error", isPresented: $showErrorAlert) {
+                Button("OK", role: .cancel) {
+                    settingsViewModel?.errorMessage = nil
+                }
+            } message: {
+                if let errorMessage = settingsViewModel?.errorMessage {
+                    Text(errorMessage)
+                }
+            }
+            .onChange(of: settingsViewModel?.errorMessage) { _, newValue in
+                showErrorAlert = newValue != nil
+            }
         }
+    }
+
+    // MARK: - Contribution Row
+
+    @ViewBuilder
+    private func contributionRow(
+        contribution: SourceContribution,
+        item: SettingItem,
+        index: Int,
+        isOverridden: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Get pending edit if it exists
+            let pendingEdit = settingsViewModel?.getPendingEditOrCreate(for: item)
+            let isEditingThisContribution = (settingsViewModel?.isEditingMode ?? false) &&
+                pendingEdit?.targetFileType == contribution.source
+
+            // Header: either file type selector (when editing) or label
+            if isEditingThisContribution {
+                contributionHeaderEditing(item: item, pendingEdit: pendingEdit)
+            } else {
+                contributionHeaderNormal(contribution: contribution, isOverridden: isOverridden)
+            }
+
+            // Value: either editor (when editing) or static text
+            if isEditingThisContribution, let pendingEdit = pendingEdit {
+                typeAwareEditor(for: pendingEdit.value, item: item, pendingEdit: pendingEdit)
+                    .padding(.top, 4)
+            } else {
+                Text(formatValue(contribution.value))
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .opacity(isOverridden ? 0.6 : 1)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contributionHeaderEditing(item: SettingItem, pendingEdit: PendingEdit?) -> some View {
+        if let viewModel = settingsViewModel {
+            Menu {
+                ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
+                    Button(action: {
+                        // Update the target file type for this pending edit
+                        // Find the value from this file's contribution, or use current edited value
+                        let newValue: SettingValue
+                        if let contribution = item.contributions.first(where: { $0.source == fileType }) {
+                            newValue = contribution.value
+                        } else {
+                            newValue = pendingEdit?.value ?? item.value
+                        }
+                        viewModel.updatePendingEditIfChanged(item: item, value: newValue, targetFileType: fileType)
+                    }) {
+                        HStack {
+                            Text(fileType.displayName)
+                            if pendingEdit?.targetFileType == fileType {
+                                Symbols.checkmarkCircle.image
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Circle()
+                        .fill(sourceColor(for: pendingEdit?.targetFileType ?? .globalSettings))
+                        .frame(width: 8, height: 8)
+                    Text(pendingEdit?.targetFileType.displayName ?? "Select file")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Symbols.chevronUpChevronDown.image
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func contributionHeaderNormal(contribution: SourceContribution, isOverridden: Bool) -> some View {
+        HStack {
+            Circle()
+                .fill(sourceColor(for: contribution.source))
+                .frame(width: 8, height: 8)
+            Text(sourceLabel(for: contribution.source))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            if isOverridden {
+                Text("(overridden)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            }
+        }
+    }
+
+    // MARK: - Copy/Move Sheet
+
+    enum CopyMoveMode {
+        case copy
+        case move
+
+        var title: String {
+            switch self {
+            case .copy: return "Copy Setting"
+            case .move: return "Move Setting"
+            }
+        }
+
+        var actionTitle: String {
+            switch self {
+            case .copy: return "Copy"
+            case .move: return "Move"
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func copyMoveSheet(item: SettingItem, mode: CopyMoveMode) -> some View {
+        VStack(spacing: 20) {
+            Text(mode.title)
+                .font(.title2)
+                .bold()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Setting Key")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(item.key)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(4)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Select Destination File")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let viewModel = settingsViewModel {
+                    ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
+                        Button(action: {
+                            if mode == .copy {
+                                performCopy(item: item, to: fileType)
+                                showCopySheet = false
+                            } else {
+                                performMove(item: item, to: fileType)
+                                showMoveSheet = false
+                            }
+                        }) {
+                            HStack {
+                                Circle()
+                                    .fill(sourceColor(for: fileType))
+                                    .frame(width: 8, height: 8)
+                                Text(fileType.displayName)
+                                Spacer()
+                                Symbols.chevronRight.image
+                                    .font(.caption)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.secondary.opacity(0.05))
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            HStack {
+                Button("Cancel") {
+                    if mode == .copy {
+                        showCopySheet = false
+                    } else {
+                        showMoveSheet = false
+                    }
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+            }
+        }
+        .padding()
+        .frame(width: 400)
     }
 
     @ViewBuilder
@@ -447,6 +695,186 @@ public struct InspectorView: View {
         pasteboard.setString(text, forType: .string)
     }
 
+    // MARK: - Type-Aware Editor
+
+    @ViewBuilder
+    private func typeAwareEditor(for value: SettingValue, item: SettingItem, pendingEdit: PendingEdit) -> some View {
+        if let viewModel = settingsViewModel {
+            switch value {
+            case let .bool(boolValue):
+                Toggle(isOn: Binding(
+                    get: { if case let .bool(val) = pendingEdit.value { return val } else { return boolValue } },
+                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .bool($0), targetFileType: pendingEdit.targetFileType) }
+                )) { EmptyView() }
+                    .toggleStyle(.switch)
+
+            case let .string(stringValue):
+                // Check if documentation has enum values
+                if
+                    let doc = documentationLoader.documentationWithFallback(for: item.key),
+                    let enumValues = doc.enumValues, !enumValues.isEmpty {
+                    // Use menu for enum values
+                    Menu {
+                        ForEach(enumValues, id: \.self) { enumValue in
+                            Button(enumValue) {
+                                viewModel.updatePendingEditIfChanged(item: item, value: .string(enumValue), targetFileType: pendingEdit.targetFileType)
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            if case let .string(currentValue) = pendingEdit.value {
+                                Text(currentValue)
+                                    .font(.system(.body, design: .monospaced))
+                            } else {
+                                Text(stringValue)
+                                    .font(.system(.body, design: .monospaced))
+                            }
+                            Spacer()
+                            Symbols.chevronUpChevronDown.image
+                                .font(.caption2)
+                        }
+                        .padding(8)
+                        .background(Color.primary.opacity(0.05))
+                        .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    // Regular text field
+                    TextField("Value", text: Binding(
+                        get: { if case let .string(val) = pendingEdit.value { return val } else { return stringValue } },
+                        set: { viewModel.updatePendingEditIfChanged(item: item, value: .string($0), targetFileType: pendingEdit.targetFileType) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                }
+
+            case let .int(intValue):
+                TextField("Value", value: Binding(
+                    get: { if case let .int(val) = pendingEdit.value { return val } else { return intValue } },
+                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .int($0), targetFileType: pendingEdit.targetFileType) }
+                ), format: .number)
+                    .textFieldStyle(.roundedBorder)
+
+            case let .double(doubleValue):
+                TextField("Value", value: Binding(
+                    get: { if case let .double(val) = pendingEdit.value { return val } else { return doubleValue } },
+                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .double($0), targetFileType: pendingEdit.targetFileType) }
+                ), format: .number)
+                    .textFieldStyle(.roundedBorder)
+
+            case .array,
+                 .object:
+                // For complex types, use a text editor with JSON
+                JSONTextEditorView(
+                    item: item,
+                    pendingEdit: pendingEdit,
+                    viewModel: viewModel
+                )
+
+            case .null:
+                Text("null")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func availableFileTypes(for viewModel: SettingsViewModel) -> [SettingsFileType] {
+        // Return writable file types that exist or can be created
+        var types: [SettingsFileType] = []
+
+        // Global files (always available)
+        types.append(.globalSettings)
+        types.append(.globalLocal)
+
+        // Project files (only if there's a project)
+        if viewModel.settingItems.contains(where: { !$0.source.isGlobal }) {
+            types.append(.projectSettings)
+            types.append(.projectLocal)
+        }
+
+        // Filter out read-only files
+        return types.filter { type in
+            if let file = viewModel.settingsFiles.first(where: { $0.type == type }) {
+                return !file.isReadOnly
+            }
+            return true // Can create new files
+        }
+    }
+
+    // MARK: - Copy/Move/Delete Actions
+
+    private func performCopy(item: SettingItem, to destination: SettingsFileType) {
+        guard let viewModel = settingsViewModel else { return }
+
+        // Find the source file type for the active value
+        let sourceType = item.contributions.last?.source ?? item.source
+
+        Task {
+            do {
+                try await viewModel.copySetting(key: item.key, from: sourceType, to: destination)
+            } catch {
+                await MainActor.run {
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func performMove(item: SettingItem, to destination: SettingsFileType) {
+        guard let viewModel = settingsViewModel else { return }
+
+        // Find the source file type for the active value
+        let sourceType = item.contributions.last?.source ?? item.source
+
+        Task {
+            do {
+                try await viewModel.moveSetting(key: item.key, from: sourceType, to: destination)
+            } catch {
+                await MainActor.run {
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func performDelete(item: SettingItem, from fileType: SettingsFileType) {
+        guard let viewModel = settingsViewModel else { return }
+
+        Task {
+            do {
+                try await viewModel.deleteSetting(key: item.key, from: fileType)
+            } catch {
+                await MainActor.run {
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func performDeleteFromAll(item: SettingItem) {
+        guard let viewModel = settingsViewModel else { return }
+
+        // Delete from all writable files that have this setting
+        Task {
+            do {
+                for contribution in item.contributions where !isReadOnly(fileType: contribution.source, in: viewModel) {
+                    try await viewModel.deleteSetting(key: item.key, from: contribution.source)
+                }
+            } catch {
+                await MainActor.run {
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func isReadOnly(fileType: SettingsFileType, in viewModel: SettingsViewModel) -> Bool {
+        if let file = viewModel.settingsFiles.first(where: { $0.type == fileType }) {
+            return file.isReadOnly
+        }
+        return false
+    }
+
     public init(
         selectedKey: String?,
         settingsViewModel: SettingsViewModel?,
@@ -455,6 +883,114 @@ public struct InspectorView: View {
         self.selectedKey = selectedKey
         self.settingsViewModel = settingsViewModel
         self.documentationLoader = documentationLoader
+    }
+}
+
+// MARK: - JSON Text Editor Helper
+
+/// Helper view for editing JSON with local state to prevent cursor jumping
+private struct JSONTextEditorView: View {
+    let item: SettingItem
+    let pendingEdit: PendingEdit
+    let viewModel: SettingsViewModel
+
+    @State private var localText = ""
+    @State private var localValidationError: String?
+    @State private var isUpdatingFromExternal = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextEditor(text: $localText)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 100)
+                .border(localValidationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
+                .onChange(of: localText) { _, newText in
+                    // Only validate if this isn't an external update
+                    guard !isUpdatingFromExternal else { return }
+                    validateAndUpdate(newText)
+                }
+                .onAppear {
+                    // Initialize local text from pending edit
+                    localText = pendingEdit.rawEditingText ?? pendingEdit.value.formatted()
+                    localValidationError = pendingEdit.validationError
+                }
+                .onChange(of: pendingEdit.rawEditingText) { _, newRawText in
+                    // Sync external changes (like switching target file)
+                    // Guard against cycles: only update if different from current local text
+                    let newText = newRawText ?? pendingEdit.value.formatted()
+                    guard newText != localText else { return }
+
+                    isUpdatingFromExternal = true
+                    localText = newText
+                    isUpdatingFromExternal = false
+                }
+                .onChange(of: pendingEdit.validationError) { oldValue, newError in
+                    // Only update if actually changed to avoid unnecessary updates
+                    guard oldValue != newError else { return }
+                    localValidationError = newError
+                }
+
+            if let validationError = localValidationError {
+                HStack(spacing: 4) {
+                    Symbols.exclamationmarkTriangle.image
+                        .font(.caption2)
+                    Text(validationError)
+                        .font(.caption)
+                }
+                .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func validateAndUpdate(_ newText: String) {
+        // Try to parse as JSON
+        if
+            let data = newText.data(using: .utf8),
+            let jsonObject = try? JSONSerialization.jsonObject(with: data) {
+            // Valid JSON - check if it differs from original before creating edit
+            let newValue = SettingValue(any: jsonObject)
+            viewModel.updatePendingEditIfChanged(
+                item: item,
+                value: newValue,
+                targetFileType: pendingEdit.targetFileType,
+                validationError: nil,
+                rawEditingText: newText
+            )
+            localValidationError = nil
+        } else if !newText.isEmpty {
+            // Invalid JSON - always create pending edit with error
+            viewModel.updatePendingEdit(
+                key: item.key,
+                value: pendingEdit.value, // Keep old value
+                targetFileType: pendingEdit.targetFileType,
+                validationError: "Invalid JSON syntax",
+                rawEditingText: newText
+            )
+            localValidationError = "Invalid JSON syntax"
+        } else {
+            // Empty text - always create pending edit with error
+            viewModel.updatePendingEdit(
+                key: item.key,
+                value: pendingEdit.value, // Keep old value
+                targetFileType: pendingEdit.targetFileType,
+                validationError: "Value is required",
+                rawEditingText: newText
+            )
+            localValidationError = "Value is required"
+        }
+    }
+}
+
+// MARK: - NSTextView Extension for Smart Quotes
+
+/// Disable smart quotes and dashes app-wide for JSON/code editing
+extension NSTextView {
+    open override var frame: CGRect {
+        didSet {
+            isAutomaticQuoteSubstitutionEnabled = false
+            isAutomaticDashSubstitutionEnabled = false
+            isAutomaticTextReplacementEnabled = false
+        }
     }
 }
 
@@ -547,6 +1083,38 @@ public struct InspectorView: View {
 
     return InspectorView(selectedKey: "editor.config", settingsViewModel: viewModel)
         .frame(width: 300, height: 600)
+}
+
+#Preview("Inspector - Editing Boolean") {
+    @Previewable var settingItems: [SettingItem] = [
+        SettingItem(
+            key: "editor.formatOnSave",
+            value: .bool(true),
+            source: .globalSettings,
+            contributions: [
+                SourceContribution(source: .globalSettings, value: .bool(false)),
+                SourceContribution(source: .projectLocal, value: .bool(true)),
+            ],
+            documentation: "Automatically format code when saving files"
+        ),
+    ]
+
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = settingItems
+
+    // Start editing mode and create pending edit
+    viewModel.isEditingMode = true
+    viewModel.pendingEdits["editor.formatOnSave"] = PendingEdit(
+        key: "editor.formatOnSave",
+        value: .bool(true),
+        targetFileType: .projectLocal
+    )
+
+    return InspectorView(
+        selectedKey: "editor.formatOnSave",
+        settingsViewModel: viewModel
+    )
+    .frame(width: 500, height: 600)
 }
 
 #Preview("Inspector - Empty State") {

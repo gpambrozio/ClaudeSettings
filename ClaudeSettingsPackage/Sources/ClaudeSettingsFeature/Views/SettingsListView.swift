@@ -5,6 +5,8 @@ public struct SettingsListView: View {
     let settingsViewModel: SettingsViewModel
     @Binding var selectedKey: String?
     @State private var expandedNodes: Set<String> = []
+    @State private var showSaveError = false
+    @State private var saveErrorMessage: String?
 
     public var body: some View {
         Group {
@@ -28,17 +30,57 @@ public struct SettingsListView: View {
         }
         .navigationTitle("Settings")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button("Add Setting") {
-                        // TODO: Implement in Phase 1.5
+            ToolbarItemGroup(placement: .primaryAction) {
+                if settingsViewModel.isEditingMode {
+                    // Editing mode: Show Cancel and Save
+                    Button("Cancel") {
+                        settingsViewModel.cancelEditing()
                     }
-                    Button("Import Settings") {
-                        // TODO: Implement in Phase 2
+                    .buttonStyle(.bordered)
+
+                    Button("Save All") {
+                        Task {
+                            do {
+                                try await settingsViewModel.saveAllEdits()
+                            } catch {
+                                saveErrorMessage = error.localizedDescription
+                                showSaveError = true
+                            }
+                        }
                     }
-                } label: {
-                    Label("Actions", symbol: .ellipsisCircle)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(settingsViewModel.pendingEdits.values.contains(where: { $0.validationError != nil }))
+
+                    if !settingsViewModel.pendingEdits.isEmpty {
+                        Text("\(settingsViewModel.pendingEdits.count) edited")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    // Normal mode: Show Edit and Actions menu
+                    Button("Edit") {
+                        settingsViewModel.startEditing()
+                    }
+                    .buttonStyle(.bordered)
+
+                    Menu {
+                        Button("Add Setting") {
+                            // TODO: Implement in Phase 1.5
+                        }
+                        Button("Import Settings") {
+                            // TODO: Implement in Phase 2
+                        }
+                    } label: {
+                        Label("Actions", symbol: .ellipsisCircle)
+                    }
                 }
+            }
+        }
+        .alert("Save Error", isPresented: $showSaveError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let saveErrorMessage {
+                Text(saveErrorMessage)
             }
         }
     }

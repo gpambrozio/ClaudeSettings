@@ -127,4 +127,17 @@ public enum SettingValue: Codable, Sendable, Hashable {
             return "null"
         }
     }
+
+    /// Get the type name of this value for error messages
+    public var typeName: String {
+        switch self {
+        case .string: "string"
+        case .int: "int"
+        case .double: "double"
+        case .bool: "bool"
+        case .array: "array"
+        case .object: "object"
+        case .null: "null"
+        }
+    }
 }

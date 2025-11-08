@@ -2,6 +2,24 @@ import Foundation
 import Logging
 import SwiftUI
 
+/// Editing state for a single setting
+public struct PendingEdit: Equatable, Identifiable {
+    public var key: String
+    public var id: String { key } // Identifiable conformance
+    public var value: SettingValue
+    public var targetFileType: SettingsFileType
+    public var validationError: String? // Validation error for this edit
+    public var rawEditingText: String? // Raw text being edited (for JSON complex types)
+
+    public init(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
+        self.key = key
+        self.value = value
+        self.targetFileType = targetFileType
+        self.validationError = validationError
+        self.rawEditingText = rawEditingText
+    }
+}
+
 /// ViewModel for managing settings of a specific project
 @MainActor
 @Observable
@@ -15,6 +33,14 @@ final public class SettingsViewModel {
     public var validationErrors: [ValidationError] = []
     public var isLoading = false
     public var errorMessage: String?
+
+    // MARK: - Editing State
+
+    /// Whether we're in editing mode (affects entire project settings view)
+    public var isEditingMode = false
+
+    /// Dictionary of pending edits, keyed by setting key
+    public var pendingEdits: [String: PendingEdit] = [:]
 
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
@@ -489,5 +515,433 @@ final public class SettingsViewModel {
         }
 
         return nodes
+    }
+
+    // MARK: - Editing Mode Operations
+
+    /// Enter editing mode for the entire project
+    public func startEditing() {
+        isEditingMode = true
+        pendingEdits.removeAll()
+
+        // Pause file watching to prevent conflicts with pending edits
+        Task {
+            await fileWatcher?.stopWatching()
+            logger.info("Paused file watching for editing mode")
+        }
+
+        logger.info("Entered editing mode")
+    }
+
+    /// Cancel all pending edits and exit editing mode
+    public func cancelEditing() {
+        let editCount = pendingEdits.count
+        isEditingMode = false
+        pendingEdits.removeAll()
+
+        // Resume file watching
+        Task {
+            await setupFileWatcher()
+            logger.info("Resumed file watching after cancelling edit mode")
+        }
+
+        logger.info("Cancelled editing mode - discarded \(editCount) pending edits")
+    }
+
+    /// Check if a specific setting has pending edits
+    public func hasPendingEdit(for key: String) -> Bool {
+        pendingEdits[key] != nil
+    }
+
+    /// Get the pending edit for a setting, or create a temporary one from current value.
+    /// Note: This does NOT store the edit in pendingEdits - it's purely for UI display.
+    /// Use updatePendingEdit() to actually store an edit.
+    public func getPendingEditOrCreate(for item: SettingItem) -> PendingEdit {
+        if let existing = pendingEdits[item.key] {
+            return existing
+        }
+
+        // Create temporary pending edit based on the active contribution (highest precedence)
+        let targetFileType = item.contributions.last?.source ?? item.source
+        return PendingEdit(key: item.key, value: item.value, targetFileType: targetFileType)
+    }
+
+    /// Update a pending edit only if the value has actually changed from the original
+    /// - Parameters:
+    ///   - item: The original setting item
+    ///   - value: The new value
+    ///   - targetFileType: The file to save to
+    ///   - validationError: Optional validation error to attach to this edit
+    ///   - rawEditingText: Optional raw text being edited (for JSON complex types)
+    public func updatePendingEditIfChanged(item: SettingItem, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
+        // Get the original value for this target file type
+        let originalValue = item.contributions.first(where: { $0.source == targetFileType })?.value ?? item.value
+        let originalTargetType = item.contributions.last?.source ?? item.source
+
+        // Check if the value has actually changed
+        let hasValueChanged = value != originalValue
+        let hasTargetChanged = targetFileType != originalTargetType
+
+        if !hasValueChanged && !hasTargetChanged && validationError == nil {
+            // Value is same as original and target hasn't changed - remove any pending edit
+            pendingEdits.removeValue(forKey: item.key)
+            logger.debug("Removed pending edit for '\(item.key)' (value unchanged)")
+        } else {
+            // Value or target has changed - create/update pending edit
+            updatePendingEdit(
+                key: item.key,
+                value: value,
+                targetFileType: targetFileType,
+                validationError: validationError,
+                rawEditingText: rawEditingText
+            )
+        }
+    }
+
+    /// Update a pending edit (doesn't save to disk yet)
+    /// - Parameters:
+    ///   - key: The setting key
+    ///   - value: The new value
+    ///   - targetFileType: The file to save to
+    ///   - validationError: Optional validation error to attach to this edit
+    ///   - rawEditingText: Optional raw text being edited (for JSON complex types)
+    public func updatePendingEdit(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
+        // Validate the value before storing
+        let finalValidationError = validationError ?? validateValue(value)
+
+        pendingEdits[key] = PendingEdit(
+            key: key,
+            value: value,
+            targetFileType: targetFileType,
+            validationError: finalValidationError,
+            rawEditingText: rawEditingText
+        )
+        logger.debug("Updated pending edit for '\(key)'\(finalValidationError.map { " with validation error: \($0)" } ?? "")")
+    }
+
+    /// Validate a setting value
+    /// - Parameter value: The value to validate
+    /// - Returns: Validation error message, or nil if valid
+    private func validateValue(_ value: SettingValue) -> String? {
+        // For complex types (arrays and objects), we can't do much validation here
+        // since they're already parsed. Validation should happen before parsing.
+        // This is more of a placeholder for future type-specific validation.
+        return nil
+    }
+
+    /// Set validation error for a pending edit
+    /// - Parameters:
+    ///   - key: The setting key
+    ///   - error: The validation error message, or nil to clear
+    public func setValidationError(for key: String, error: String?) {
+        guard var edit = pendingEdits[key] else { return }
+        edit.validationError = error
+        pendingEdits[key] = edit
+    }
+
+    /// Save all pending edits to disk with transaction support
+    public func saveAllEdits() async throws {
+        logger.info("Saving \(pendingEdits.count) pending edits")
+
+        // Check for any validation errors before saving
+        let editsWithErrors = pendingEdits.values.filter { $0.validationError != nil }
+        guard editsWithErrors.isEmpty else {
+            let errorKeys = editsWithErrors.map { $0.key }.joined(separator: ", ")
+            throw SettingsError.validationFailed("Cannot save: validation errors in settings: \(errorKeys)")
+        }
+
+        // Snapshot current state for rollback in case of failure
+        let originalFiles = settingsFiles
+        let originalItems = settingItems
+        let originalHierarchical = hierarchicalSettings
+
+        // Group edits by target file type for efficient batching
+        var editsByFile: [SettingsFileType: [(String, SettingValue)]] = [:]
+
+        for edit in pendingEdits.values {
+            if editsByFile[edit.targetFileType] == nil {
+                editsByFile[edit.targetFileType] = []
+            }
+            editsByFile[edit.targetFileType]?.append((edit.id, edit.value))
+        }
+
+        do {
+            // Create backups once per file before applying any edits
+            for fileType in editsByFile.keys {
+                if let file = settingsFiles.first(where: { $0.type == fileType }) {
+                    _ = try await fileSystemManager.createBackup(of: file.path)
+                    logger.debug("Created backup for \(fileType.displayName)")
+                }
+            }
+
+            // Apply all edits to each file using the helper
+            for (fileType, edits) in editsByFile {
+                try await applyEditsToFile(fileType, edits: edits)
+            }
+
+            // Recompute merged settings once after all files are updated
+            settingItems = computeSettingItems(from: settingsFiles)
+            hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+
+            // Clear editing state after successful save
+            isEditingMode = false
+            pendingEdits.removeAll()
+
+            // Resume file watching after successful save
+            await setupFileWatcher()
+            logger.info("Successfully saved all edits and resumed file watching")
+        } catch {
+            // Rollback: restore original state
+            logger.error("Save failed, rolling back changes: \(error)")
+            settingsFiles = originalFiles
+            settingItems = originalItems
+            hierarchicalSettings = originalHierarchical
+
+            // Re-throw the error so the UI can handle it
+            throw error
+        }
+    }
+
+    // MARK: - Edit Operations
+
+    /// Apply multiple edits to a file without creating backups or recomputing settings
+    /// - Parameters:
+    ///   - fileType: The file type to update
+    ///   - edits: Array of (key, value) pairs to apply
+    /// - Throws: SettingsError if the file is read-only or other errors occur
+    private func applyEditsToFile(_ fileType: SettingsFileType, edits: [(String, SettingValue)]) async throws {
+        // Find or create the file
+        if let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) {
+            // File exists, update it with all edits
+            var file = settingsFiles[fileIndex]
+
+            guard !file.isReadOnly else {
+                throw SettingsError.fileIsReadOnly(file.path)
+            }
+
+            // Apply all edits to the content
+            var updatedContent = file.content
+            for (key, value) in edits {
+                try setNestedValue(&updatedContent, for: key, value: value)
+            }
+
+            // Write the file once with all changes
+            file.content = updatedContent
+            try await settingsParser.writeSettingsFile(file)
+            settingsFiles[fileIndex] = file
+
+            logger.debug("Applied \(edits.count) edit(s) to \(fileType.displayName)")
+        } else {
+            // File doesn't exist, create it with all edits
+            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            let baseDirectory = fileType.isGlobal ? homeDirectory : (project?.path ?? homeDirectory)
+            let filePath = fileType.path(in: baseDirectory)
+
+            var newContent: [String: SettingValue] = [:]
+            for (key, value) in edits {
+                try setNestedValue(&newContent, for: key, value: value)
+            }
+
+            let newFile = SettingsFile(
+                type: fileType,
+                path: filePath,
+                content: newContent,
+                isValid: true,
+                validationErrors: [],
+                lastModified: Date(),
+                isReadOnly: false
+            )
+
+            try await settingsParser.writeSettingsFile(newFile)
+            settingsFiles.append(newFile)
+            logger.info("Created new settings file at \(filePath.path) with \(edits.count) setting(s)")
+        }
+    }
+
+    /// Update a setting value in a specific file
+    /// - Parameters:
+    ///   - key: The setting key to update
+    ///   - value: The new value
+    ///   - fileType: The file type to update (defaults to the highest precedence non-enterprise file)
+    public func updateSetting(key: String, value: SettingValue, in fileType: SettingsFileType) async throws {
+        logger.info("Updating setting '\(key)' in \(fileType.displayName)")
+
+        // Create backup before modifying (only if file exists)
+        if let file = settingsFiles.first(where: { $0.type == fileType }) {
+            _ = try await fileSystemManager.createBackup(of: file.path)
+        }
+
+        // Apply the edit using the helper
+        try await applyEditsToFile(fileType, edits: [(key, value)])
+
+        // Recompute merged settings
+        settingItems = computeSettingItems(from: settingsFiles)
+        hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+
+        logger.info("Successfully updated setting '\(key)' in \(fileType.displayName)")
+    }
+
+    /// Delete a setting from a specific file
+    /// - Parameters:
+    ///   - key: The setting key to delete
+    ///   - fileType: The file type to delete from
+    public func deleteSetting(key: String, from fileType: SettingsFileType) async throws {
+        logger.info("Deleting setting '\(key)' from \(fileType.displayName)")
+
+        guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
+            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            let baseDirectory = fileType.isGlobal ? homeDirectory : (project?.path ?? homeDirectory)
+            let expectedPath = fileType.path(in: baseDirectory)
+            throw SettingsError.fileNotFound(fileType, expectedPath: expectedPath)
+        }
+
+        var file = settingsFiles[fileIndex]
+
+        guard !file.isReadOnly else {
+            throw SettingsError.fileIsReadOnly(file.path)
+        }
+
+        // Create backup before modifying
+        _ = try await fileSystemManager.createBackup(of: file.path)
+
+        // Remove the nested value from the content dictionary
+        var updatedContent = file.content
+        removeNestedValue(&updatedContent, for: key)
+
+        file.content = updatedContent
+        try await settingsParser.writeSettingsFile(file)
+
+        settingsFiles[fileIndex] = file
+
+        // Recompute merged settings
+        settingItems = computeSettingItems(from: settingsFiles)
+        hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+
+        logger.info("Successfully deleted setting '\(key)' from \(fileType.displayName)")
+    }
+
+    /// Copy a setting from one file to another
+    /// - Parameters:
+    ///   - key: The setting key to copy
+    ///   - sourceType: The source file type
+    ///   - destinationType: The destination file type
+    public func copySetting(key: String, from sourceType: SettingsFileType, to destinationType: SettingsFileType) async throws {
+        logger.info("Copying setting '\(key)' from \(sourceType.displayName) to \(destinationType.displayName)")
+
+        // Find the setting in the source file
+        guard
+            let item = settingItems.first(where: { $0.key == key }),
+            let contribution = item.contributions.first(where: { $0.source == sourceType }) else {
+            throw SettingsError.settingNotFound(key)
+        }
+
+        // Copy the value to the destination
+        try await updateSetting(key: key, value: contribution.value, in: destinationType)
+
+        logger.info("Successfully copied setting '\(key)' to \(destinationType.displayName)")
+    }
+
+    /// Move a setting from one file to another
+    /// - Parameters:
+    ///   - key: The setting key to move
+    ///   - sourceType: The source file type
+    ///   - destinationType: The destination file type
+    public func moveSetting(key: String, from sourceType: SettingsFileType, to destinationType: SettingsFileType) async throws {
+        logger.info("Moving setting '\(key)' from \(sourceType.displayName) to \(destinationType.displayName)")
+
+        // First copy to destination
+        try await copySetting(key: key, from: sourceType, to: destinationType)
+
+        // Then delete from source
+        try await deleteSetting(key: key, from: sourceType)
+
+        logger.info("Successfully moved setting '\(key)' to \(destinationType.displayName)")
+    }
+
+    // MARK: - Helper Methods
+
+    /// Set a nested value in a dictionary using dot notation
+    /// - Throws: SettingsError.typeMismatch if an existing value is not an object when we need to traverse through it
+    private func setNestedValue(_ dict: inout [String: SettingValue], for key: String, value: SettingValue) throws {
+        let components = key.split(separator: ".")
+        if components.count == 1 {
+            dict[String(components[0])] = value
+        } else {
+            let firstKey = String(components[0])
+            let remainingKey = components.dropFirst().joined(separator: ".")
+
+            // Get or create the nested dictionary
+            var nested: [String: SettingValue]
+            if let existingValue = dict[firstKey] {
+                // Validate that the existing value is an object
+                if case let .object(existing) = existingValue {
+                    nested = existing
+                } else {
+                    // Type mismatch - we need to traverse through this, but it's not an object
+                    throw SettingsError.typeMismatch(
+                        key: key,
+                        expected: "object",
+                        found: existingValue.typeName
+                    )
+                }
+            } else {
+                // No existing value, create new object
+                nested = [:]
+            }
+
+            // Recursively set the value
+            try setNestedValue(&nested, for: remainingKey, value: value)
+            dict[firstKey] = .object(nested)
+        }
+    }
+
+    /// Remove a nested value from a dictionary using dot notation
+    private func removeNestedValue(_ dict: inout [String: SettingValue], for key: String) {
+        let components = key.split(separator: ".")
+        if components.count == 1 {
+            dict.removeValue(forKey: String(components[0]))
+        } else {
+            let firstKey = String(components[0])
+            let remainingKey = components.dropFirst().joined(separator: ".")
+
+            if case var .object(nested) = dict[firstKey] {
+                removeNestedValue(&nested, for: remainingKey)
+
+                // If the nested dictionary is now empty, remove it
+                if nested.isEmpty {
+                    dict.removeValue(forKey: firstKey)
+                } else {
+                    dict[firstKey] = .object(nested)
+                }
+            }
+        }
+    }
+}
+
+/// Errors that can occur during settings operations
+public enum SettingsError: LocalizedError {
+    case fileNotFound(SettingsFileType, expectedPath: URL?)
+    case fileIsReadOnly(URL)
+    case settingNotFound(String)
+    case validationFailed(String)
+    case typeMismatch(key: String, expected: String, found: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .fileNotFound(type, expectedPath):
+            if let path = expectedPath {
+                return "Settings file '\(type.displayName)' not found at expected path: \(path.path)"
+            } else {
+                return "Settings file '\(type.displayName)' not found"
+            }
+        case let .fileIsReadOnly(url):
+            return "Cannot modify read-only file: \(url.lastPathComponent)"
+        case let .settingNotFound(key):
+            return "Setting '\(key)' not found"
+        case let .validationFailed(message):
+            return message
+        case let .typeMismatch(key, expected, found):
+            return "Type mismatch for '\(key)': expected \(expected), but found \(found)"
+        }
     }
 }
