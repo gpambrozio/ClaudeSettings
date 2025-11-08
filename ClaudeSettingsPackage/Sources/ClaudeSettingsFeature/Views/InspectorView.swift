@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Inspector view showing details and actions for the selected item
@@ -963,6 +964,19 @@ private struct JSONTextEditorView: View {
             // Empty text - clear everything
             viewModel.setValidationError(for: item.key, error: nil)
             localValidationError = nil
+        }
+    }
+}
+
+// MARK: - NSTextView Extension for Smart Quotes
+
+/// Disable smart quotes and dashes app-wide for JSON/code editing
+extension NSTextView {
+    open override var frame: CGRect {
+        didSet {
+            isAutomaticQuoteSubstitutionEnabled = false
+            isAutomaticDashSubstitutionEnabled = false
+            isAutomaticTextReplacementEnabled = false
         }
     }
 }
