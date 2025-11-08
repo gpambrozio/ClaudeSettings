@@ -4,6 +4,8 @@ import SwiftUI
 @SFSymbol
 public enum Symbols: String {
     case arrowRight = "arrow.right"
+    case arrowUturnBackward = "arrow.uturn.backward"
+    case arrowUturnForward = "arrow.uturn.forward"
     case checkmarkCircle = "checkmark.circle"
     case clockArrowCirclepath = "clock.arrow.circlepath"
     case docText = "doc.text"

@@ -6,6 +6,13 @@ public struct InspectorView: View {
     let settingsViewModel: SettingsViewModel?
     @ObservedObject var documentationLoader: DocumentationLoader
 
+    @State private var showEditSheet = false
+    @State private var showCopySheet = false
+    @State private var showDeleteConfirmation = false
+    @State private var operationInProgress = false
+    @State private var errorMessage: String?
+    @State private var showErrorAlert = false
+
     public var body: some View {
         Group {
             if let key = selectedKey, let viewModel = settingsViewModel {
@@ -119,27 +126,80 @@ public struct InspectorView: View {
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
 
-                    HStack(spacing: 8) {
-                        Button("Copy Value") {
-                            copyToClipboard(formatValue(item.value))
-                        }
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
+                    VStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            Button("Copy Value") {
+                                copyToClipboard(formatValue(item.value))
+                            }
+                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity)
 
-                        Button("Edit") {
-                            // TODO: Implement in Phase 1.5
+                            Button("Edit") {
+                                showEditSheet = true
+                            }
+                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity)
+                            .disabled(operationInProgress)
                         }
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
 
-                        Button("Delete") {
-                            // TODO: Implement in Phase 1.5
+                        HStack(spacing: 8) {
+                            Button("Copy to File...") {
+                                showCopySheet = true
+                            }
+                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity)
+                            .disabled(operationInProgress)
+
+                            Button("Delete") {
+                                showDeleteConfirmation = true
+                            }
+                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity)
+                            .tint(.red)
+                            .disabled(operationInProgress)
                         }
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
-                        .tint(.red)
-
-                        Spacer()
+                    }
+                }
+                .sheet(isPresented: $showEditSheet) {
+                    if let viewModel = settingsViewModel {
+                        SettingEditorSheet(
+                            item: item,
+                            viewModel: viewModel,
+                            documentationLoader: documentationLoader
+                        ) { newValue, targetFile in
+                            handleEdit(item: item, newValue: newValue, targetFile: targetFile, viewModel: viewModel)
+                        }
+                    }
+                }
+                .sheet(isPresented: $showCopySheet) {
+                    if let viewModel = settingsViewModel {
+                        CopySettingSheet(
+                            item: item,
+                            viewModel: viewModel
+                        ) { targetFile in
+                            handleCopy(item: item, targetFile: targetFile, viewModel: viewModel)
+                        }
+                    }
+                }
+                .confirmationDialog(
+                    "Delete Setting",
+                    isPresented: $showDeleteConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Delete", role: .destructive) {
+                        if let viewModel = settingsViewModel {
+                            handleDelete(item: item, viewModel: viewModel)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("Are you sure you want to delete '\(item.key)'? This will remove it from the settings file. This action can be undone.")
+                }
+                .alert("Error", isPresented: $showErrorAlert) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    if let errorMessage {
+                        Text(errorMessage)
                     }
                 }
 
@@ -445,6 +505,66 @@ public struct InspectorView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+
+    // MARK: - Action Handlers
+
+    private func handleEdit(item: SettingItem, newValue: SettingValue, targetFile: SettingsFileType, viewModel: SettingsViewModel) {
+        operationInProgress = true
+        Task {
+            do {
+                try await viewModel.updateSetting(key: item.key, value: newValue, in: targetFile)
+                await MainActor.run {
+                    operationInProgress = false
+                }
+            } catch {
+                await MainActor.run {
+                    operationInProgress = false
+                    errorMessage = error.localizedDescription
+                    showErrorAlert = true
+                }
+            }
+        }
+    }
+
+    private func handleCopy(item: SettingItem, targetFile: SettingsFileType, viewModel: SettingsViewModel) {
+        operationInProgress = true
+        Task {
+            do {
+                // Get the source file from the item's contributions
+                let sourceFile = item.contributions.last?.source ?? item.source
+                try await viewModel.copySetting(key: item.key, from: sourceFile, to: targetFile)
+                await MainActor.run {
+                    operationInProgress = false
+                }
+            } catch {
+                await MainActor.run {
+                    operationInProgress = false
+                    errorMessage = error.localizedDescription
+                    showErrorAlert = true
+                }
+            }
+        }
+    }
+
+    private func handleDelete(item: SettingItem, viewModel: SettingsViewModel) {
+        operationInProgress = true
+        Task {
+            do {
+                // Delete from the highest precedence contribution (the active source)
+                let targetFile = item.contributions.last?.source ?? item.source
+                try await viewModel.deleteSetting(key: item.key, from: targetFile)
+                await MainActor.run {
+                    operationInProgress = false
+                }
+            } catch {
+                await MainActor.run {
+                    operationInProgress = false
+                    errorMessage = error.localizedDescription
+                    showErrorAlert = true
+                }
+            }
+        }
     }
 
     public init(

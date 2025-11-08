@@ -28,10 +28,32 @@ public struct SettingsListView: View {
         }
         .navigationTitle("Settings")
         .toolbar {
+            ToolbarItemGroup(placement: .automatic) {
+                Button {
+                    Task {
+                        try? await settingsViewModel.undo()
+                    }
+                } label: {
+                    Label("Undo", symbol: .arrowUturnBackward)
+                }
+                .disabled(!settingsViewModel.canUndo)
+                .help("Undo last change")
+
+                Button {
+                    Task {
+                        try? await settingsViewModel.redo()
+                    }
+                } label: {
+                    Label("Redo", symbol: .arrowUturnForward)
+                }
+                .disabled(!settingsViewModel.canRedo)
+                .help("Redo last undone change")
+            }
+
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Add Setting") {
-                        // TODO: Implement in Phase 1.5
+                        // TODO: Implement in Phase 2
                     }
                     Button("Import Settings") {
                         // TODO: Implement in Phase 2

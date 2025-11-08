@@ -22,6 +22,12 @@ final public class SettingsViewModel {
     private let debouncer = Debouncer()
     private var consecutiveReloadFailures: [URL: Int] = [:]
 
+    // Undo/Redo support
+    private var undoStack: [SettingsCommand] = []
+    private var redoStack: [SettingsCommand] = []
+    public var canUndo: Bool { !undoStack.isEmpty }
+    public var canRedo: Bool { !redoStack.isEmpty }
+
     public init(project: ClaudeProject? = nil, fileSystemManager: FileSystemManager = FileSystemManager()) {
         self.project = project
         self.fileSystemManager = fileSystemManager
@@ -489,5 +495,411 @@ final public class SettingsViewModel {
         }
 
         return nodes
+    }
+
+    // MARK: - Edit Operations
+
+    /// Update a setting value in a specific file
+    public func updateSetting(key: String, value: SettingValue, in fileType: SettingsFileType) async throws {
+        logger.info("Updating setting '\(key)' in \(fileType.displayName)")
+
+        // Find or create the target file
+        let targetFile = try await getOrCreateFile(type: fileType)
+        let oldContent = targetFile.content
+
+        // Create backup before modifying
+        if await fileSystemManager.exists(at: targetFile.path) {
+            let backupDir = getBackupDirectory()
+            _ = try await fileSystemManager.createBackup(of: targetFile.path, to: backupDir)
+        }
+
+        // Update the setting using nested key path
+        var updatedContent = targetFile.content
+        try setNestedValue(in: &updatedContent, keyPath: key, value: value)
+
+        // Write back to file
+        let updatedFile = SettingsFile(
+            id: targetFile.id,
+            type: targetFile.type,
+            path: targetFile.path,
+            content: updatedContent,
+            isValid: true,
+            validationErrors: [],
+            lastModified: Date(),
+            isReadOnly: targetFile.isReadOnly
+        )
+
+        try await settingsParser.writeSettingsFile(updatedFile)
+
+        // Create undo command
+        let command = EditSettingCommand(
+            viewModel: self,
+            key: key,
+            fileType: fileType,
+            oldContent: oldContent,
+            newContent: updatedContent
+        )
+        undoStack.append(command)
+        redoStack.removeAll()
+
+        // Reload to reflect changes
+        await reloadChangedFile(at: targetFile.path)
+
+        logger.info("Successfully updated setting '\(key)'")
+    }
+
+    /// Copy a setting from one file to another
+    public func copySetting(key: String, from sourceType: SettingsFileType, to targetType: SettingsFileType) async throws {
+        logger.info("Copying setting '\(key)' from \(sourceType.displayName) to \(targetType.displayName)")
+
+        // Get the value from source
+        guard let sourceFile = settingsFiles.first(where: { $0.type == sourceType }),
+              let value = getNestedValue(in: sourceFile.content, keyPath: key)
+        else {
+            throw SettingsError.settingNotFound(key: key, file: sourceType)
+        }
+
+        // Update in target file
+        try await updateSetting(key: key, value: value, in: targetType)
+
+        logger.info("Successfully copied setting '\(key)'")
+    }
+
+    /// Delete a setting from a specific file
+    public func deleteSetting(key: String, from fileType: SettingsFileType) async throws {
+        logger.info("Deleting setting '\(key)' from \(fileType.displayName)")
+
+        guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
+            throw SettingsError.fileNotFound(type: fileType)
+        }
+
+        let targetFile = settingsFiles[fileIndex]
+        let oldContent = targetFile.content
+
+        // Create backup before modifying
+        if await fileSystemManager.exists(at: targetFile.path) {
+            let backupDir = getBackupDirectory()
+            _ = try await fileSystemManager.createBackup(of: targetFile.path, to: backupDir)
+        }
+
+        // Remove the setting
+        var updatedContent = targetFile.content
+        try removeNestedValue(in: &updatedContent, keyPath: key)
+
+        // Write back to file
+        let updatedFile = SettingsFile(
+            id: targetFile.id,
+            type: targetFile.type,
+            path: targetFile.path,
+            content: updatedContent,
+            isValid: true,
+            validationErrors: [],
+            lastModified: Date(),
+            isReadOnly: targetFile.isReadOnly
+        )
+
+        try await settingsParser.writeSettingsFile(updatedFile)
+
+        // Create undo command
+        let command = DeleteSettingCommand(
+            viewModel: self,
+            key: key,
+            fileType: fileType,
+            oldContent: oldContent,
+            newContent: updatedContent
+        )
+        undoStack.append(command)
+        redoStack.removeAll()
+
+        // Reload to reflect changes
+        await reloadChangedFile(at: targetFile.path)
+
+        logger.info("Successfully deleted setting '\(key)'")
+    }
+
+    /// Undo the last operation
+    public func undo() async throws {
+        guard let command = undoStack.popLast() else { return }
+
+        try await command.undo()
+        redoStack.append(command)
+
+        logger.info("Undid last operation")
+    }
+
+    /// Redo the last undone operation
+    public func redo() async throws {
+        guard let command = redoStack.popLast() else { return }
+
+        try await command.execute()
+        undoStack.append(command)
+
+        logger.info("Redid operation")
+    }
+
+    // MARK: - Helper Methods
+
+    /// Get or create a settings file of the specified type
+    private func getOrCreateFile(type: SettingsFileType) async throws -> SettingsFile {
+        // Check if file already exists in our loaded files
+        if let existingFile = settingsFiles.first(where: { $0.type == type }) {
+            return existingFile
+        }
+
+        // Create new file
+        let baseDirectory: URL
+        if type.isGlobal {
+            baseDirectory = FileManager.default.homeDirectoryForCurrentUser
+        } else {
+            guard let projectPath = project?.path else {
+                throw SettingsError.noProjectSelected
+            }
+            baseDirectory = projectPath
+        }
+
+        let filePath = type.path(in: baseDirectory)
+
+        // If file doesn't exist on disk, create empty one
+        if !(await fileSystemManager.exists(at: filePath)) {
+            let emptyFile = SettingsFile(
+                type: type,
+                path: filePath,
+                content: [:],
+                isValid: true,
+                validationErrors: [],
+                lastModified: Date(),
+                isReadOnly: false
+            )
+
+            try await settingsParser.writeSettingsFile(emptyFile)
+            return emptyFile
+        }
+
+        // File exists on disk but not loaded yet, parse it
+        return try await settingsParser.parseSettingsFile(at: filePath, type: type)
+    }
+
+    /// Get backup directory
+    private func getBackupDirectory() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return appSupport.appendingPathComponent("ClaudeSettings/backups")
+    }
+
+    /// Set a value in a nested dictionary using dot-notation key path
+    private func setNestedValue(in dict: inout [String: SettingValue], keyPath: String, value: SettingValue) throws {
+        let components = keyPath.split(separator: ".")
+        guard !components.isEmpty else {
+            throw SettingsError.invalidKeyPath(keyPath)
+        }
+
+        if components.count == 1 {
+            // Base case: set directly
+            dict[String(components[0])] = value
+        } else {
+            // Recursive case: navigate into nested object
+            let firstKey = String(components[0])
+            let remainingPath = components.dropFirst().joined(separator: ".")
+
+            // Get or create nested object
+            var nestedDict: [String: SettingValue]
+            if case let .object(existing) = dict[firstKey] {
+                nestedDict = existing
+            } else {
+                nestedDict = [:]
+            }
+
+            // Recursively set in nested object
+            try setNestedValue(in: &nestedDict, keyPath: remainingPath, value: value)
+
+            // Update parent
+            dict[firstKey] = .object(nestedDict)
+        }
+    }
+
+    /// Get a value from a nested dictionary using dot-notation key path
+    private func getNestedValue(in dict: [String: SettingValue], keyPath: String) -> SettingValue? {
+        let components = keyPath.split(separator: ".")
+        guard !components.isEmpty else { return nil }
+
+        if components.count == 1 {
+            return dict[String(components[0])]
+        } else {
+            let firstKey = String(components[0])
+            let remainingPath = components.dropFirst().joined(separator: ".")
+
+            if case let .object(nestedDict) = dict[firstKey] {
+                return getNestedValue(in: nestedDict, keyPath: remainingPath)
+            }
+
+            return nil
+        }
+    }
+
+    /// Remove a value from a nested dictionary using dot-notation key path
+    private func removeNestedValue(in dict: inout [String: SettingValue], keyPath: String) throws {
+        let components = keyPath.split(separator: ".")
+        guard !components.isEmpty else {
+            throw SettingsError.invalidKeyPath(keyPath)
+        }
+
+        if components.count == 1 {
+            // Base case: remove directly
+            dict.removeValue(forKey: String(components[0]))
+        } else {
+            // Recursive case: navigate into nested object
+            let firstKey = String(components[0])
+            let remainingPath = components.dropFirst().joined(separator: ".")
+
+            guard case var .object(nestedDict) = dict[firstKey] else {
+                // Key doesn't exist or is not an object
+                return
+            }
+
+            // Recursively remove from nested object
+            try removeNestedValue(in: &nestedDict, keyPath: remainingPath)
+
+            // Update parent (or remove if empty)
+            if nestedDict.isEmpty {
+                dict.removeValue(forKey: firstKey)
+            } else {
+                dict[firstKey] = .object(nestedDict)
+            }
+        }
+    }
+}
+
+// MARK: - Command Pattern for Undo/Redo
+
+/// Protocol for undoable commands
+protocol SettingsCommand {
+    func execute() async throws
+    func undo() async throws
+}
+
+/// Command for editing a setting
+struct EditSettingCommand: SettingsCommand {
+    weak var viewModel: SettingsViewModel?
+    let key: String
+    let fileType: SettingsFileType
+    let oldContent: [String: SettingValue]
+    let newContent: [String: SettingValue]
+
+    func execute() async throws {
+        guard let viewModel else { return }
+
+        // Apply new content
+        if let fileIndex = await viewModel.settingsFiles.firstIndex(where: { $0.type == fileType }) {
+            let file = await viewModel.settingsFiles[fileIndex]
+            let updatedFile = SettingsFile(
+                id: file.id,
+                type: file.type,
+                path: file.path,
+                content: newContent,
+                isValid: file.isValid,
+                validationErrors: file.validationErrors,
+                lastModified: Date(),
+                isReadOnly: file.isReadOnly
+            )
+
+            try await viewModel.settingsParser.writeSettingsFile(updatedFile)
+            await viewModel.reloadChangedFile(at: file.path)
+        }
+    }
+
+    func undo() async throws {
+        guard let viewModel else { return }
+
+        // Restore old content
+        if let fileIndex = await viewModel.settingsFiles.firstIndex(where: { $0.type == fileType }) {
+            let file = await viewModel.settingsFiles[fileIndex]
+            let restoredFile = SettingsFile(
+                id: file.id,
+                type: file.type,
+                path: file.path,
+                content: oldContent,
+                isValid: file.isValid,
+                validationErrors: file.validationErrors,
+                lastModified: Date(),
+                isReadOnly: file.isReadOnly
+            )
+
+            try await viewModel.settingsParser.writeSettingsFile(restoredFile)
+            await viewModel.reloadChangedFile(at: file.path)
+        }
+    }
+}
+
+/// Command for deleting a setting
+struct DeleteSettingCommand: SettingsCommand {
+    weak var viewModel: SettingsViewModel?
+    let key: String
+    let fileType: SettingsFileType
+    let oldContent: [String: SettingValue]
+    let newContent: [String: SettingValue]
+
+    func execute() async throws {
+        guard let viewModel else { return }
+
+        // Apply deletion (new content)
+        if let fileIndex = await viewModel.settingsFiles.firstIndex(where: { $0.type == fileType }) {
+            let file = await viewModel.settingsFiles[fileIndex]
+            let updatedFile = SettingsFile(
+                id: file.id,
+                type: file.type,
+                path: file.path,
+                content: newContent,
+                isValid: file.isValid,
+                validationErrors: file.validationErrors,
+                lastModified: Date(),
+                isReadOnly: file.isReadOnly
+            )
+
+            try await viewModel.settingsParser.writeSettingsFile(updatedFile)
+            await viewModel.reloadChangedFile(at: file.path)
+        }
+    }
+
+    func undo() async throws {
+        guard let viewModel else { return }
+
+        // Restore deleted content
+        if let fileIndex = await viewModel.settingsFiles.firstIndex(where: { $0.type == fileType }) {
+            let file = await viewModel.settingsFiles[fileIndex]
+            let restoredFile = SettingsFile(
+                id: file.id,
+                type: file.type,
+                path: file.path,
+                content: oldContent,
+                isValid: file.isValid,
+                validationErrors: file.validationErrors,
+                lastModified: Date(),
+                isReadOnly: file.isReadOnly
+            )
+
+            try await viewModel.settingsParser.writeSettingsFile(restoredFile)
+            await viewModel.reloadChangedFile(at: file.path)
+        }
+    }
+}
+
+// MARK: - Errors
+
+enum SettingsError: LocalizedError {
+    case settingNotFound(key: String, file: SettingsFileType)
+    case fileNotFound(type: SettingsFileType)
+    case noProjectSelected
+    case invalidKeyPath(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .settingNotFound(key, file):
+            return "Setting '\(key)' not found in \(file.displayName)"
+        case let .fileNotFound(type):
+            return "Settings file of type \(type.displayName) not found"
+        case .noProjectSelected:
+            return "No project selected. Project-level settings require an active project."
+        case let .invalidKeyPath(path):
+            return "Invalid key path: '\(path)'"
+        }
     }
 }
