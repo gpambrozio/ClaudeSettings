@@ -490,4 +490,212 @@ final public class SettingsViewModel {
 
         return nodes
     }
+
+    // MARK: - Edit Operations
+
+    /// Update a setting value in a specific file
+    /// - Parameters:
+    ///   - key: The setting key to update
+    ///   - value: The new value
+    ///   - fileType: The file type to update (defaults to the highest precedence non-enterprise file)
+    public func updateSetting(key: String, value: SettingValue, in fileType: SettingsFileType) async throws {
+        logger.info("Updating setting '\(key)' in \(fileType.displayName)")
+
+        // Find the settings file to update
+        guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
+            // File doesn't exist yet, create it
+            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            let baseDirectory = fileType.isGlobal ? homeDirectory : (project?.path ?? homeDirectory)
+            let filePath = fileType.path(in: baseDirectory)
+
+            var newContent: [String: SettingValue] = [:]
+            setNestedValue(&newContent, for: key, value: value)
+
+            let newFile = SettingsFile(
+                type: fileType,
+                path: filePath,
+                content: newContent,
+                isValid: true,
+                validationErrors: [],
+                lastModified: Date(),
+                isReadOnly: false
+            )
+
+            try await settingsParser.writeSettingsFile(newFile)
+            settingsFiles.append(newFile)
+            settingItems = computeSettingItems(from: settingsFiles)
+            hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+            logger.info("Created new settings file at \(filePath.path)")
+            return
+        }
+
+        var file = settingsFiles[fileIndex]
+
+        // Check if file is read-only
+        guard !file.isReadOnly else {
+            throw SettingsError.fileIsReadOnly(file.path)
+        }
+
+        // Create backup before modifying
+        let backupDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/ClaudeSettings/Backups")
+        _ = try await fileSystemManager.createBackup(of: file.path, to: backupDirectory)
+
+        // Update the nested value in the content dictionary
+        var updatedContent = file.content
+        setNestedValue(&updatedContent, for: key, value: value)
+
+        // Update the file
+        file.content = updatedContent
+        try await settingsParser.writeSettingsFile(file)
+
+        // Update in our array
+        settingsFiles[fileIndex] = file
+
+        // Recompute merged settings
+        settingItems = computeSettingItems(from: settingsFiles)
+        hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+
+        logger.info("Successfully updated setting '\(key)' in \(fileType.displayName)")
+    }
+
+    /// Delete a setting from a specific file
+    /// - Parameters:
+    ///   - key: The setting key to delete
+    ///   - fileType: The file type to delete from
+    public func deleteSetting(key: String, from fileType: SettingsFileType) async throws {
+        logger.info("Deleting setting '\(key)' from \(fileType.displayName)")
+
+        guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
+            throw SettingsError.fileNotFound(fileType)
+        }
+
+        var file = settingsFiles[fileIndex]
+
+        guard !file.isReadOnly else {
+            throw SettingsError.fileIsReadOnly(file.path)
+        }
+
+        // Create backup before modifying
+        let backupDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/ClaudeSettings/Backups")
+        _ = try await fileSystemManager.createBackup(of: file.path, to: backupDirectory)
+
+        // Remove the nested value from the content dictionary
+        var updatedContent = file.content
+        removeNestedValue(&updatedContent, for: key)
+
+        file.content = updatedContent
+        try await settingsParser.writeSettingsFile(file)
+
+        settingsFiles[fileIndex] = file
+
+        // Recompute merged settings
+        settingItems = computeSettingItems(from: settingsFiles)
+        hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+
+        logger.info("Successfully deleted setting '\(key)' from \(fileType.displayName)")
+    }
+
+    /// Copy a setting from one file to another
+    /// - Parameters:
+    ///   - key: The setting key to copy
+    ///   - sourceType: The source file type
+    ///   - destinationType: The destination file type
+    public func copySetting(key: String, from sourceType: SettingsFileType, to destinationType: SettingsFileType) async throws {
+        logger.info("Copying setting '\(key)' from \(sourceType.displayName) to \(destinationType.displayName)")
+
+        // Find the setting in the source file
+        guard let item = settingItems.first(where: { $0.key == key }),
+              let contribution = item.contributions.first(where: { $0.source == sourceType }) else {
+            throw SettingsError.settingNotFound(key)
+        }
+
+        // Copy the value to the destination
+        try await updateSetting(key: key, value: contribution.value, in: destinationType)
+
+        logger.info("Successfully copied setting '\(key)' to \(destinationType.displayName)")
+    }
+
+    /// Move a setting from one file to another
+    /// - Parameters:
+    ///   - key: The setting key to move
+    ///   - sourceType: The source file type
+    ///   - destinationType: The destination file type
+    public func moveSetting(key: String, from sourceType: SettingsFileType, to destinationType: SettingsFileType) async throws {
+        logger.info("Moving setting '\(key)' from \(sourceType.displayName) to \(destinationType.displayName)")
+
+        // First copy to destination
+        try await copySetting(key: key, from: sourceType, to: destinationType)
+
+        // Then delete from source
+        try await deleteSetting(key: key, from: sourceType)
+
+        logger.info("Successfully moved setting '\(key)' to \(destinationType.displayName)")
+    }
+
+    // MARK: - Helper Methods
+
+    /// Set a nested value in a dictionary using dot notation
+    private func setNestedValue(_ dict: inout [String: SettingValue], for key: String, value: SettingValue) {
+        let components = key.split(separator: ".")
+        if components.count == 1 {
+            dict[String(components[0])] = value
+        } else {
+            let firstKey = String(components[0])
+            let remainingKey = components.dropFirst().joined(separator: ".")
+
+            // Get or create the nested dictionary
+            var nested: [String: SettingValue]
+            if case let .object(existing) = dict[firstKey] {
+                nested = existing
+            } else {
+                nested = [:]
+            }
+
+            // Recursively set the value
+            setNestedValue(&nested, for: remainingKey, value: value)
+            dict[firstKey] = .object(nested)
+        }
+    }
+
+    /// Remove a nested value from a dictionary using dot notation
+    private func removeNestedValue(_ dict: inout [String: SettingValue], for key: String) {
+        let components = key.split(separator: ".")
+        if components.count == 1 {
+            dict.removeValue(forKey: String(components[0]))
+        } else {
+            let firstKey = String(components[0])
+            let remainingKey = components.dropFirst().joined(separator: ".")
+
+            if case var .object(nested) = dict[firstKey] {
+                removeNestedValue(&nested, for: remainingKey)
+
+                // If the nested dictionary is now empty, remove it
+                if nested.isEmpty {
+                    dict.removeValue(forKey: firstKey)
+                } else {
+                    dict[firstKey] = .object(nested)
+                }
+            }
+        }
+    }
+}
+
+/// Errors that can occur during settings operations
+public enum SettingsError: LocalizedError {
+    case fileNotFound(SettingsFileType)
+    case fileIsReadOnly(URL)
+    case settingNotFound(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .fileNotFound(type):
+            return "Settings file '\(type.displayName)' not found"
+        case let .fileIsReadOnly(url):
+            return "Cannot modify read-only file: \(url.lastPathComponent)"
+        case let .settingNotFound(key):
+            return "Setting '\(key)' not found"
+        }
+    }
 }
