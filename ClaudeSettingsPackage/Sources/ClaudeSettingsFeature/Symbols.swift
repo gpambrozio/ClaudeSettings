@@ -20,4 +20,5 @@ public enum Symbols: String {
     case plusCircle = "plus.circle"
     case questionmarkCircle = "questionmark.circle"
     case sidebarLeft = "sidebar.left"
+    case trash
 }
