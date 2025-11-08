@@ -502,7 +502,31 @@ final public class SettingsViewModel {
         logger.info("Updating setting '\(key)' in \(fileType.displayName)")
 
         // Find the settings file to update
-        guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
+        if let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) {
+            // File exists, update it
+            var file = settingsFiles[fileIndex]
+
+            // Check if file is read-only
+            guard !file.isReadOnly else {
+                throw SettingsError.fileIsReadOnly(file.path)
+            }
+
+            // Create backup before modifying
+            let backupDirectory = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/ClaudeSettings/Backups")
+            _ = try await fileSystemManager.createBackup(of: file.path, to: backupDirectory)
+
+            // Update the nested value in the content dictionary
+            var updatedContent = file.content
+            setNestedValue(&updatedContent, for: key, value: value)
+
+            // Update the file
+            file.content = updatedContent
+            try await settingsParser.writeSettingsFile(file)
+
+            // Update in our array
+            settingsFiles[fileIndex] = file
+        } else {
             // File doesn't exist yet, create it
             let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
             let baseDirectory = fileType.isGlobal ? homeDirectory : (project?.path ?? homeDirectory)
@@ -523,36 +547,10 @@ final public class SettingsViewModel {
 
             try await settingsParser.writeSettingsFile(newFile)
             settingsFiles.append(newFile)
-            settingItems = computeSettingItems(from: settingsFiles)
-            hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
             logger.info("Created new settings file at \(filePath.path)")
-            return
         }
 
-        var file = settingsFiles[fileIndex]
-
-        // Check if file is read-only
-        guard !file.isReadOnly else {
-            throw SettingsError.fileIsReadOnly(file.path)
-        }
-
-        // Create backup before modifying
-        let backupDirectory = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/ClaudeSettings/Backups")
-        _ = try await fileSystemManager.createBackup(of: file.path, to: backupDirectory)
-
-        // Update the nested value in the content dictionary
-        var updatedContent = file.content
-        setNestedValue(&updatedContent, for: key, value: value)
-
-        // Update the file
-        file.content = updatedContent
-        try await settingsParser.writeSettingsFile(file)
-
-        // Update in our array
-        settingsFiles[fileIndex] = file
-
-        // Recompute merged settings
+        // Recompute merged settings (once, regardless of path taken)
         settingItems = computeSettingItems(from: settingsFiles)
         hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
 
@@ -606,8 +604,9 @@ final public class SettingsViewModel {
         logger.info("Copying setting '\(key)' from \(sourceType.displayName) to \(destinationType.displayName)")
 
         // Find the setting in the source file
-        guard let item = settingItems.first(where: { $0.key == key }),
-              let contribution = item.contributions.first(where: { $0.source == sourceType }) else {
+        guard
+            let item = settingItems.first(where: { $0.key == key }),
+            let contribution = item.contributions.first(where: { $0.source == sourceType }) else {
             throw SettingsError.settingNotFound(key)
         }
 

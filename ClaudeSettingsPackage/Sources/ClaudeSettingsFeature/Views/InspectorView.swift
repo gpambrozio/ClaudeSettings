@@ -12,10 +12,9 @@ public struct InspectorView: View {
     @State private var showDeleteConfirmation = false
     @State private var showCopySheet = false
     @State private var showMoveSheet = false
-    @State private var copyDestination: SettingsFileType?
-    @State private var moveDestination: SettingsFileType?
     @State private var errorMessage: String?
     @State private var showError = false
+    @State private var jsonValidationError: String?
 
     public var body: some View {
         Group {
@@ -85,82 +84,12 @@ public struct InspectorView: View {
                 ForEach(Array(item.contributions.enumerated()), id: \.offset) { index, contribution in
                     Divider()
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        // Show file type selector when editing this contribution, otherwise show label
-                        if isEditing && selectedFileType == contribution.source {
-                            // File type selector replaces the header when editing
-                            if let viewModel = settingsViewModel {
-                                Menu {
-                                    ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
-                                        Button(action: {
-                                            selectedFileType = fileType
-                                            // Update editedValue if switching to a different contribution
-                                            if let contribution = item.contributions.first(where: { $0.source == fileType }) {
-                                                editedValue = contribution.value
-                                            }
-                                        }) {
-                                            HStack {
-                                                Text(fileType.displayName)
-                                                if selectedFileType == fileType {
-                                                    Symbols.checkmarkCircle.image
-                                                }
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    HStack {
-                                        Circle()
-                                            .fill(sourceColor(for: selectedFileType ?? .globalSettings))
-                                            .frame(width: 8, height: 8)
-                                        Text(selectedFileType?.displayName ?? "Select file")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .textCase(.uppercase)
-                                        Symbols.chevronUpChevronDown.image
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        } else {
-                            // Normal header when not editing
-                            HStack {
-                                Circle()
-                                    .fill(sourceColor(for: contribution.source))
-                                    .frame(width: 8, height: 8)
-                                Text(sourceLabel(for: contribution.source))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .textCase(.uppercase)
-
-                                // Show override indicator for non-additive settings
-                                if !item.isAdditive && index < item.contributions.count - 1 {
-                                    Text("(overridden)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .italic()
-                                }
-                            }
-                        }
-
-                        // Show edit controls inline when editing this contribution
-                        if isEditing && selectedFileType == contribution.source {
-                            VStack(alignment: .leading, spacing: 8) {
-                                if let editedValue {
-                                    typeAwareEditor(for: editedValue, item: item)
-                                }
-                            }
-                            .padding(.top, 4)
-                        } else {
-                            // Show value normally when not editing
-                            Text(formatValue(contribution.value))
-                                .font(.system(.body, design: .monospaced))
-                                .textSelection(.enabled)
-                                .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1)
-                        }
-                    }
+                    contributionRow(
+                        contribution: contribution,
+                        item: item,
+                        index: index,
+                        isOverridden: !item.isAdditive && index < item.contributions.count - 1
+                    )
                 }
 
                 // Documentation section
@@ -186,7 +115,8 @@ public struct InspectorView: View {
                         Button(action: {
                             copyToClipboard(formatValue(item.value))
                         }) {
-                            Text("Copy Value")                        .padding(.horizontal, 10)
+                            Text("Copy Value")
+                                .padding(.horizontal, 10)
                         }
                         .buttonStyle(.bordered)
 
@@ -194,17 +124,18 @@ public struct InspectorView: View {
                             Button(action: {
                                 startEditing(item: item)
                             }) {
-                                Text("Edit")                        .padding(.horizontal, 10)
+                                Text("Edit")
+                                    .padding(.horizontal, 10)
                             }
                             .buttonStyle(.bordered)
                         } else {
                             Button(action: {
                                 cancelEditing()
                             }) {
-                                Text("Cancel")                        .padding(.horizontal, 10)
+                                Text("Cancel")
+                                    .padding(.horizontal, 10)
                             }
                             .buttonStyle(.bordered)
-                            .frame(maxWidth: .infinity)
 
                             Button(action: {
                                 saveEdits(item: item)
@@ -278,6 +209,100 @@ public struct InspectorView: View {
                 if let errorMessage {
                     Text(errorMessage)
                 }
+            }
+        }
+    }
+
+    // MARK: - Contribution Row
+
+    @ViewBuilder
+    private func contributionRow(
+        contribution: SourceContribution,
+        item: SettingItem,
+        index: Int,
+        isOverridden: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header: either file type selector (when editing) or label
+            if isEditing && selectedFileType == contribution.source {
+                contributionHeaderEditing(item: item)
+            } else {
+                contributionHeaderNormal(contribution: contribution, isOverridden: isOverridden)
+            }
+
+            // Value: either editor (when editing) or static text
+            if isEditing && selectedFileType == contribution.source {
+                if let editedValue {
+                    typeAwareEditor(for: editedValue, item: item)
+                        .padding(.top, 4)
+                }
+            } else {
+                Text(formatValue(contribution.value))
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .opacity(isOverridden ? 0.6 : 1)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contributionHeaderEditing(item: SettingItem) -> some View {
+        if let viewModel = settingsViewModel {
+            Menu {
+                ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
+                    Button(action: {
+                        selectedFileType = fileType
+                        // Update editedValue if switching to a different contribution
+                        if let newContribution = item.contributions.first(where: { $0.source == fileType }) {
+                            editedValue = newContribution.value
+                        } else {
+                            // No contribution exists for this file yet, keep current edited value
+                            // This handles the case where we're switching to a new file
+                        }
+                    }) {
+                        HStack {
+                            Text(fileType.displayName)
+                            if selectedFileType == fileType {
+                                Symbols.checkmarkCircle.image
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Circle()
+                        .fill(sourceColor(for: selectedFileType ?? .globalSettings))
+                        .frame(width: 8, height: 8)
+                    Text(selectedFileType?.displayName ?? "Select file")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Symbols.chevronUpChevronDown.image
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func contributionHeaderNormal(contribution: SourceContribution, isOverridden: Bool) -> some View {
+        HStack {
+            Circle()
+                .fill(sourceColor(for: contribution.source))
+                .frame(width: 8, height: 8)
+            Text(sourceLabel(for: contribution.source))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            if isOverridden {
+                Text("(overridden)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .italic()
             }
         }
     }
@@ -682,7 +707,7 @@ public struct InspectorView: View {
                 get: { if case let .bool(val) = editedValue { return val } else { return boolValue } },
                 set: { editedValue = .bool($0) }
             )) { EmptyView() }
-            .toggleStyle(.switch)
+                .toggleStyle(.switch)
 
         case let .string(stringValue):
             // Check if documentation has enum values
@@ -698,8 +723,13 @@ public struct InspectorView: View {
                     }
                 } label: {
                     HStack {
-                        Text(stringValue)
-                            .font(.system(.body, design: .monospaced))
+                        if case let .string(currentValue) = editedValue {
+                            Text(currentValue)
+                                .font(.system(.body, design: .monospaced))
+                        } else {
+                            Text(stringValue)
+                                .font(.system(.body, design: .monospaced))
+                        }
                         Spacer()
                         Symbols.chevronUpChevronDown.image
                             .font(.caption2)
@@ -735,20 +765,36 @@ public struct InspectorView: View {
         case .array,
              .object:
             // For complex types, use a text editor with JSON
-            TextEditor(text: Binding(
-                get: { editedValue?.formatted() ?? value.formatted() },
-                set: { newText in
-                    // Try to parse as JSON
-                    if
-                        let data = newText.data(using: .utf8),
-                        let jsonObject = try? JSONSerialization.jsonObject(with: data) {
-                        editedValue = SettingValue(any: jsonObject)
+            VStack(alignment: .leading, spacing: 4) {
+                TextEditor(text: Binding(
+                    get: { editedValue?.formatted() ?? value.formatted() },
+                    set: { newText in
+                        // Try to parse as JSON
+                        jsonValidationError = nil
+                        if
+                            let data = newText.data(using: .utf8),
+                            let jsonObject = try? JSONSerialization.jsonObject(with: data) {
+                            editedValue = SettingValue(any: jsonObject)
+                        } else if !newText.isEmpty {
+                            // Show validation error for non-empty invalid JSON
+                            jsonValidationError = "Invalid JSON syntax"
+                        }
                     }
+                ))
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 100)
+                .border(jsonValidationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
+
+                if let jsonValidationError {
+                    HStack(spacing: 4) {
+                        Symbols.exclamationmarkTriangle.image
+                            .font(.caption2)
+                        Text(jsonValidationError)
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.red)
                 }
-            ))
-            .font(.system(.body, design: .monospaced))
-            .frame(minHeight: 100)
-            .border(Color.secondary.opacity(0.3))
+            }
 
         case .null:
             Text("null")
@@ -785,6 +831,7 @@ public struct InspectorView: View {
     private func startEditing(item: SettingItem) {
         isEditing = true
         editedValue = item.value
+        jsonValidationError = nil
 
         // Default to the highest precedence contribution
         if let lastContribution = item.contributions.last {
@@ -798,6 +845,7 @@ public struct InspectorView: View {
         isEditing = false
         editedValue = nil
         selectedFileType = nil
+        jsonValidationError = nil
     }
 
     private func saveEdits(item: SettingItem) {
