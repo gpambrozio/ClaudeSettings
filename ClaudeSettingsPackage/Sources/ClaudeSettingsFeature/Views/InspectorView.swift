@@ -676,6 +676,7 @@ public struct InspectorView: View {
                 get: { if case let .bool(val) = editedValue { return val } else { return boolValue } },
                 set: { editedValue = .bool($0) }
             ))
+            .toggleStyle(.switch)
 
         case let .string(stringValue):
             // Check if documentation has enum values
