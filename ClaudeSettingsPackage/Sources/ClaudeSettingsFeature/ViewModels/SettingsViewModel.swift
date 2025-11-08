@@ -16,7 +16,7 @@ final public class SettingsViewModel {
     public var isLoading = false
     public var errorMessage: String?
 
-    private let settingsParser: SettingsParser
+    let settingsParser: SettingsParser
     private let project: ClaudeProject?
     private var fileWatcher: FileWatcher?
     private let debouncer = Debouncer()
@@ -162,7 +162,7 @@ final public class SettingsViewModel {
     }
 
     /// Reload a specific settings file that changed externally
-    private func reloadChangedFile(at url: URL) async {
+    func reloadChangedFile(at url: URL) async {
         logger.info("Settings file changed externally: \(url.path)")
 
         // Find which settings file changed
@@ -553,8 +553,9 @@ final public class SettingsViewModel {
         logger.info("Copying setting '\(key)' from \(sourceType.displayName) to \(targetType.displayName)")
 
         // Get the value from source
-        guard let sourceFile = settingsFiles.first(where: { $0.type == sourceType }),
-              let value = getNestedValue(in: sourceFile.content, keyPath: key)
+        guard
+            let sourceFile = settingsFiles.first(where: { $0.type == sourceType }),
+            let value = getNestedValue(in: sourceFile.content, keyPath: key)
         else {
             throw SettingsError.settingNotFound(key: key, file: sourceType)
         }
@@ -771,13 +772,13 @@ final public class SettingsViewModel {
 // MARK: - Command Pattern for Undo/Redo
 
 /// Protocol for undoable commands
-protocol SettingsCommand {
+protocol SettingsCommand: Sendable {
     func execute() async throws
     func undo() async throws
 }
 
 /// Command for editing a setting
-struct EditSettingCommand: SettingsCommand {
+struct EditSettingCommand: SettingsCommand, @unchecked Sendable {
     weak var viewModel: SettingsViewModel?
     let key: String
     let fileType: SettingsFileType
@@ -830,7 +831,7 @@ struct EditSettingCommand: SettingsCommand {
 }
 
 /// Command for deleting a setting
-struct DeleteSettingCommand: SettingsCommand {
+struct DeleteSettingCommand: SettingsCommand, @unchecked Sendable {
     weak var viewModel: SettingsViewModel?
     let key: String
     let fileType: SettingsFileType

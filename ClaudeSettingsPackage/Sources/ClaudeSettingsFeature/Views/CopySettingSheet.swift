@@ -49,7 +49,6 @@ struct CopySettingSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Copy Setting")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -73,7 +72,7 @@ struct CopySettingSheet: View {
             .globalSettings,
             .globalLocal,
             .projectSettings,
-            .projectLocal
+            .projectLocal,
         ]
 
         return writableTypes.sorted { $0.precedence < $1.precedence }

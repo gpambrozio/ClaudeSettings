@@ -13,13 +13,13 @@ struct SettingEditorSheet: View {
     @State private var errorMessage: String?
 
     // For editing different types
-    @State private var stringValue: String = ""
-    @State private var boolValue: Bool = false
-    @State private var intValue: String = ""
-    @State private var doubleValue: String = ""
-    @State private var arrayText: String = ""
-    @State private var objectText: String = ""
-    @State private var selectedEnumValue: String = ""
+    @State private var stringValue = ""
+    @State private var boolValue = false
+    @State private var intValue = ""
+    @State private var doubleValue = ""
+    @State private var arrayText = ""
+    @State private var objectText = ""
+    @State private var selectedEnumValue = ""
 
     init(
         item: SettingItem,
@@ -48,9 +48,9 @@ struct SettingEditorSheet: View {
         case let .double(value):
             _doubleValue = State(initialValue: String(value))
         case let .array(values):
-            _arrayText = State(initialValue: formatArrayForEditing(values))
+            _arrayText = State(initialValue: Self.formatArrayForEditing(values))
         case let .object(dict):
-            _objectText = State(initialValue: formatObjectForEditing(dict))
+            _objectText = State(initialValue: Self.formatObjectForEditing(dict))
         case .null:
             break
         }
@@ -116,7 +116,6 @@ struct SettingEditorSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Edit Setting")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -206,7 +205,7 @@ struct SettingEditorSheet: View {
             .globalSettings,
             .globalLocal,
             .projectSettings,
-            .projectLocal
+            .projectLocal,
         ]
 
         for type in writableTypes {
@@ -371,9 +370,9 @@ struct SettingEditorSheet: View {
 
     private static func formatArrayForEditing(_ values: [SettingValue]) -> String {
         let array = values.map(\.asAny)
-        if let data = try? JSONSerialization.data(withJSONObject: array, options: [.prettyPrinted, .withoutEscapingSlashes]),
-           let string = String(data: data, encoding: .utf8)
-        {
+        if
+            let data = try? JSONSerialization.data(withJSONObject: array, options: [.prettyPrinted, .withoutEscapingSlashes]),
+            let string = String(data: data, encoding: .utf8) {
             return string
         }
         return "[]"
@@ -381,9 +380,9 @@ struct SettingEditorSheet: View {
 
     private static func formatObjectForEditing(_ dict: [String: SettingValue]) -> String {
         let object = dict.mapValues(\.asAny)
-        if let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
-           let string = String(data: data, encoding: .utf8)
-        {
+        if
+            let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
+            let string = String(data: data, encoding: .utf8) {
             return string
         }
         return "{}"
@@ -408,7 +407,7 @@ struct SettingEditorSheet: View {
         item: item,
         viewModel: viewModel,
         documentationLoader: .shared
-    ) { value, target in
+    ) { _, _ in
         saved = true
     }
 }
@@ -429,7 +428,7 @@ struct SettingEditorSheet: View {
         item: item,
         viewModel: viewModel,
         documentationLoader: .shared
-    ) { value, target in
+    ) { _, _ in
         saved = true
     }
 }
@@ -450,7 +449,7 @@ struct SettingEditorSheet: View {
         item: item,
         viewModel: viewModel,
         documentationLoader: .shared
-    ) { value, target in
+    ) { _, _ in
         saved = true
     }
 }
@@ -473,7 +472,7 @@ struct SettingEditorSheet: View {
         item: item,
         viewModel: viewModel,
         documentationLoader: .shared
-    ) { value, target in
+    ) { _, _ in
         saved = true
     }
 }
