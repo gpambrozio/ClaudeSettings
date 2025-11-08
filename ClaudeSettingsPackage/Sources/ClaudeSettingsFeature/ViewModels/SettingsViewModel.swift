@@ -24,7 +24,7 @@ final public class SettingsViewModel {
     private let project: ClaudeProject?
     private var fileWatcher: FileWatcher?
     private let debouncer = Debouncer()
-    private var consecutiveReloadFailures: [URL: Int] = []
+    private var consecutiveReloadFailures: [URL: Int] = [:]
 
     // Backup directory for settings changes
     private var backupDirectory: URL {
@@ -729,7 +729,7 @@ final public class SettingsViewModel {
                         current = nestedDict
                     } else {
                         // Create new object if it doesn't exist or isn't an object
-                        var newDict: [String: SettingValue] = [:]
+                        let newDict: [String: SettingValue] = [:]
                         current[component] = .object(newDict)
                         current = newDict
                     }

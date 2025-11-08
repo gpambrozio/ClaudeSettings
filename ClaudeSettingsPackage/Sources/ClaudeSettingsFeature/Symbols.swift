@@ -5,6 +5,7 @@ import SwiftUI
 public enum Symbols: String {
     case arrowRight = "arrow.right"
     case checkmarkCircle = "checkmark.circle"
+    case chevronUpChevronDown = "chevron.up.chevron.down"
     case clockArrowCirclepath = "clock.arrow.circlepath"
     case docText = "doc.text"
     case ellipsisCircle = "ellipsis.circle"

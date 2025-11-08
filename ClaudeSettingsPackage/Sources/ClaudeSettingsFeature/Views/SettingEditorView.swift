@@ -5,11 +5,11 @@ struct SettingEditorView: View {
     let item: SettingItem
     let documentation: SettingDocumentation?
     @Binding var editedValue: SettingValue?
-    @State private var textValue: String = ""
-    @State private var boolValue: Bool = false
-    @State private var intValue: String = ""
-    @State private var doubleValue: String = ""
-    @State private var jsonText: String = ""
+    @State private var textValue = ""
+    @State private var boolValue = false
+    @State private var intValue = ""
+    @State private var doubleValue = ""
+    @State private var jsonText = ""
     @State private var validationError: String?
 
     var body: some View {
@@ -84,7 +84,7 @@ struct SettingEditorView: View {
                 Text(textValue.isEmpty ? "Select value..." : textValue)
                     .foregroundStyle(textValue.isEmpty ? .secondary : .primary)
                 Spacer()
-                Image(systemName: "chevron.up.chevron.down")
+                Symbols.chevronUpChevronDown.image
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -218,8 +218,9 @@ struct SettingEditorView: View {
 
     private func formatJSON(_ value: SettingValue) -> String {
         let nativeValue = value.asAny
-        guard let data = try? JSONSerialization.data(withJSONObject: nativeValue, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
-              let string = String(data: data, encoding: .utf8) else {
+        guard
+            let data = try? JSONSerialization.data(withJSONObject: nativeValue, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
+            let string = String(data: data, encoding: .utf8) else {
             return value.formatted()
         }
         return string
