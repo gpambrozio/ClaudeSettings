@@ -967,6 +967,174 @@ public struct InspectorView: View {
         .frame(width: 300, height: 600)
 }
 
+#Preview("Inspector - Editing Boolean") {
+    @Previewable @State var settingItems: [SettingItem] = [
+        SettingItem(
+            key: "editor.formatOnSave",
+            value: .bool(true),
+            source: .globalSettings,
+            contributions: [
+                SourceContribution(source: .globalSettings, value: .bool(false)),
+                SourceContribution(source: .projectLocal, value: .bool(true)),
+            ],
+            documentation: "Automatically format code when saving files"
+        ),
+    ]
+
+    let viewModel = SettingsViewModel(project: nil)
+    viewModel.settingItems = settingItems
+
+    // Create a wrapper to show editing state
+    struct EditingPreviewWrapper: View {
+        let viewModel: SettingsViewModel
+        @State private var isEditing = true
+        @State private var editedValue: SettingValue? = .bool(true)
+        @State private var selectedFileType: SettingsFileType? = .projectLocal
+
+        var body: some View {
+            // We need to replicate the inspector structure to show editing state
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Key section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Key")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+
+                        HStack {
+                            Text("editor.formatOnSave")
+                                .font(.system(.body, design: .monospaced))
+
+                            Text("Boolean")
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.2))
+                                .foregroundStyle(.green)
+                                .cornerRadius(6)
+                        }
+                    }
+
+                    // First contribution (not being edited)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 8, height: 8)
+                            Text("Global Settings")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                            Text("(overridden)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .italic()
+                        }
+
+                        Text("false")
+                            .font(.system(.body, design: .monospaced))
+                            .opacity(0.6)
+                    }
+                    .padding(.top, 8)
+
+                    Divider()
+
+                    // Second contribution (being edited) - shows file selector as header
+                    VStack(alignment: .leading, spacing: 8) {
+                        // File type selector replacing the header
+                        Menu {
+                            Button { } label: {
+                                HStack {
+                                    Text("Global Settings")
+                                }
+                            }
+                            Button { } label: {
+                                HStack {
+                                    Text("Project Local")
+                                    // swiftlint:disable:next custom_sf_symbols
+                                    Image(systemName: "checkmark.circle")
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 8, height: 8)
+                                Text("Project Local")
+                                    .font(Font.caption)
+                                    .foregroundStyle(Color.secondary)
+                                    .textCase(.uppercase)
+                                Spacer()
+                                // swiftlint:disable:next custom_sf_symbols
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(Font.caption2)
+                                    .foregroundStyle(Color.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        // Editing control (toggle switch)
+                        Toggle("Value", isOn: .constant(true))
+                            .toggleStyle(.switch)
+                    }
+
+                    Divider()
+
+                    // Actions
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Actions")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+
+                        VStack(spacing: 8) {
+                            HStack(spacing: 8) {
+                                Button("Copy Value") { }
+                                    .buttonStyle(.bordered)
+                                    .frame(maxWidth: .infinity)
+                                    .disabled(true)
+
+                                Button("Cancel") { }
+                                    .buttonStyle(.bordered)
+                                    .frame(maxWidth: .infinity)
+
+                                Button("Save") { }
+                                    .buttonStyle(.borderedProminent)
+                                    .frame(maxWidth: .infinity)
+                            }
+
+                            HStack(spacing: 8) {
+                                Button("Copy to...") { }
+                                    .buttonStyle(.bordered)
+                                    .frame(maxWidth: .infinity)
+                                    .disabled(true)
+
+                                Button("Move to...") { }
+                                    .buttonStyle(.bordered)
+                                    .frame(maxWidth: .infinity)
+                                    .disabled(true)
+                            }
+
+                            Button("Delete") { }
+                                .buttonStyle(.bordered)
+                                .frame(maxWidth: .infinity)
+                                .tint(.red)
+                                .disabled(true)
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding()
+            }
+        }
+    }
+
+    return EditingPreviewWrapper(viewModel: viewModel)
+        .frame(width: 300, height: 600)
+}
+
 #Preview("Inspector - Empty State") {
     InspectorView(selectedKey: nil, settingsViewModel: nil)
         .frame(width: 300, height: 600)
