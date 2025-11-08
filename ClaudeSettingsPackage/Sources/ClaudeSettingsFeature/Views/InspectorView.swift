@@ -104,10 +104,21 @@ public struct InspectorView: View {
                             }
                         }
 
-                        Text(formatValue(contribution.value))
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                            .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1)
+                        // Show edit controls inline when editing this contribution
+                        if isEditing && selectedFileType == contribution.source {
+                            VStack(alignment: .leading, spacing: 8) {
+                                if let editedValue {
+                                    typeAwareEditor(for: editedValue, item: item)
+                                }
+                            }
+                            .padding(.top, 4)
+                        } else {
+                            // Show value normally when not editing
+                            Text(formatValue(contribution.value))
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                                .opacity(!item.isAdditive && index < item.contributions.count - 1 ? 0.6 : 1)
+                        }
                     }
                 }
 
@@ -123,12 +134,54 @@ public struct InspectorView: View {
 
                 Divider()
 
-                // Edit section (shown when editing)
+                // File type selector (shown when editing)
                 if isEditing {
-                    editSection(for: item)
-                }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Edit Target")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
 
-                Divider()
+                        if let viewModel = settingsViewModel {
+                            Menu {
+                                ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
+                                    Button(action: {
+                                        selectedFileType = fileType
+                                        // Update editedValue if switching to a different contribution
+                                        if let contribution = item.contributions.first(where: { $0.source == fileType }) {
+                                            editedValue = contribution.value
+                                        }
+                                    }) {
+                                        HStack {
+                                            Text(fileType.displayName)
+                                            if selectedFileType == fileType {
+                                                Symbols.checkmarkCircle.image
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                HStack {
+                                    Circle()
+                                        .fill(sourceColor(for: selectedFileType ?? .globalSettings))
+                                        .frame(width: 8, height: 8)
+                                    Text(selectedFileType?.displayName ?? "Select file")
+                                        .font(.body)
+                                    Spacer()
+                                    Symbols.chevronUpChevronDown.image
+                                        .font(.caption2)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color.secondary.opacity(0.1))
+                                .cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Divider()
+                }
 
                 // Actions section
                 VStack(alignment: .leading, spacing: 8) {
@@ -212,6 +265,13 @@ public struct InspectorView: View {
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text("Are you sure you want to delete '\(item.key)' from all settings files? This action cannot be undone.")
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                if let errorMessage {
+                    Text(errorMessage)
+                }
             }
         }
     }
@@ -606,67 +666,22 @@ public struct InspectorView: View {
         pasteboard.setString(text, forType: .string)
     }
 
-    // MARK: - Edit Section
-
-    @ViewBuilder
-    private func editSection(for item: SettingItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Edit Value")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            // File type selector
-            if let viewModel = settingsViewModel {
-                Menu {
-                    ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
-                        Button(fileType.displayName) {
-                            selectedFileType = fileType
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Text("Target: \(selectedFileType?.displayName ?? "Select file")")
-                            .font(.caption)
-                        Spacer()
-                        Symbols.chevronUpChevronDown.image
-                            .font(.caption2)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.secondary.opacity(0.1))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-            }
-
-            // Type-aware editor
-            if let editedValue {
-                typeAwareEditor(for: editedValue, item: item)
-            }
-        }
-        .alert("Error", isPresented: $showError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            if let errorMessage {
-                Text(errorMessage)
-            }
-        }
-    }
+    // MARK: - Type-Aware Editor
 
     @ViewBuilder
     private func typeAwareEditor(for value: SettingValue, item: SettingItem) -> some View {
         switch value {
-        case .bool(let boolValue):
+        case let .bool(boolValue):
             Toggle("Value", isOn: Binding(
-                get: { if case .bool(let val) = editedValue { return val } else { return boolValue } },
+                get: { if case let .bool(val) = editedValue { return val } else { return boolValue } },
                 set: { editedValue = .bool($0) }
             ))
 
-        case .string(let stringValue):
+        case let .string(stringValue):
             // Check if documentation has enum values
-            if let doc = documentationLoader.documentationWithFallback(for: item.key),
-               let enumValues = doc.enumValues, !enumValues.isEmpty {
+            if
+                let doc = documentationLoader.documentationWithFallback(for: item.key),
+                let enumValues = doc.enumValues, !enumValues.isEmpty {
                 // Use menu for enum values
                 Menu {
                     ForEach(enumValues, id: \.self) { enumValue in
@@ -690,34 +705,36 @@ public struct InspectorView: View {
             } else {
                 // Regular text field
                 TextField("Value", text: Binding(
-                    get: { if case .string(let val) = editedValue { return val } else { return stringValue } },
+                    get: { if case let .string(val) = editedValue { return val } else { return stringValue } },
                     set: { editedValue = .string($0) }
                 ))
                 .textFieldStyle(.roundedBorder)
             }
 
-        case .int(let intValue):
+        case let .int(intValue):
             TextField("Value", value: Binding(
-                get: { if case .int(let val) = editedValue { return val } else { return intValue } },
+                get: { if case let .int(val) = editedValue { return val } else { return intValue } },
                 set: { editedValue = .int($0) }
             ), format: .number)
-            .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.roundedBorder)
 
-        case .double(let doubleValue):
+        case let .double(doubleValue):
             TextField("Value", value: Binding(
-                get: { if case .double(let val) = editedValue { return val } else { return doubleValue } },
+                get: { if case let .double(val) = editedValue { return val } else { return doubleValue } },
                 set: { editedValue = .double($0) }
             ), format: .number)
-            .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.roundedBorder)
 
-        case .array, .object:
+        case .array,
+             .object:
             // For complex types, use a text editor with JSON
             TextEditor(text: Binding(
                 get: { editedValue?.formatted() ?? value.formatted() },
                 set: { newText in
                     // Try to parse as JSON
-                    if let data = newText.data(using: .utf8),
-                       let jsonObject = try? JSONSerialization.jsonObject(with: data) {
+                    if
+                        let data = newText.data(using: .utf8),
+                        let jsonObject = try? JSONSerialization.jsonObject(with: data) {
                         editedValue = SettingValue(any: jsonObject)
                     }
                 }
@@ -777,9 +794,10 @@ public struct InspectorView: View {
     }
 
     private func saveEdits(item: SettingItem) {
-        guard let viewModel = settingsViewModel,
-              let editedValue = editedValue,
-              let selectedFileType = selectedFileType else { return }
+        guard
+            let viewModel = settingsViewModel,
+            let editedValue = editedValue,
+            let selectedFileType = selectedFileType else { return }
 
         Task {
             do {
