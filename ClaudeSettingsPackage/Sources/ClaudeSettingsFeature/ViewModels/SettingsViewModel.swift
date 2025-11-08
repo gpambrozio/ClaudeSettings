@@ -523,6 +523,13 @@ final public class SettingsViewModel {
     public func startEditing() {
         isEditingMode = true
         pendingEdits.removeAll()
+
+        // Pause file watching to prevent conflicts with pending edits
+        Task {
+            await fileWatcher?.stopWatching()
+            logger.info("Paused file watching for editing mode")
+        }
+
         logger.info("Entered editing mode")
     }
 
@@ -531,6 +538,13 @@ final public class SettingsViewModel {
         let editCount = pendingEdits.count
         isEditingMode = false
         pendingEdits.removeAll()
+
+        // Resume file watching
+        Task {
+            await setupFileWatcher()
+            logger.info("Resumed file watching after cancelling edit mode")
+        }
+
         logger.info("Cancelled editing mode - discarded \(editCount) pending edits")
     }
 
@@ -550,6 +564,38 @@ final public class SettingsViewModel {
         // Create temporary pending edit based on the active contribution (highest precedence)
         let targetFileType = item.contributions.last?.source ?? item.source
         return PendingEdit(key: item.key, value: item.value, targetFileType: targetFileType)
+    }
+
+    /// Update a pending edit only if the value has actually changed from the original
+    /// - Parameters:
+    ///   - item: The original setting item
+    ///   - value: The new value
+    ///   - targetFileType: The file to save to
+    ///   - validationError: Optional validation error to attach to this edit
+    ///   - rawEditingText: Optional raw text being edited (for JSON complex types)
+    public func updatePendingEditIfChanged(item: SettingItem, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
+        // Get the original value for this target file type
+        let originalValue = item.contributions.first(where: { $0.source == targetFileType })?.value ?? item.value
+        let originalTargetType = item.contributions.last?.source ?? item.source
+
+        // Check if the value has actually changed
+        let hasValueChanged = value != originalValue
+        let hasTargetChanged = targetFileType != originalTargetType
+
+        if !hasValueChanged && !hasTargetChanged && validationError == nil {
+            // Value is same as original and target hasn't changed - remove any pending edit
+            pendingEdits.removeValue(forKey: item.key)
+            logger.debug("Removed pending edit for '\(item.key)' (value unchanged)")
+        } else {
+            // Value or target has changed - create/update pending edit
+            updatePendingEdit(
+                key: item.key,
+                value: value,
+                targetFileType: targetFileType,
+                validationError: validationError,
+                rawEditingText: rawEditingText
+            )
+        }
     }
 
     /// Update a pending edit (doesn't save to disk yet)
@@ -593,7 +639,7 @@ final public class SettingsViewModel {
         pendingEdits[key] = edit
     }
 
-    /// Save all pending edits to disk
+    /// Save all pending edits to disk with transaction support
     public func saveAllEdits() async throws {
         logger.info("Saving \(pendingEdits.count) pending edits")
 
@@ -603,6 +649,11 @@ final public class SettingsViewModel {
             let errorKeys = editsWithErrors.map { $0.key }.joined(separator: ", ")
             throw SettingsError.validationFailed("Cannot save: validation errors in settings: \(errorKeys)")
         }
+
+        // Snapshot current state for rollback in case of failure
+        let originalFiles = settingsFiles
+        let originalItems = settingItems
+        let originalHierarchical = hierarchicalSettings
 
         // Group edits by target file type for efficient batching
         var editsByFile: [SettingsFileType: [(String, SettingValue)]] = [:]
@@ -614,63 +665,82 @@ final public class SettingsViewModel {
             editsByFile[edit.targetFileType]?.append((edit.id, edit.value))
         }
 
-        // Apply all edits
-        for (fileType, edits) in editsByFile {
-            for (key, value) in edits {
-                try await updateSetting(key: key, value: value, in: fileType)
+        do {
+            // Create backups once per file before applying any edits
+            for fileType in editsByFile.keys {
+                if let file = settingsFiles.first(where: { $0.type == fileType }) {
+                    _ = try await fileSystemManager.createBackup(of: file.path)
+                    logger.debug("Created backup for \(fileType.displayName)")
+                }
             }
+
+            // Apply all edits to each file using the helper
+            for (fileType, edits) in editsByFile {
+                try await applyEditsToFile(fileType, edits: edits)
+            }
+
+            // Recompute merged settings once after all files are updated
+            settingItems = computeSettingItems(from: settingsFiles)
+            hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+
+            // Clear editing state after successful save
+            isEditingMode = false
+            pendingEdits.removeAll()
+
+            // Resume file watching after successful save
+            await setupFileWatcher()
+            logger.info("Successfully saved all edits and resumed file watching")
+        } catch {
+            // Rollback: restore original state
+            logger.error("Save failed, rolling back changes: \(error)")
+            settingsFiles = originalFiles
+            settingItems = originalItems
+            hierarchicalSettings = originalHierarchical
+
+            // Re-throw the error so the UI can handle it
+            throw error
         }
-
-        // Clear editing state after successful save
-        isEditingMode = false
-        pendingEdits.removeAll()
-
-        logger.info("Successfully saved all edits")
     }
 
     // MARK: - Edit Operations
 
-    /// Update a setting value in a specific file
+    /// Apply multiple edits to a file without creating backups or recomputing settings
     /// - Parameters:
-    ///   - key: The setting key to update
-    ///   - value: The new value
-    ///   - fileType: The file type to update (defaults to the highest precedence non-enterprise file)
-    public func updateSetting(key: String, value: SettingValue, in fileType: SettingsFileType) async throws {
-        logger.info("Updating setting '\(key)' in \(fileType.displayName)")
-
-        // Find the settings file to update
+    ///   - fileType: The file type to update
+    ///   - edits: Array of (key, value) pairs to apply
+    /// - Throws: SettingsError if the file is read-only or other errors occur
+    private func applyEditsToFile(_ fileType: SettingsFileType, edits: [(String, SettingValue)]) async throws {
+        // Find or create the file
         if let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) {
-            // File exists, update it
+            // File exists, update it with all edits
             var file = settingsFiles[fileIndex]
 
-            // Check if file is read-only
             guard !file.isReadOnly else {
                 throw SettingsError.fileIsReadOnly(file.path)
             }
 
-            // Create backup before modifying
-            let backupDirectory = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/ClaudeSettings/Backups")
-            _ = try await fileSystemManager.createBackup(of: file.path, to: backupDirectory)
-
-            // Update the nested value in the content dictionary
+            // Apply all edits to the content
             var updatedContent = file.content
-            try setNestedValue(&updatedContent, for: key, value: value)
+            for (key, value) in edits {
+                try setNestedValue(&updatedContent, for: key, value: value)
+            }
 
-            // Update the file
+            // Write the file once with all changes
             file.content = updatedContent
             try await settingsParser.writeSettingsFile(file)
-
-            // Update in our array
             settingsFiles[fileIndex] = file
+
+            logger.debug("Applied \(edits.count) edit(s) to \(fileType.displayName)")
         } else {
-            // File doesn't exist yet, create it
+            // File doesn't exist, create it with all edits
             let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
             let baseDirectory = fileType.isGlobal ? homeDirectory : (project?.path ?? homeDirectory)
             let filePath = fileType.path(in: baseDirectory)
 
             var newContent: [String: SettingValue] = [:]
-            try setNestedValue(&newContent, for: key, value: value)
+            for (key, value) in edits {
+                try setNestedValue(&newContent, for: key, value: value)
+            }
 
             let newFile = SettingsFile(
                 type: fileType,
@@ -684,10 +754,27 @@ final public class SettingsViewModel {
 
             try await settingsParser.writeSettingsFile(newFile)
             settingsFiles.append(newFile)
-            logger.info("Created new settings file at \(filePath.path)")
+            logger.info("Created new settings file at \(filePath.path) with \(edits.count) setting(s)")
+        }
+    }
+
+    /// Update a setting value in a specific file
+    /// - Parameters:
+    ///   - key: The setting key to update
+    ///   - value: The new value
+    ///   - fileType: The file type to update (defaults to the highest precedence non-enterprise file)
+    public func updateSetting(key: String, value: SettingValue, in fileType: SettingsFileType) async throws {
+        logger.info("Updating setting '\(key)' in \(fileType.displayName)")
+
+        // Create backup before modifying (only if file exists)
+        if let file = settingsFiles.first(where: { $0.type == fileType }) {
+            _ = try await fileSystemManager.createBackup(of: file.path)
         }
 
-        // Recompute merged settings (once, regardless of path taken)
+        // Apply the edit using the helper
+        try await applyEditsToFile(fileType, edits: [(key, value)])
+
+        // Recompute merged settings
         settingItems = computeSettingItems(from: settingsFiles)
         hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
 
@@ -715,9 +802,7 @@ final public class SettingsViewModel {
         }
 
         // Create backup before modifying
-        let backupDirectory = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/ClaudeSettings/Backups")
-        _ = try await fileSystemManager.createBackup(of: file.path, to: backupDirectory)
+        _ = try await fileSystemManager.createBackup(of: file.path)
 
         // Remove the nested value from the content dictionary
         var updatedContent = file.content

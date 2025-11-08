@@ -131,13 +131,13 @@ public enum SettingValue: Codable, Sendable, Hashable {
     /// Get the type name of this value for error messages
     public var typeName: String {
         switch self {
-        case .string: return "string"
-        case .int: return "int"
-        case .double: return "double"
-        case .bool: return "bool"
-        case .array: return "array"
-        case .object: return "object"
-        case .null: return "null"
+        case .string: "string"
+        case .int: "int"
+        case .double: "double"
+        case .bool: "bool"
+        case .array: "array"
+        case .object: "object"
+        case .null: "null"
         }
     }
 }

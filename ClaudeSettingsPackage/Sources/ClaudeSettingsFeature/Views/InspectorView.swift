@@ -10,6 +10,7 @@ public struct InspectorView: View {
     @State private var showDeleteConfirmation = false
     @State private var showCopySheet = false
     @State private var showMoveSheet = false
+    @State private var showErrorAlert = false
 
     public var body: some View {
         Group {
@@ -191,10 +192,7 @@ public struct InspectorView: View {
             } message: {
                 Text("Choose which file to delete '\(item.key)' from. This action cannot be undone.")
             }
-            .alert("Error", isPresented: Binding(
-                get: { settingsViewModel?.errorMessage != nil },
-                set: { if !$0 { settingsViewModel?.errorMessage = nil } }
-            )) {
+            .alert("Error", isPresented: $showErrorAlert) {
                 Button("OK", role: .cancel) {
                     settingsViewModel?.errorMessage = nil
                 }
@@ -202,6 +200,9 @@ public struct InspectorView: View {
                 if let errorMessage = settingsViewModel?.errorMessage {
                     Text(errorMessage)
                 }
+            }
+            .onChange(of: settingsViewModel?.errorMessage) { _, newValue in
+                showErrorAlert = newValue != nil
             }
         }
     }
@@ -255,7 +256,7 @@ public struct InspectorView: View {
                         } else {
                             newValue = pendingEdit?.value ?? item.value
                         }
-                        viewModel.updatePendingEdit(key: item.key, value: newValue, targetFileType: fileType)
+                        viewModel.updatePendingEditIfChanged(item: item, value: newValue, targetFileType: fileType)
                     }) {
                         HStack {
                             Text(fileType.displayName)
@@ -703,7 +704,7 @@ public struct InspectorView: View {
             case let .bool(boolValue):
                 Toggle(isOn: Binding(
                     get: { if case let .bool(val) = pendingEdit.value { return val } else { return boolValue } },
-                    set: { viewModel.updatePendingEdit(key: item.key, value: .bool($0), targetFileType: pendingEdit.targetFileType) }
+                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .bool($0), targetFileType: pendingEdit.targetFileType) }
                 )) { EmptyView() }
                     .toggleStyle(.switch)
 
@@ -716,7 +717,7 @@ public struct InspectorView: View {
                     Menu {
                         ForEach(enumValues, id: \.self) { enumValue in
                             Button(enumValue) {
-                                viewModel.updatePendingEdit(key: item.key, value: .string(enumValue), targetFileType: pendingEdit.targetFileType)
+                                viewModel.updatePendingEditIfChanged(item: item, value: .string(enumValue), targetFileType: pendingEdit.targetFileType)
                             }
                         }
                     } label: {
@@ -741,7 +742,7 @@ public struct InspectorView: View {
                     // Regular text field
                     TextField("Value", text: Binding(
                         get: { if case let .string(val) = pendingEdit.value { return val } else { return stringValue } },
-                        set: { viewModel.updatePendingEdit(key: item.key, value: .string($0), targetFileType: pendingEdit.targetFileType) }
+                        set: { viewModel.updatePendingEditIfChanged(item: item, value: .string($0), targetFileType: pendingEdit.targetFileType) }
                     ))
                     .textFieldStyle(.roundedBorder)
                 }
@@ -749,14 +750,14 @@ public struct InspectorView: View {
             case let .int(intValue):
                 TextField("Value", value: Binding(
                     get: { if case let .int(val) = pendingEdit.value { return val } else { return intValue } },
-                    set: { viewModel.updatePendingEdit(key: item.key, value: .int($0), targetFileType: pendingEdit.targetFileType) }
+                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .int($0), targetFileType: pendingEdit.targetFileType) }
                 ), format: .number)
                     .textFieldStyle(.roundedBorder)
 
             case let .double(doubleValue):
                 TextField("Value", value: Binding(
                     get: { if case let .double(val) = pendingEdit.value { return val } else { return doubleValue } },
-                    set: { viewModel.updatePendingEdit(key: item.key, value: .double($0), targetFileType: pendingEdit.targetFileType) }
+                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .double($0), targetFileType: pendingEdit.targetFileType) }
                 ), format: .number)
                     .textFieldStyle(.roundedBorder)
 
@@ -895,6 +896,7 @@ private struct JSONTextEditorView: View {
 
     @State private var localText = ""
     @State private var localValidationError: String?
+    @State private var isUpdatingFromExternal = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -903,7 +905,8 @@ private struct JSONTextEditorView: View {
                 .frame(minHeight: 100)
                 .border(localValidationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
                 .onChange(of: localText) { _, newText in
-                    // Validate and update the view model
+                    // Only validate if this isn't an external update
+                    guard !isUpdatingFromExternal else { return }
                     validateAndUpdate(newText)
                 }
                 .onAppear {
@@ -913,13 +916,17 @@ private struct JSONTextEditorView: View {
                 }
                 .onChange(of: pendingEdit.rawEditingText) { _, newRawText in
                     // Sync external changes (like switching target file)
-                    if let newRawText = newRawText, newRawText != localText {
-                        localText = newRawText
-                    } else if newRawText == nil {
-                        localText = pendingEdit.value.formatted()
-                    }
+                    // Guard against cycles: only update if different from current local text
+                    let newText = newRawText ?? pendingEdit.value.formatted()
+                    guard newText != localText else { return }
+
+                    isUpdatingFromExternal = true
+                    localText = newText
+                    isUpdatingFromExternal = false
                 }
-                .onChange(of: pendingEdit.validationError) { _, newError in
+                .onChange(of: pendingEdit.validationError) { oldValue, newError in
+                    // Only update if actually changed to avoid unnecessary updates
+                    guard oldValue != newError else { return }
                     localValidationError = newError
                 }
 
@@ -940,10 +947,10 @@ private struct JSONTextEditorView: View {
         if
             let data = newText.data(using: .utf8),
             let jsonObject = try? JSONSerialization.jsonObject(with: data) {
-            // Valid JSON - update the value and clear validation error
+            // Valid JSON - check if it differs from original before creating edit
             let newValue = SettingValue(any: jsonObject)
-            viewModel.updatePendingEdit(
-                key: item.key,
+            viewModel.updatePendingEditIfChanged(
+                item: item,
                 value: newValue,
                 targetFileType: pendingEdit.targetFileType,
                 validationError: nil,
@@ -951,7 +958,7 @@ private struct JSONTextEditorView: View {
             )
             localValidationError = nil
         } else if !newText.isEmpty {
-            // Invalid JSON - keep the raw text but show validation error
+            // Invalid JSON - always create pending edit with error
             viewModel.updatePendingEdit(
                 key: item.key,
                 value: pendingEdit.value, // Keep old value
@@ -961,9 +968,15 @@ private struct JSONTextEditorView: View {
             )
             localValidationError = "Invalid JSON syntax"
         } else {
-            // Empty text - clear everything
-            viewModel.setValidationError(for: item.key, error: nil)
-            localValidationError = nil
+            // Empty text - always create pending edit with error
+            viewModel.updatePendingEdit(
+                key: item.key,
+                value: pendingEdit.value, // Keep old value
+                targetFileType: pendingEdit.targetFileType,
+                validationError: "Value is required",
+                rawEditingText: newText
+            )
+            localValidationError = "Value is required"
         }
     }
 }
