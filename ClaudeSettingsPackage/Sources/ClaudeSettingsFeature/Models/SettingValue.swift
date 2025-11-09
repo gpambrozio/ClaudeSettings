@@ -81,8 +81,9 @@ public enum SettingValue: Codable, Sendable, Hashable {
         switch value {
         case let string as String:
             self = .string(string)
-        case let bool as Bool:
-            self = .bool(bool)
+        // If we don't do the extra check a 0 integer is also parsed as a `false` boolean
+        case let bool as NSNumber where UnicodeScalar(UInt8(bool.objCType.pointee)) == "c":
+            self = .bool(bool.boolValue)
         case let int as Int:
             self = .int(int)
         case let double as Double:
