@@ -31,7 +31,9 @@
       "Bash(/Users/gustavoambrozio/Development/ClaudeCodePlugins/SwiftDevelopment/skills/swift-compile/scripts/swift.sh test:*)",
       "SlashCommand(/git:resolve-conflicts:*)",
       "SlashCommand(/git:code-review)",
-      "WebFetch(domain:stackoverflow.com)"
+      "WebFetch(domain:stackoverflow.com)",
+      "WebFetch(domain:www.schemastore.org)",
+      "Bash(curl:*)"
     ],
     "defaultMode": "acceptEdits"
   },
