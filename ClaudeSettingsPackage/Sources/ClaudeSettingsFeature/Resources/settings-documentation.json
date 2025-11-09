@@ -10,7 +10,8 @@
           "key": "model",
           "type": "string",
           "defaultValue": "Auto-selected based on availability",
-          "description": "Override the default Claude model for all sessions.",
+          "description": "Deprecated: use env.ANTHROPIC_MODEL and env.ANTHROPIC_SMALL_FAST_MODEL instead. Either \"sonnet\", \"opus\", or a specific Claude model ID (see https://docs.anthropic.com/en/docs/about-claude/models/overview)",
+          "deprecated": true,
           "examples": [
             {
               "code": "{\n  \"model\": \"claude-sonnet-4-5-20250929\"\n}",
@@ -22,17 +23,43 @@
         {
           "key": "outputStyle",
           "type": "string",
-          "description": "Adjust system prompt behavior and response formatting.",
-          "examples": []
+          "minLength": 1,
+          "description": "The output style to use (case-sensitive). Can be 'default', 'Explanatory', 'Learning', or a custom style name.",
+          "examples": [
+            {
+              "code": "{\n  \"outputStyle\": \"Explanatory\"\n}",
+              "description": "Use explanatory output style",
+              "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            {
+              "code": "{\n  \"outputStyle\": \"Learning\"\n}",
+              "description": "Use learning-focused output style",
+              "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+            }
+          ]
         },
         {
           "key": "statusLine",
           "type": "object",
-          "description": "Configure custom context information displayed in the status line.",
+          "description": "Custom status line configuration. Requires 'type' (must be 'command') and 'command' (shell command to execute).",
+          "required": ["type", "command"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "command"
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "padding": {
+              "type": "number"
+            }
+          },
           "examples": [
             {
-              "code": "{\n  \"statusLine\": {\n    \"enabled\": true,\n    \"format\": \"custom\"\n  }\n}",
-              "description": "Enable custom status line format",
+              "code": "{\n  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/statusline.sh\"\n  }\n}",
+              "description": "Custom status line using shell script",
               "id": "4af77421-8c04-4d66-af84-d44c709fd0fb"
             }
           ]
@@ -44,12 +71,24 @@
             "claudeai",
             "console"
           ],
-          "description": "Restrict authentication to specific account types.",
+          "description": "Force a specific login method, and skip the login method selection screen.",
           "examples": [
             {
               "code": "{\n  \"forceLoginMethod\": \"console\"\n}",
               "description": "Force console login method",
               "id": "c2eef542-7e9b-4176-a269-f4d945eb7dde"
+            }
+          ]
+        },
+        {
+          "key": "alwaysThinkingEnabled",
+          "type": "boolean",
+          "description": "Whether extended thinking is always enabled (default: false).",
+          "examples": [
+            {
+              "code": "{\n  \"alwaysThinkingEnabled\": true\n}",
+              "description": "Enable extended thinking by default",
+              "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890"
             }
           ]
         }
@@ -63,13 +102,14 @@
         {
           "key": "apiKeyHelper",
           "type": "string",
-          "description": "Custom script that generates authentication credentials. The script should output credentials to stdout.",
+          "minLength": 1,
+          "description": "Custom script path to generate an auth value. The script should output credentials to stdout.",
           "relatedEnvVars": [
             "CLAUDE_CODE_API_KEY_HELPER_TTL_MS"
           ],
           "examples": [
             {
-              "code": "{\n  \"apiKeyHelper\": \"/usr/local/bin/get-claude-token.sh\"\n}",
+              "code": "{\n  \"apiKeyHelper\": \"/bin/generate_temp_api_key.sh\"\n}",
               "description": "Use custom script for authentication",
               "id": "0de23147-16e5-467a-896a-8e82e36368f4"
             }
@@ -79,12 +119,39 @@
           "key": "forceLoginOrgUUID",
           "type": "string",
           "format": "uuid",
-          "description": "Automatically select a specific organization during login.",
+          "minLength": 1,
+          "description": "Force login with a specific organization UUID.",
           "examples": [
             {
-              "code": "{\n  \"forceLoginOrgUUID\": \"12345678-1234-1234-1234-123456789abc\"\n}",
+              "code": "{\n  \"forceLoginOrgUUID\": \"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\"\n}",
               "description": "Auto-select organization",
               "id": "ae9a0a99-edfc-4f76-82de-7efdb794b1da"
+            }
+          ]
+        },
+        {
+          "key": "awsAuthRefresh",
+          "type": "string",
+          "minLength": 1,
+          "description": "Command to refresh AWS credentials.",
+          "examples": [
+            {
+              "code": "{\n  \"awsAuthRefresh\": \"aws sso login --profile myprofile\"\n}",
+              "description": "Refresh AWS SSO credentials",
+              "id": "d1e2f3a4-b5c6-7890-abcd-ef1234567890"
+            }
+          ]
+        },
+        {
+          "key": "awsCredentialExport",
+          "type": "string",
+          "minLength": 1,
+          "description": "Command to export AWS credentials as JSON.",
+          "examples": [
+            {
+              "code": "{\n  \"awsCredentialExport\": \"/bin/generate_aws_grant.sh\"\n}",
+              "description": "Export AWS credentials via script",
+              "id": "e2f3a4b5-c6d7-8901-bcde-f12345678901"
             }
           ]
         }
@@ -97,9 +164,10 @@
       "settings": [
         {
           "key": "cleanupPeriodDays",
-          "type": "number",
+          "type": "integer",
           "defaultValue": "30",
-          "description": "Retention period (in days) for chat transcripts before automatic cleanup.",
+          "minimum": 0,
+          "description": "How long to locally retain chat transcripts (in days).",
           "examples": [
             {
               "code": "{\n  \"cleanupPeriodDays\": 60\n}",
@@ -112,7 +180,7 @@
           "key": "includeCoAuthoredBy",
           "type": "boolean",
           "defaultValue": "true",
-          "description": "Include co-author byline in Git commits made by Claude Code.",
+          "description": "Include 'co-authored-by Claude' byline in git commits and pull requests.",
           "examples": [
             {
               "code": "{\n  \"includeCoAuthoredBy\": false\n}",
@@ -124,11 +192,12 @@
         {
           "key": "env",
           "type": "object",
-          "description": "Environment variables applied to every Claude Code session.",
+          "defaultValue": "{}",
+          "description": "Environment variables applied to every session. Variable names must match pattern ^[A-Z_][A-Z0-9_]*$.",
           "examples": [
             {
-              "code": "{\n  \"env\": {\n    \"NODE_ENV\": \"development\",\n    \"DEBUG\": \"true\"\n  }\n}",
-              "description": "Set development environment variables",
+              "code": "{\n  \"env\": {\n    \"ANTHROPIC_MODEL\": \"claude-opus-4-1\",\n    \"ANTHROPIC_SMALL_FAST_MODEL\": \"claude-3-5-haiku-latest\"\n  }\n}",
+              "description": "Configure Claude model selection",
               "id": "341a71b9-fe48-4525-891c-900700b9d8cb"
             }
           ]
@@ -145,6 +214,18 @@
               "id": "5224bb73-6285-4d17-8f3b-7e3c03a9207b"
             }
           ]
+        },
+        {
+          "key": "spinnerTipsEnabled",
+          "type": "boolean",
+          "description": "Whether to show tips in the spinner.",
+          "examples": [
+            {
+              "code": "{\n  \"spinnerTipsEnabled\": false\n}",
+              "description": "Disable spinner tips",
+              "id": "a3b4c5d6-e7f8-9012-bcde-f12345678901"
+            }
+          ]
         }
       ]
     },
@@ -156,23 +237,22 @@
         {
           "key": "hooks",
           "type": "object",
-          "description": "Custom commands executed before/after tool execution.",
+          "description": "Hooks configuration for executing commands at specific points in Claude Code's lifecycle.",
           "hookTypes": [
-            "preToolExecution",
-            "postToolExecution",
-            "preRead",
-            "postWrite",
-            "preEdit",
-            "postEdit",
-            "preBash",
-            "postBash",
-            "preWebFetch",
-            "postWebFetch"
+            "PreToolUse",
+            "PostToolUse",
+            "Notification",
+            "UserPromptSubmit",
+            "Stop",
+            "SubagentStop",
+            "PreCompact",
+            "SessionStart",
+            "SessionEnd"
           ],
           "examples": [
             {
-              "code": "{\n  \"hooks\": {\n    \"postWrite\": \"echo 'File written: ${FILE_PATH}'\",\n    \"preToolExecution\": \"timestamp.sh\"\n  }\n}",
-              "description": "Add post-write and pre-execution hooks",
+              "code": "{\n  \"hooks\": {\n    \"PostToolUse\": [\n      {\n        \"matcher\": \"Edit|Write\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"prettier --write\",\n            \"timeout\": 5\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "description": "Run prettier after file edits",
               "id": "2297c4c7-08b3-41ea-8d50-2e663adbb7b8"
             }
           ]
@@ -201,7 +281,8 @@
           "key": "permissions.allow",
           "type": "array",
           "itemType": "string",
-          "description": "Grant explicit tool use permissions without prompting. Supports tool patterns like 'ToolName(pattern)'.",
+          "uniqueItems": true,
+          "description": "List of allowed tool permission rules. Supports tool patterns like 'ToolName(pattern)'.",
           "patterns": [
             "Bash(command:*) - Prefix matching for bash commands",
             "Read(glob/pattern/**) - Glob patterns for file operations",
@@ -209,7 +290,7 @@
           ],
           "examples": [
             {
-              "code": "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git:*)\",\n      \"Bash(npm:*)\",\n      \"Read(src/**/*.js)\",\n      \"Edit(src/**/*.js)\",\n      \"WebFetch(domain:github.com)\"\n    ]\n  }\n}",
+              "code": "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git commit:*)\",\n      \"Bash(npm run lint:*)\",\n      \"Edit(/src/**/*.ts)\",\n      \"WebFetch(domain:github.com)\"\n    ]\n  }\n}",
               "description": "Allow common development tools",
               "id": "764e445b-392e-4473-b101-66c6ec91fa08"
             }
@@ -219,11 +300,12 @@
           "key": "permissions.ask",
           "type": "array",
           "itemType": "string",
-          "description": "Request user confirmation before allowing tool use.",
+          "uniqueItems": true,
+          "description": "List of ask tool permission rules. User confirmation required before allowing tool use.",
           "examples": [
             {
-              "code": "{\n  \"permissions\": {\n    \"ask\": [\n      \"Bash(rm:*)\",\n      \"Bash(docker:*)\",\n      \"Write(.env)\"\n    ]\n  }\n}",
-              "description": "Require confirmation for destructive operations",
+              "code": "{\n  \"permissions\": {\n    \"ask\": [\n      \"Bash(gh pr create:*)\",\n      \"Bash(git commit:*)\"\n    ]\n  }\n}",
+              "description": "Require confirmation for git operations",
               "id": "07e56fa7-0732-4ca7-a789-8af8f753116d"
             }
           ]
@@ -232,10 +314,11 @@
           "key": "permissions.deny",
           "type": "array",
           "itemType": "string",
-          "description": "Block specific tools or file patterns completely.",
+          "uniqueItems": true,
+          "description": "List of denied tool permission rules. Block specific tools or file patterns completely.",
           "examples": [
             {
-              "code": "{\n  \"permissions\": {\n    \"deny\": [\n      \"Read(.env)\",\n      \"Read(.env.*)\",\n      \"Read(secrets/**)\",\n      \"Bash(curl:*)\",\n      \"WebFetch(domain:internal-api.example.com)\"\n    ]\n  }\n}",
+              "code": "{\n  \"permissions\": {\n    \"deny\": [\n      \"Read(*.env)\",\n      \"Bash(rm:*)\",\n      \"Bash(curl:*)\"\n    ]\n  }\n}",
               "description": "Block access to sensitive files and commands",
               "id": "5e7d1236-d35d-4d97-b547-0f9357f6857f"
             }
@@ -245,10 +328,12 @@
           "key": "permissions.additionalDirectories",
           "type": "array",
           "itemType": "string",
-          "description": "Expand Claude's working directory access beyond the current project.",
+          "itemMinLength": 1,
+          "uniqueItems": true,
+          "description": "Paths to additional directories Claude can access beyond the working directory.",
           "examples": [
             {
-              "code": "{\n  \"permissions\": {\n    \"additionalDirectories\": [\n      \"/usr/local/lib/my-company-tools\",\n      \"~/shared-configs\"\n    ]\n  }\n}",
+              "code": "{\n  \"permissions\": {\n    \"additionalDirectories\": [\n      \"//Users/alice/Documents\",\n      \"~/projects\"\n    ]\n  }\n}",
               "description": "Add access to additional directories",
               "id": "102ea426-efb4-48e5-9ee3-df91689632d0"
             }
@@ -257,7 +342,13 @@
         {
           "key": "permissions.defaultMode",
           "type": "string",
-          "description": "Permission mode to use on startup (e.g., 'acceptEdits').",
+          "enumValues": [
+            "acceptEdits",
+            "bypassPermissions",
+            "default",
+            "plan"
+          ],
+          "description": "Default permission mode for tool execution.",
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"defaultMode\": \"acceptEdits\"\n  }\n}",
@@ -399,10 +490,11 @@
           "key": "enabledMcpjsonServers",
           "type": "array",
           "itemType": "string",
-          "description": "List of specific MCP servers to approve/enable.",
+          "itemMinLength": 1,
+          "description": "List of allowed MCP servers from .mcp.json.",
           "examples": [
             {
-              "code": "{\n  \"enabledMcpjsonServers\": [\n    \"github-mcp\",\n    \"sqlite-mcp\"\n  ]\n}",
+              "code": "{\n  \"enabledMcpjsonServers\": [\n    \"memory\",\n    \"github\"\n  ]\n}",
               "description": "Enable specific MCP servers",
               "id": "095610b2-6f66-478c-aded-df817f40ca3a"
             }
@@ -412,10 +504,11 @@
           "key": "disabledMcpjsonServers",
           "type": "array",
           "itemType": "string",
-          "description": "List of specific MCP servers to reject/disable.",
+          "itemMinLength": 1,
+          "description": "List of denied MCP servers from .mcp.json.",
           "examples": [
             {
-              "code": "{\n  \"disabledMcpjsonServers\": [\n    \"experimental-mcp\"\n  ]\n}",
+              "code": "{\n  \"disabledMcpjsonServers\": [\n    \"filesystem\"\n  ]\n}",
               "description": "Disable specific MCP servers",
               "id": "bc3c379f-f125-4c79-8483-02fc29f6966f"
             }
