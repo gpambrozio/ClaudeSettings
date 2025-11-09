@@ -5,6 +5,72 @@ import Testing
 /// Tests for SettingsParser key ordering and JSON serialization
 @Suite("Settings Parser Tests")
 struct SettingsParserTests {
+    /// Helper function to extract top-level key order from JSON data
+    /// Parses the JSON string to preserve the actual order of keys as written
+    private func extractTopLevelKeyOrder(from jsonData: Data) throws -> [String] {
+        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+            throw NSError(domain: "SettingsParserTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to convert data to string"])
+        }
+
+        var keys: [String] = []
+        var currentIndex = jsonString.startIndex
+        let endIndex = jsonString.endIndex
+
+        // Skip to opening brace
+        while currentIndex < endIndex && jsonString[currentIndex] != "{" {
+            currentIndex = jsonString.index(after: currentIndex)
+        }
+
+        guard currentIndex < endIndex else { return keys }
+        currentIndex = jsonString.index(after: currentIndex) // Skip '{'
+
+        while currentIndex < endIndex {
+            // Skip whitespace
+            while currentIndex < endIndex && jsonString[currentIndex].isWhitespace {
+                currentIndex = jsonString.index(after: currentIndex)
+            }
+
+            // Check for closing brace
+            if currentIndex < endIndex && jsonString[currentIndex] == "}" {
+                break
+            }
+
+            // Extract key
+            if currentIndex < endIndex && jsonString[currentIndex] == "\"" {
+                currentIndex = jsonString.index(after: currentIndex)
+                var key = ""
+
+                while currentIndex < endIndex && jsonString[currentIndex] != "\"" {
+                    if jsonString[currentIndex] == "\\" {
+                        currentIndex = jsonString.index(after: currentIndex)
+                        if currentIndex < endIndex {
+                            key.append(jsonString[currentIndex])
+                        }
+                    } else {
+                        key.append(jsonString[currentIndex])
+                    }
+                    currentIndex = jsonString.index(after: currentIndex)
+                }
+
+                keys.append(key)
+                currentIndex = jsonString.index(after: currentIndex) // Skip closing quote
+
+                // Skip to comma or closing brace
+                while currentIndex < endIndex && jsonString[currentIndex] != "," && jsonString[currentIndex] != "}" {
+                    currentIndex = jsonString.index(after: currentIndex)
+                }
+
+                if currentIndex < endIndex && jsonString[currentIndex] == "," {
+                    currentIndex = jsonString.index(after: currentIndex)
+                }
+            } else {
+                break
+            }
+        }
+
+        return keys
+    }
+
     /// Test that original key order is preserved when reading and writing
     @Test("Preserves original key order")
     func preservesOriginalKeyOrder() async throws {
@@ -28,29 +94,16 @@ struct SettingsParserTests {
 
         // When: Reading and immediately writing back the file
         var settingsFile = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
-        let keyOrder = try await parser.writeSettingsFile(&settingsFile)
+        try await parser.writeSettingsFile(&settingsFile)
 
-        // Then: Key order should be preserved
+        // Then: The written JSON should have the same key order
+        let writtenData = try Data(contentsOf: testFile)
+        let keyOrder = try extractTopLevelKeyOrder(from: writtenData)
+
         #expect(
             keyOrder == ["third_key", "first_key", "second_key"],
             "Original key order should be preserved"
         )
-
-        // And: The written JSON should have the same key order
-        let writtenJSON = try String(contentsOf: testFile, encoding: .utf8)
-        let lines = writtenJSON.split(separator: "\n").map(String.init)
-
-        // Find the line indices for each key
-        let thirdKeyLine = lines.firstIndex { $0.contains("\"third_key\"") }
-        let firstKeyLine = lines.firstIndex { $0.contains("\"first_key\"") }
-        let secondKeyLine = lines.firstIndex { $0.contains("\"second_key\"") }
-
-        #expect(
-            thirdKeyLine != nil && firstKeyLine != nil && secondKeyLine != nil,
-            "All keys should be present"
-        )
-        #expect(thirdKeyLine! < firstKeyLine!, "third_key should come before first_key")
-        #expect(firstKeyLine! < secondKeyLine!, "first_key should come before second_key")
     }
 
     /// Test that new keys are added at the top in alphabetical order
@@ -79,15 +132,16 @@ struct SettingsParserTests {
         settingsFile.content["apple_key"] = .string("new2")
         settingsFile.content["middle_key"] = .string("new3")
 
-        let keyOrder = try await parser.writeSettingsFile(&settingsFile)
+        try await parser.writeSettingsFile(&settingsFile)
 
         // Then: New keys should be at the top, sorted alphabetically
-        #expect(keyOrder.count == 5, "Should have 5 total keys")
-        #expect(keyOrder[0] == "apple_key", "First new key should be 'apple_key' (alphabetically first)")
-        #expect(keyOrder[1] == "middle_key", "Second new key should be 'middle_key'")
-        #expect(keyOrder[2] == "zebra_key", "Third new key should be 'zebra_key'")
-        #expect(keyOrder[3] == "existing_key_2", "Original key order preserved: existing_key_2 first")
-        #expect(keyOrder[4] == "existing_key_1", "Original key order preserved: existing_key_1 second")
+        let writtenData = try Data(contentsOf: testFile)
+        let keyOrder = try extractTopLevelKeyOrder(from: writtenData)
+
+        #expect(
+            keyOrder == ["apple_key", "middle_key", "zebra_key", "existing_key_2", "existing_key_1"],
+            "New keys should be at top (sorted), then original keys in original order"
+        )
     }
 
     /// Test that special characters in keys are properly escaped
@@ -116,7 +170,7 @@ struct SettingsParserTests {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         // When: Writing the file
-        _ = try await parser.writeSettingsFile(&settingsFile)
+        try await parser.writeSettingsFile(&settingsFile)
 
         // Then: The file should contain valid JSON
         let writtenData = try Data(contentsOf: testFile)
@@ -157,7 +211,7 @@ struct SettingsParserTests {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         // When: Writing the file
-        _ = try await parser.writeSettingsFile(&settingsFile)
+        try await parser.writeSettingsFile(&settingsFile)
 
         // Then: The file should contain valid JSON with properly escaped values
         let writtenData = try Data(contentsOf: testFile)
@@ -212,7 +266,7 @@ struct SettingsParserTests {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         // When: Writing and reading back
-        _ = try await parser.writeSettingsFile(&settingsFile)
+        try await parser.writeSettingsFile(&settingsFile)
         let readBack = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
 
         // Then: The structure should be preserved correctly
@@ -282,14 +336,9 @@ struct SettingsParserTests {
         var settingsFile = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
         settingsFile.content.removeValue(forKey: "delete_this")
 
-        let keyOrder = try await parser.writeSettingsFile(&settingsFile)
+        try await parser.writeSettingsFile(&settingsFile)
 
-        // Then: Deleted key should not appear in key order
-        #expect(keyOrder.count == 2, "Should have 2 keys after deletion")
-        #expect(!keyOrder.contains("delete_this"), "Deleted key should not be in output")
-        #expect(keyOrder == ["keep_this", "also_keep"], "Remaining keys should preserve order")
-
-        // And: The written JSON should not contain the deleted key
+        // Then: The written JSON should not contain the deleted key
         let writtenData = try Data(contentsOf: testFile)
         let parsedJSON = try JSONSerialization.jsonObject(with: writtenData) as? [String: Any]
 
@@ -327,7 +376,7 @@ struct SettingsParserTests {
         var modified = first
         modified.content["new_setting"] = .string("test \"value\" with\\escapes")
 
-        _ = try await parser.writeSettingsFile(&modified)
+        try await parser.writeSettingsFile(&modified)
         let second = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
 
         // Then: All data should be preserved
@@ -378,7 +427,7 @@ struct SettingsParserTests {
 
         // When: Reading and writing back the file
         var settingsFile = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
-        _ = try await parser.writeSettingsFile(&settingsFile)
+        try await parser.writeSettingsFile(&settingsFile)
 
         // Then: The written JSON should preserve nested key order
         let writtenJSON = try String(contentsOf: testFile, encoding: .utf8)
@@ -439,7 +488,7 @@ struct SettingsParserTests {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         // When: Writing the file
-        _ = try await parser.writeSettingsFile(&settingsFile)
+        try await parser.writeSettingsFile(&settingsFile)
 
         // Then: The output should be properly indented
         let writtenJSON = try String(contentsOf: testFile, encoding: .utf8)
@@ -453,5 +502,85 @@ struct SettingsParserTests {
         let data = try Data(contentsOf: testFile)
         let parsed = try JSONSerialization.jsonObject(with: data)
         #expect(parsed is [String: Any], "Should be valid JSON object")
+    }
+
+    /// Test handling of deeply nested structures (15+ levels)
+    @Test("Handles deeply nested structures")
+    func handlesDeeplyNestedStructures() async throws {
+        // Given: A deeply nested settings structure
+        let tempDir = FileManager.default.temporaryDirectory
+        let testFile = tempDir.appendingPathComponent("test-deep-nesting-\(UUID().uuidString).json")
+
+        let fileSystemManager = FileSystemManager()
+        let parser = SettingsParser(fileSystemManager: fileSystemManager)
+
+        // Create a deeply nested structure programmatically
+        func createNestedObject(depth: Int, currentDepth: Int = 0) -> SettingValue {
+            if currentDepth >= depth {
+                return .string("leaf-value-at-depth-\(currentDepth)")
+            }
+            return .object([
+                "level_\(currentDepth)_key_z": .string("value-z"),
+                "level_\(currentDepth)_key_a": .string("value-a"),
+                "nested": createNestedObject(depth: depth, currentDepth: currentDepth + 1),
+                "level_\(currentDepth)_key_m": .int(currentDepth),
+            ])
+        }
+
+        var settingsFile = SettingsFile(
+            type: .globalSettings,
+            path: testFile,
+            content: [
+                "root_key_1": createNestedObject(depth: 15),
+                "root_key_2": .string("simple-value"),
+                "root_key_3": .array([
+                    .object(["deep": createNestedObject(depth: 10)]),
+                    .string("array-item"),
+                ]),
+            ]
+        )
+
+        defer { try? FileManager.default.removeItem(at: testFile) }
+
+        // When: Writing and reading back the deeply nested structure
+        try await parser.writeSettingsFile(&settingsFile)
+        let readBack = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
+
+        // Then: The structure should be preserved correctly
+        #expect(readBack.content.count == 3, "Should have 3 top-level keys")
+        #expect(readBack.isValid, "Should be valid JSON")
+
+        // Verify we can traverse to the deepest level
+        func verifyNestedDepth(_ value: SettingValue, expectedDepth: Int, currentDepth: Int = 0) -> Bool {
+            if currentDepth >= expectedDepth {
+                if case let .string(str) = value {
+                    return str == "leaf-value-at-depth-\(expectedDepth)"
+                }
+                return false
+            }
+
+            if case let .object(dict) = value {
+                if let nested = dict["nested"] {
+                    return verifyNestedDepth(nested, expectedDepth: expectedDepth, currentDepth: currentDepth + 1)
+                }
+            }
+
+            return false
+        }
+
+        if case let .object(rootObj) = readBack.content["root_key_1"] {
+            if let nested = rootObj["nested"] {
+                #expect(verifyNestedDepth(nested, expectedDepth: 15, currentDepth: 1), "Should preserve 15 levels of nesting")
+            } else {
+                Issue.record("Missing nested key in deep structure")
+            }
+        } else {
+            Issue.record("root_key_1 should be an object")
+        }
+
+        // Verify the written JSON is actually valid
+        let writtenData = try Data(contentsOf: testFile)
+        let validatedJSON = try JSONSerialization.jsonObject(with: writtenData)
+        #expect(validatedJSON is [String: Any], "Deep structure should produce valid JSON")
     }
 }

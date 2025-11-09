@@ -65,8 +65,7 @@ public actor SettingsParser {
 
     /// Write a settings file and update it with the written data
     /// - Parameter settingsFile: The settings file to write (passed as inout to update originalData)
-    /// - Returns: The key order as written to the file (new keys first, then original order)
-    public func writeSettingsFile(_ settingsFile: inout SettingsFile) async throws -> [String] {
+    public func writeSettingsFile(_ settingsFile: inout SettingsFile) async throws {
         logger.debug("Writing settings file to: \(settingsFile.path.path)")
 
         // Convert content back to native types
@@ -85,15 +84,34 @@ public actor SettingsParser {
         // Manually build JSON with custom key ordering
         let jsonData = try serializeJSON(content: nativeContent, keyOrder: orderedKeys, nestedKeyOrders: nestedKeyOrders)
 
+        // Validate that the serialized JSON is actually valid by parsing it
+        do {
+            _ = try JSONSerialization.jsonObject(with: jsonData, options: [])
+            logger.debug("Successfully validated serialized JSON")
+        } catch {
+            logger.error("Generated invalid JSON: \(error.localizedDescription)")
+            throw SettingsError.serializationFailed("Generated JSON failed validation: \(error.localizedDescription)")
+        }
+
         try await fileSystemManager.writeFile(data: jsonData, to: settingsFile.path)
 
         // Update the original data to reflect what was just written
         settingsFile.originalData = jsonData
-
-        return orderedKeys
     }
 
-    /// Serialize JSON with custom key ordering
+    /// Serialize JSON with custom key ordering while preserving nested object key orders
+    ///
+    /// This method manually serializes a dictionary to JSON instead of using JSONSerialization
+    /// because JSONSerialization doesn't preserve key ordering from the original file.
+    ///
+    /// - Parameters:
+    ///   - content: The dictionary to serialize (native Swift types)
+    ///   - keyOrder: The desired order of top-level keys
+    ///   - nestedKeyOrders: Dictionary mapping JSON paths to their key orders (e.g., "" for top-level, "parent.child" for nested objects)
+    /// - Returns: UTF-8 encoded JSON data with custom key ordering
+    /// - Throws: `SettingsError.serializationFailed` if serialization fails or UTF-8 encoding fails
+    ///
+    /// - Note: The output is formatted with 2-space indentation and includes a trailing newline
     private func serializeJSON(content: [String: Any], keyOrder: [String], nestedKeyOrders: [String: [String]]) throws -> Data {
         let jsonString = try serializeValue(content, keyOrder: keyOrder, nestedKeyOrders: nestedKeyOrders, indent: 0, path: "")
         guard let data = (jsonString + "\n").data(using: .utf8) else {
@@ -102,7 +120,21 @@ public actor SettingsParser {
         return data
     }
 
-    /// Recursively serialize a value with proper formatting
+    /// Recursively serialize a value with proper formatting and indentation
+    ///
+    /// Handles all JSON value types: objects, arrays, strings, numbers, booleans, and null.
+    /// For objects, uses the specified key order from `nestedKeyOrders` or falls back to sorted keys.
+    ///
+    /// - Parameters:
+    ///   - value: The value to serialize (must be a valid JSON type)
+    ///   - keyOrder: Optional explicit key order for this object (only used for top-level object)
+    ///   - nestedKeyOrders: Dictionary mapping JSON paths to their key orders for nested objects
+    ///   - indent: Current indentation level (number of 2-space indents)
+    ///   - path: Current JSON path (e.g., "" for root, "parent.child" for nested, "array[0]" for array elements)
+    /// - Returns: Formatted JSON string for this value
+    /// - Throws: `SettingsError.serializationFailed` if the value type is not supported
+    ///
+    /// - Note: Empty arrays serialize as `[]` on a single line, non-empty arrays span multiple lines
     private func serializeValue(_ value: Any, keyOrder: [String]? = nil, nestedKeyOrders: [String: [String]], indent: Int, path: String) throws -> String {
         let indentStr = String(repeating: "  ", count: indent)
         let nextIndent = indent + 1
@@ -181,7 +213,23 @@ public actor SettingsParser {
         }
     }
 
-    /// Escape a string for use in JSON
+    /// Escape a string for use in JSON per RFC 8259
+    ///
+    /// Handles all required escape sequences to produce valid JSON strings:
+    /// - Special characters: `"` → `\"`, `\` → `\\`
+    /// - Common escapes: `\n`, `\r`, `\t`, `\b` (backspace), `\f` (form feed)
+    /// - Control characters (U+0000 to U+001F): Encoded as `\uXXXX` hex sequences
+    ///
+    /// - Parameter string: The raw string to escape
+    /// - Returns: JSON-safe escaped string (without surrounding quotes)
+    ///
+    /// - Note: This only escapes the string content; the caller must add surrounding quotes
+    ///
+    /// Example:
+    /// ```swift
+    /// escapeJSONString("Hello \"World\"\nNew line") // Returns: Hello \"World\"\nNew line
+    /// escapeJSONString("Control: \u{0001}") // Returns: Control: \u0001
+    /// ```
     private func escapeJSONString(_ string: String) -> String {
         var escaped = ""
         for char in string {
@@ -191,14 +239,44 @@ public actor SettingsParser {
             case "\n": escaped += "\\n"
             case "\r": escaped += "\\r"
             case "\t": escaped += "\\t"
-            default: escaped.append(char)
+            case "\u{08}": escaped += "\\b" // Backspace
+            case "\u{0C}": escaped += "\\f" // Form feed
+            default:
+                // Escape control characters (U+0000 to U+001F) as \uXXXX
+                if
+                    char.unicodeScalars.count == 1,
+                    let scalar = char.unicodeScalars.first,
+                    scalar.value <= 0x1F {
+                    escaped += String(format: "\\u%04x", scalar.value)
+                } else {
+                    escaped.append(char)
+                }
             }
         }
         return escaped
     }
 
-    /// Extract nested key orders from JSON data
-    /// Returns a dictionary mapping JSON paths to their key orders
+    /// Extract nested key orders from JSON data by parsing the raw JSON string
+    ///
+    /// Parses the JSON string manually to extract the order of keys at each nesting level,
+    /// which cannot be obtained from JSONSerialization (it doesn't preserve order).
+    ///
+    /// - Parameter data: Raw JSON data to parse
+    /// - Returns: Dictionary mapping JSON paths to their key orders
+    ///   - Empty string "" maps to top-level keys
+    ///   - Nested paths use dot notation: "parent.child.grandchild"
+    ///   - Returns empty dictionary if data is not valid UTF-8
+    ///
+    /// Example output:
+    /// ```
+    /// [
+    ///   "": ["third_key", "first_key", "second_key"],
+    ///   "permissions": ["defaultMode", "allow", "deny"],
+    ///   "permissions.advanced": ["timeout", "retries"]
+    /// ]
+    /// ```
+    ///
+    /// - Note: Only extracts order from objects; arrays are not tracked since their order is inherent
     private func extractNestedKeyOrders(from data: Data) -> [String: [String]] {
         guard let jsonString = String(data: data, encoding: .utf8) else {
             return [:]
@@ -209,7 +287,26 @@ public actor SettingsParser {
         return result
     }
 
-    /// Recursively extract key orders from JSON string
+    /// Recursively extract key orders from JSON string by manual parsing
+    ///
+    /// Walks through the JSON string character-by-character to extract object keys in the order they appear.
+    /// Recursively processes nested objects to build a complete path-to-keys mapping.
+    ///
+    /// - Parameters:
+    ///   - jsonString: The JSON string being parsed
+    ///   - startIndex: Current position in the string to start parsing from
+    ///   - path: Current JSON path (dot-separated, "" for root)
+    ///   - result: Mutable dictionary to accumulate path → keys mappings
+    /// - Returns: String index where parsing stopped (after processing this object or value)
+    ///
+    /// Algorithm:
+    /// 1. Skip whitespace until finding `{` (object start) or return if not an object
+    /// 2. Extract each key string (handling escape sequences)
+    /// 3. Recursively process the value if it's an object
+    /// 4. Continue until reaching `}` (object end)
+    /// 5. Store the list of keys for the current path in `result`
+    ///
+    /// - Note: Handles all JSON string escape sequences including `\uXXXX` Unicode escapes
     private func extractKeysRecursive(from jsonString: String, startIndex: String.Index, path: String, result: inout [String: [String]]) -> String.Index {
         var currentIndex = startIndex
         let endIndex = jsonString.endIndex
@@ -253,9 +350,27 @@ public actor SettingsParser {
                         switch char {
                         case "\"": key.append("\"")
                         case "\\": key.append("\\")
+                        case "/": key.append("/")
                         case "n": key.append("\n")
                         case "r": key.append("\r")
                         case "t": key.append("\t")
+                        case "b": key.append("\u{08}") // Backspace
+                        case "f": key.append("\u{0C}") // Form feed
+                        case "u":
+                            // Handle Unicode escape sequence \uXXXX
+                            currentIndex = jsonString.index(after: currentIndex)
+                            var hexString = ""
+                            for _ in 0..<4 {
+                                guard currentIndex < endIndex else { break }
+                                hexString.append(jsonString[currentIndex])
+                                currentIndex = jsonString.index(after: currentIndex)
+                            }
+                            if
+                                let codePoint = UInt32(hexString, radix: 16),
+                                let scalar = Unicode.Scalar(codePoint) {
+                                key.append(String(Character(scalar)))
+                            }
+                            currentIndex = jsonString.index(before: currentIndex)
                         default: key.append(char)
                         }
                         escaped = false
@@ -302,7 +417,24 @@ public actor SettingsParser {
         return currentIndex
     }
 
-    /// Skip over a JSON value in the string
+    /// Skip over a JSON value in the string without parsing its contents
+    ///
+    /// Used by `extractKeysRecursive` to efficiently skip over values we don't need to parse.
+    /// Handles all JSON value types by tracking nesting depth (for objects/arrays) or
+    /// escape sequences (for strings).
+    ///
+    /// - Parameters:
+    ///   - jsonString: The JSON string being parsed
+    ///   - startIndex: Position where the value starts
+    /// - Returns: String index immediately after the value ends
+    ///
+    /// Handling by type:
+    /// - **Objects**: Track `{` and `}` depth until fully closed
+    /// - **Arrays**: Track `[` and `]` depth until fully closed
+    /// - **Strings**: Skip until unescaped closing quote, tracking backslash escapes
+    /// - **Primitives**: Skip until delimiter (`,`, `]`, `}`) or whitespace
+    ///
+    /// - Note: Does not validate JSON correctness; assumes well-formed input
     private func skipValue(in jsonString: String, from startIndex: String.Index) -> String.Index {
         var currentIndex = startIndex
         let endIndex = jsonString.endIndex

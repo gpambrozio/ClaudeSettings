@@ -727,7 +727,7 @@ final public class SettingsViewModel {
 
             // Write the file once with all changes
             file.content = updatedContent
-            _ = try await settingsParser.writeSettingsFile(&file)
+            try await settingsParser.writeSettingsFile(&file)
             settingsFiles[fileIndex] = file
 
             logger.debug("Applied \(edits.count) edit(s) to \(fileType.displayName)")
@@ -752,7 +752,7 @@ final public class SettingsViewModel {
                 isReadOnly: false
             )
 
-            _ = try await settingsParser.writeSettingsFile(&newFile)
+            try await settingsParser.writeSettingsFile(&newFile)
             settingsFiles.append(newFile)
             logger.info("Created new settings file at \(filePath.path) with \(edits.count) setting(s)")
         }
@@ -809,7 +809,7 @@ final public class SettingsViewModel {
         removeNestedValue(&updatedContent, for: key)
 
         file.content = updatedContent
-        _ = try await settingsParser.writeSettingsFile(&file)
+        try await settingsParser.writeSettingsFile(&file)
 
         settingsFiles[fileIndex] = file
 
