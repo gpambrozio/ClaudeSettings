@@ -79,44 +79,7 @@ The app uses a custom documentation JSON file at `ClaudeSettingsPackage/Sources/
 
 **Official Schema Source**: https://www.schemastore.org/claude-code-settings.json
 
-#### Updating the Documentation Schema
-
-When the official Claude Code settings schema is updated, synchronize our documentation:
-
-1. **Fetch the latest schema**:
-   ```bash
-   curl -s https://www.schemastore.org/claude-code-settings.json | python3 -m json.tool
-   ```
-
-2. **Update existing fields**:
-   - Compare descriptions - use schema version if clearer
-   - Compare examples - use schema examples if better
-   - Add `enumValues` for fields with enum constraints (enables dropdown UI)
-   - Add validation constraints: `minLength`, `minimum`, `uniqueItems`, `itemMinLength`
-   - Update type definitions (e.g., `number` → `integer`)
-
-3. **Add missing fields**:
-   - Identify fields in schema not in our documentation
-   - Add them to appropriate category with description and examples
-   - Generate UUIDs for example IDs
-
-4. **Validate the JSON**:
-   ```bash
-   python3 -m json.tool settings-documentation.json > /dev/null && echo "Valid ✓"
-   ```
-
-#### Key Schema Properties to Extract
-
-- `type` - Data type (string, boolean, integer, object, array)
-- `description` - Human-readable description
-- `enum` - Allowed values (becomes `enumValues` in our JSON)
-- `const` - Single allowed value
-- `minLength`, `minimum` - Validation constraints
-- `uniqueItems` - Array uniqueness constraint
-- `format` - Special formats (uuid, etc.)
-- `default` - Default value
-- `examples` - Usage examples
-- `deprecated` - Deprecation status
+**Updating**: Use the `/sync-settings-schema` slash command to synchronize our documentation with the latest official schema.
 
 ### XCConfig Build Settings
 Build settings are managed through **XCConfig files** in `Config/`:
