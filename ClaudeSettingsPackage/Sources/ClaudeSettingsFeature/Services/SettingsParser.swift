@@ -20,6 +20,7 @@ public actor SettingsParser {
 
         var validationErrors: [ValidationError] = []
         var content: [String: SettingValue] = [:]
+        var originalKeyOrder: [String] = []
         var isValid = true
 
         // Try to parse JSON
@@ -27,6 +28,9 @@ public actor SettingsParser {
             let jsonObject = try JSONSerialization.jsonObject(with: data)
             if let dict = jsonObject as? [String: Any] {
                 content = dict.mapValues { SettingValue(any: $0) }
+                // Preserve the original key order from the JSON file
+                // JSONSerialization preserves key order since iOS 13/macOS 10.15
+                originalKeyOrder = Array(dict.keys)
                 logger.debug("Successfully parsed JSON with \(content.count) keys")
             } else {
                 validationErrors.append(ValidationError(
@@ -58,24 +62,85 @@ public actor SettingsParser {
             isValid: isValid,
             validationErrors: validationErrors,
             lastModified: modificationDate,
-            isReadOnly: isReadOnly
+            isReadOnly: isReadOnly,
+            originalKeyOrder: originalKeyOrder
         )
     }
 
-    /// Write a settings file
-    public func writeSettingsFile(_ settingsFile: SettingsFile) async throws {
+    /// Write a settings file and return the key order that was used
+    /// - Returns: The key order as written to the file (new keys first, then original order)
+    public func writeSettingsFile(_ settingsFile: SettingsFile) async throws -> [String] {
         logger.debug("Writing settings file to: \(settingsFile.path.path)")
 
         // Convert content back to native types
         let nativeContent = settingsFile.content.mapValues(\.asAny)
 
-        // Serialize to JSON with pretty printing
-        let jsonData = try JSONSerialization.data(
-            withJSONObject: nativeContent,
-            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        )
+        // Determine the key order: new keys first, then original order
+        let existingKeys = Set(settingsFile.originalKeyOrder)
+        let newKeys = nativeContent.keys.filter { !existingKeys.contains($0) }.sorted()
+        let orderedKeys = newKeys + settingsFile.originalKeyOrder.filter { nativeContent.keys.contains($0) }
+
+        // Manually build JSON with custom key ordering
+        let jsonData = try serializeJSON(content: nativeContent, keyOrder: orderedKeys)
 
         try await fileSystemManager.writeFile(data: jsonData, to: settingsFile.path)
+
+        return orderedKeys
+    }
+
+    /// Serialize JSON with custom key ordering
+    private func serializeJSON(content: [String: Any], keyOrder: [String]) throws -> Data {
+        var jsonString = "{\n"
+
+        for (index, key) in keyOrder.enumerated() {
+            guard let value = content[key] else { continue }
+
+            // Serialize the value using JSONSerialization
+            let valueData = try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .withoutEscapingSlashes])
+            guard let valueString = String(data: valueData, encoding: .utf8) else {
+                throw SettingsError.serializationFailed("Failed to encode value for key '\(key)'")
+            }
+
+            // Escape the key for JSON
+            let escapedKey = escapeJSONString(key)
+
+            // Indent the value (pretty printing)
+            let indentedValue = valueString.split(separator: "\n").enumerated().map { lineIndex, line in
+                lineIndex == 0 ? String(line) : "  \(line)"
+            }.joined(separator: "\n")
+
+            jsonString += "  \"\(escapedKey)\": \(indentedValue)"
+
+            // Add comma if not the last item
+            if index < keyOrder.count - 1 {
+                jsonString += ","
+            }
+            jsonString += "\n"
+        }
+
+        jsonString += "}\n"
+
+        guard let data = jsonString.data(using: .utf8) else {
+            throw SettingsError.serializationFailed("Failed to encode JSON string to UTF-8")
+        }
+
+        return data
+    }
+
+    /// Escape a string for use in JSON
+    private func escapeJSONString(_ string: String) -> String {
+        var escaped = ""
+        for char in string {
+            switch char {
+            case "\"": escaped += "\\\""
+            case "\\": escaped += "\\\\"
+            case "\n": escaped += "\\n"
+            case "\r": escaped += "\\r"
+            case "\t": escaped += "\\t"
+            default: escaped.append(char)
+            }
+        }
+        return escaped
     }
 
     /// Validate known settings keys and values
