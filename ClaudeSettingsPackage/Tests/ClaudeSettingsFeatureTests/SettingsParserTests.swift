@@ -27,12 +27,14 @@ struct SettingsParserTests {
         let parser = SettingsParser(fileSystemManager: fileSystemManager)
 
         // When: Reading and immediately writing back the file
-        let settingsFile = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
-        let keyOrder = try await parser.writeSettingsFile(settingsFile)
+        var settingsFile = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
+        let keyOrder = try await parser.writeSettingsFile(&settingsFile)
 
         // Then: Key order should be preserved
-        #expect(keyOrder == ["third_key", "first_key", "second_key"],
-                "Original key order should be preserved")
+        #expect(
+            keyOrder == ["third_key", "first_key", "second_key"],
+            "Original key order should be preserved"
+        )
 
         // And: The written JSON should have the same key order
         let writtenJSON = try String(contentsOf: testFile, encoding: .utf8)
@@ -43,8 +45,10 @@ struct SettingsParserTests {
         let firstKeyLine = lines.firstIndex { $0.contains("\"first_key\"") }
         let secondKeyLine = lines.firstIndex { $0.contains("\"second_key\"") }
 
-        #expect(thirdKeyLine != nil && firstKeyLine != nil && secondKeyLine != nil,
-                "All keys should be present")
+        #expect(
+            thirdKeyLine != nil && firstKeyLine != nil && secondKeyLine != nil,
+            "All keys should be present"
+        )
         #expect(thirdKeyLine! < firstKeyLine!, "third_key should come before first_key")
         #expect(firstKeyLine! < secondKeyLine!, "first_key should come before second_key")
     }
@@ -75,7 +79,7 @@ struct SettingsParserTests {
         settingsFile.content["apple_key"] = .string("new2")
         settingsFile.content["middle_key"] = .string("new3")
 
-        let keyOrder = try await parser.writeSettingsFile(settingsFile)
+        let keyOrder = try await parser.writeSettingsFile(&settingsFile)
 
         // Then: New keys should be at the top, sorted alphabetically
         #expect(keyOrder.count == 5, "Should have 5 total keys")
@@ -105,14 +109,14 @@ struct SettingsParserTests {
                 "key\"with\"quotes": .string("quoted"),
                 "key\\with\\backslashes": .string("backslashed"),
                 "key\nwith\nnewlines": .string("newlined"),
-                "key\twith\ttabs": .string("tabbed")
+                "key\twith\ttabs": .string("tabbed"),
             ]
         )
 
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         // When: Writing the file
-        _ = try await parser.writeSettingsFile(settingsFile)
+        _ = try await parser.writeSettingsFile(&settingsFile)
 
         // Then: The file should contain valid JSON
         let writtenData = try Data(contentsOf: testFile)
@@ -146,14 +150,14 @@ struct SettingsParserTests {
                 "string_with_tabs": .string("Column1\tColumn2\tColumn3"),
                 "string_with_mixed": .string("Path: \"C:\\test\\file.txt\"\nStatus: OK"),
                 "string_with_unicode": .string("Emoji: 🎉 Unicode: αβγ"),
-                "string_with_control_chars": .string("Before\rAfter")
+                "string_with_control_chars": .string("Before\rAfter"),
             ]
         )
 
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         // When: Writing the file
-        _ = try await parser.writeSettingsFile(settingsFile)
+        _ = try await parser.writeSettingsFile(&settingsFile)
 
         // Then: The file should contain valid JSON with properly escaped values
         let writtenData = try Data(contentsOf: testFile)
@@ -185,13 +189,13 @@ struct SettingsParserTests {
             content: [
                 "hooks": .object([
                     "pre-commit": .string("#!/bin/bash\necho \"Running\"\n"),
-                    "post-commit": .string("notify-send \"Done!\"")
+                    "post-commit": .string("notify-send \"Done!\""),
                 ]),
                 "paths": .array([
                     .string("/usr/local/bin"),
                     .string("C:\\Program Files\\App"),
                     .string("/path/with \"quotes\""),
-                    .string("/path/with\ttabs")
+                    .string("/path/with\ttabs"),
                 ]),
                 "config": .object([
                     "name": .string("My \"Special\" Config"),
@@ -199,16 +203,16 @@ struct SettingsParserTests {
                     "count": .int(42),
                     "ratio": .double(3.14),
                     "nested": .object([
-                        "deep": .string("value\\with\\backslashes")
-                    ])
-                ])
+                        "deep": .string("value\\with\\backslashes"),
+                    ]),
+                ]),
             ]
         )
 
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         // When: Writing and reading back
-        _ = try await parser.writeSettingsFile(settingsFile)
+        _ = try await parser.writeSettingsFile(&settingsFile)
         let readBack = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
 
         // Then: The structure should be preserved correctly
@@ -278,7 +282,7 @@ struct SettingsParserTests {
         var settingsFile = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
         settingsFile.content.removeValue(forKey: "delete_this")
 
-        let keyOrder = try await parser.writeSettingsFile(settingsFile)
+        let keyOrder = try await parser.writeSettingsFile(&settingsFile)
 
         // Then: Deleted key should not appear in key order
         #expect(keyOrder.count == 2, "Should have 2 keys after deletion")
@@ -323,7 +327,7 @@ struct SettingsParserTests {
         var modified = first
         modified.content["new_setting"] = .string("test \"value\" with\\escapes")
 
-        _ = try await parser.writeSettingsFile(modified)
+        _ = try await parser.writeSettingsFile(&modified)
         let second = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
 
         // Then: All data should be preserved
@@ -339,6 +343,74 @@ struct SettingsParserTests {
             #expect(newValue == "test \"value\" with\\escapes")
         } else {
             Issue.record("new_setting should have escaped characters")
+        }
+    }
+
+    /// Test that nested object key order is preserved
+    @Test("Preserves nested object key order")
+    func preservesNestedObjectKeyOrder() async throws {
+        // Given: A settings file with nested objects in specific order
+        let tempDir = FileManager.default.temporaryDirectory
+        let testFile = tempDir.appendingPathComponent("test-nested-order-\(UUID().uuidString).json")
+
+        let originalJSON = """
+        {
+          "permissions": {
+            "defaultMode": "acceptEdits",
+            "allow": [
+              "Bash(git:*)"
+            ],
+            "deny": []
+          },
+          "enabledPlugins": {
+            "PluginZ": false,
+            "PluginA": true,
+            "PluginM": true
+          }
+        }
+        """
+
+        try originalJSON.write(to: testFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: testFile) }
+
+        let fileSystemManager = FileSystemManager()
+        let parser = SettingsParser(fileSystemManager: fileSystemManager)
+
+        // When: Reading and writing back the file
+        var settingsFile = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
+        _ = try await parser.writeSettingsFile(&settingsFile)
+
+        // Then: The written JSON should preserve nested key order
+        let writtenJSON = try String(contentsOf: testFile, encoding: .utf8)
+        let lines = writtenJSON.split(separator: "\n").map(String.init)
+
+        // Check permissions object key order
+        let defaultModeLine = lines.firstIndex { $0.contains("\"defaultMode\"") }
+        let allowLine = lines.firstIndex { $0.contains("\"allow\"") }
+        let denyLine = lines.firstIndex { $0.contains("\"deny\"") }
+
+        #expect(
+            defaultModeLine != nil && allowLine != nil && denyLine != nil,
+            "All nested keys should be present"
+        )
+        #expect(defaultModeLine! < allowLine!, "defaultMode should come before allow")
+        #expect(allowLine! < denyLine!, "allow should come before deny")
+
+        // Check enabledPlugins object key order
+        let pluginZLine = lines.firstIndex { $0.contains("\"PluginZ\"") }
+        let pluginALine = lines.firstIndex { $0.contains("\"PluginA\"") }
+        let pluginMLine = lines.firstIndex { $0.contains("\"PluginM\"") }
+
+        #expect(
+            pluginZLine != nil && pluginALine != nil && pluginMLine != nil,
+            "All plugin keys should be present"
+        )
+        #expect(pluginZLine! < pluginALine!, "PluginZ should come before PluginA")
+        #expect(pluginALine! < pluginMLine!, "PluginA should come before PluginM")
+
+        // Verify no extra spaces before colons
+        for line in lines where line.contains(":") {
+            #expect(!line.contains("\" :"), "Should not have space before colon")
         }
     }
 
@@ -359,15 +431,15 @@ struct SettingsParserTests {
                 "simple": .string("value"),
                 "nested": .object([
                     "child": .string("value"),
-                    "number": .int(42)
-                ])
+                    "number": .int(42),
+                ]),
             ]
         )
 
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         // When: Writing the file
-        _ = try await parser.writeSettingsFile(settingsFile)
+        _ = try await parser.writeSettingsFile(&settingsFile)
 
         // Then: The output should be properly indented
         let writtenJSON = try String(contentsOf: testFile, encoding: .utf8)

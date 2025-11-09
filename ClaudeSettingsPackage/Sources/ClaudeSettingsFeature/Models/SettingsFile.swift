@@ -10,8 +10,8 @@ public struct SettingsFile: Identifiable, Codable, Sendable {
     public var validationErrors: [ValidationError]
     public var lastModified: Date
     public let isReadOnly: Bool
-    /// Preserves the original order of keys from the JSON file
-    public var originalKeyOrder: [String]
+    /// Original JSON data for preserving key order at all nesting levels
+    public var originalData: Data?
 
     public init(
         id: UUID = UUID(),
@@ -22,7 +22,7 @@ public struct SettingsFile: Identifiable, Codable, Sendable {
         validationErrors: [ValidationError] = [],
         lastModified: Date = Date(),
         isReadOnly: Bool = false,
-        originalKeyOrder: [String] = []
+        originalData: Data? = nil
     ) {
         self.id = id
         self.type = type
@@ -32,6 +32,6 @@ public struct SettingsFile: Identifiable, Codable, Sendable {
         self.validationErrors = validationErrors
         self.lastModified = lastModified
         self.isReadOnly = isReadOnly
-        self.originalKeyOrder = originalKeyOrder
+        self.originalData = originalData
     }
 }
