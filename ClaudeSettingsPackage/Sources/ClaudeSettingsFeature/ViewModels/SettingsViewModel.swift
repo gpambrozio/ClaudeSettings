@@ -727,7 +727,7 @@ final public class SettingsViewModel {
 
             // Write the file once with all changes
             file.content = updatedContent
-            try await settingsParser.writeSettingsFile(file)
+            try await settingsParser.writeSettingsFile(&file)
             settingsFiles[fileIndex] = file
 
             logger.debug("Applied \(edits.count) edit(s) to \(fileType.displayName)")
@@ -742,7 +742,7 @@ final public class SettingsViewModel {
                 try setNestedValue(&newContent, for: key, value: value)
             }
 
-            let newFile = SettingsFile(
+            var newFile = SettingsFile(
                 type: fileType,
                 path: filePath,
                 content: newContent,
@@ -752,7 +752,7 @@ final public class SettingsViewModel {
                 isReadOnly: false
             )
 
-            try await settingsParser.writeSettingsFile(newFile)
+            try await settingsParser.writeSettingsFile(&newFile)
             settingsFiles.append(newFile)
             logger.info("Created new settings file at \(filePath.path) with \(edits.count) setting(s)")
         }
@@ -809,7 +809,7 @@ final public class SettingsViewModel {
         removeNestedValue(&updatedContent, for: key)
 
         file.content = updatedContent
-        try await settingsParser.writeSettingsFile(file)
+        try await settingsParser.writeSettingsFile(&file)
 
         settingsFiles[fileIndex] = file
 
@@ -925,6 +925,7 @@ public enum SettingsError: LocalizedError {
     case settingNotFound(String)
     case validationFailed(String)
     case typeMismatch(key: String, expected: String, found: String)
+    case serializationFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -942,6 +943,8 @@ public enum SettingsError: LocalizedError {
             return message
         case let .typeMismatch(key, expected, found):
             return "Type mismatch for '\(key)': expected \(expected), but found \(found)"
+        case let .serializationFailed(message):
+            return "Failed to serialize settings: \(message)"
         }
     }
 }
