@@ -29,7 +29,9 @@
       "Bash(python3:*)",
       "WebFetch(domain:code.claude.com)",
       "Bash(/Users/gustavoambrozio/Development/ClaudeCodePlugins/SwiftDevelopment/skills/swift-compile/scripts/swift.sh test:*)",
-      "SlashCommand(/git:resolve-conflicts:*)"
+      "SlashCommand(/git:resolve-conflicts:*)",
+      "SlashCommand(/git:code-review)",
+      "WebFetch(domain:stackoverflow.com)"
     ],
     "defaultMode": "acceptEdits"
   },
