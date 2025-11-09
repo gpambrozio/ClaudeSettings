@@ -290,21 +290,21 @@ public actor SettingsParser {
     /// Recursively extract key orders from JSON string by manual parsing
     ///
     /// Walks through the JSON string character-by-character to extract object keys in the order they appear.
-    /// Recursively processes nested objects to build a complete path-to-keys mapping.
+    /// Recursively processes nested objects and arrays to build a complete path-to-keys mapping.
     ///
     /// - Parameters:
     ///   - jsonString: The JSON string being parsed
     ///   - startIndex: Current position in the string to start parsing from
-    ///   - path: Current JSON path (dot-separated, "" for root)
+    ///   - path: Current JSON path (dot-separated for objects, bracket notation for arrays, "" for root)
     ///   - result: Mutable dictionary to accumulate path → keys mappings
-    /// - Returns: String index where parsing stopped (after processing this object or value)
+    /// - Returns: String index where parsing stopped (after processing this value)
     ///
     /// Algorithm:
-    /// 1. Skip whitespace until finding `{` (object start) or return if not an object
-    /// 2. Extract each key string (handling escape sequences)
-    /// 3. Recursively process the value if it's an object
-    /// 4. Continue until reaching `}` (object end)
-    /// 5. Store the list of keys for the current path in `result`
+    /// 1. Skip whitespace and determine value type
+    /// 2. For arrays: iterate through elements, recursively processing each with path `parent[index]`
+    /// 3. For objects: extract each key string (handling escape sequences), recursively process nested values
+    /// 4. For primitives: skip the value
+    /// 5. Store the list of keys for object paths in `result`
     ///
     /// - Note: Handles all JSON string escape sequences including `\uXXXX` Unicode escapes
     private func extractKeysRecursive(from jsonString: String, startIndex: String.Index, path: String, result: inout [String: [String]]) -> String.Index {
@@ -316,9 +316,47 @@ public actor SettingsParser {
             currentIndex = jsonString.index(after: currentIndex)
         }
 
+        guard currentIndex < endIndex else { return currentIndex }
+
+        // Check if this is an array - process elements to extract keys from nested objects
+        if jsonString[currentIndex] == "[" {
+            currentIndex = jsonString.index(after: currentIndex) // Skip opening bracket
+            var elementIndex = 0
+
+            while currentIndex < endIndex {
+                // Skip whitespace
+                while currentIndex < endIndex && jsonString[currentIndex].isWhitespace {
+                    currentIndex = jsonString.index(after: currentIndex)
+                }
+
+                // Check for closing bracket
+                if currentIndex < endIndex && jsonString[currentIndex] == "]" {
+                    currentIndex = jsonString.index(after: currentIndex)
+                    break
+                }
+
+                // Recursively process array element (may be object, array, or primitive)
+                let elementPath = "\(path)[\(elementIndex)]"
+                currentIndex = extractKeysRecursive(from: jsonString, startIndex: currentIndex, path: elementPath, result: &result)
+                elementIndex += 1
+
+                // Skip whitespace
+                while currentIndex < endIndex && jsonString[currentIndex].isWhitespace {
+                    currentIndex = jsonString.index(after: currentIndex)
+                }
+
+                // Skip comma if present
+                if currentIndex < endIndex && jsonString[currentIndex] == "," {
+                    currentIndex = jsonString.index(after: currentIndex)
+                }
+            }
+
+            return currentIndex
+        }
+
         // Check if this is an object
-        guard currentIndex < endIndex && jsonString[currentIndex] == "{" else {
-            // Not an object, skip it
+        guard jsonString[currentIndex] == "{" else {
+            // Not an object or array, skip it
             return skipValue(in: jsonString, from: currentIndex)
         }
 

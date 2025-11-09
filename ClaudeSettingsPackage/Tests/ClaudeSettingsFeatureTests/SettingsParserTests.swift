@@ -504,6 +504,107 @@ struct SettingsParserTests {
         #expect(parsed is [String: Any], "Should be valid JSON object")
     }
 
+    /// Test that key order is preserved in objects within arrays (e.g., hooks.Notification)
+    @Test("Preserves key order in objects within arrays")
+    func preservesKeyOrderInArrayObjects() async throws {
+        // Given: A settings file with arrays containing objects with specific key orders
+        let tempDir = FileManager.default.temporaryDirectory
+        let testFile = tempDir.appendingPathComponent("test-array-objects-\(UUID().uuidString).json")
+
+        let originalJSON = """
+        {
+          "hooks": {
+            "Notification": [
+              {
+                "matcher": "",
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "uv run \\"/path/to/notification.py\\" \\"$CLAUDE_PROJECT_DIR\\""
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        """
+
+        try originalJSON.write(to: testFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: testFile) }
+
+        let fileSystemManager = FileSystemManager()
+        let parser = SettingsParser(fileSystemManager: fileSystemManager)
+
+        // When: Reading and writing back the file (simulating an edit)
+        var settingsFile = try await parser.parseSettingsFile(at: testFile, type: .globalSettings)
+
+        // Simulate editing just the matcher field (this was the user's scenario)
+        if
+            case var .object(hooks) = settingsFile.content["hooks"],
+            case var .array(notifications) = hooks["Notification"],
+            case var .object(firstNotification) = notifications[0] {
+            firstNotification["matcher"] = .string("a")
+            notifications[0] = .object(firstNotification)
+            hooks["Notification"] = .array(notifications)
+            settingsFile.content["hooks"] = .object(hooks)
+        }
+
+        try await parser.writeSettingsFile(&settingsFile)
+
+        // Then: The written JSON should preserve key order at all levels
+        let writtenJSON = try String(contentsOf: testFile, encoding: .utf8)
+        let lines = writtenJSON.split(separator: "\n").map(String.init)
+
+        // Verify the structure is correct by checking line-by-line order
+        // We expect the structure to be:
+        //   "hooks": {
+        //     "Notification": [
+        //       {
+        //         "matcher": ...    <- should appear before "hooks" key
+        //         "hooks": [
+        //           {
+        //             "type": ...   <- should appear before "command" key
+        //             "command": ...
+
+        // Find lines more precisely by looking for the pattern "key":
+        var matcherLineIndex: Int?
+        var nestedHooksArrayLineIndex: Int?
+        var typeLineIndex: Int?
+        var commandLineIndex: Int?
+
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if matcherLineIndex == nil && trimmed.hasPrefix("\"matcher\":") {
+                matcherLineIndex = index
+            }
+            // hooks array inside notification object (more indented than top-level hooks)
+            if nestedHooksArrayLineIndex == nil && trimmed.hasPrefix("\"hooks\": [") {
+                nestedHooksArrayLineIndex = index
+            }
+            if typeLineIndex == nil && trimmed.hasPrefix("\"type\":") {
+                typeLineIndex = index
+            }
+            if commandLineIndex == nil && trimmed.hasPrefix("\"command\":") {
+                commandLineIndex = index
+            }
+        }
+
+        #expect(matcherLineIndex != nil, "matcher key should be present")
+        #expect(nestedHooksArrayLineIndex != nil, "nested hooks array should be present")
+        #expect(matcherLineIndex! < nestedHooksArrayLineIndex!, "matcher should come before hooks (original order)")
+
+        #expect(typeLineIndex != nil, "type key should be present")
+        #expect(commandLineIndex != nil, "command key should be present")
+        #expect(typeLineIndex! < commandLineIndex!, "type should come before command (original order)")
+
+        // Verify the matcher value was actually updated
+        let parsedBack = try JSONSerialization.jsonObject(with: Data(contentsOf: testFile)) as? [String: Any]
+        let hooksDict = parsedBack?["hooks"] as? [String: Any]
+        let notificationArray = hooksDict?["Notification"] as? [[String: Any]]
+        let firstNotif = notificationArray?.first
+        #expect(firstNotif?["matcher"] as? String == "a", "matcher should have been updated to 'a'")
+    }
+
     /// Test handling of deeply nested structures (15+ levels)
     @Test("Handles deeply nested structures")
     func handlesDeeplyNestedStructures() async throws {
