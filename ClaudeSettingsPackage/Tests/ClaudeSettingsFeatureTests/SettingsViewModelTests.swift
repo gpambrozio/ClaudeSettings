@@ -426,9 +426,7 @@ struct SettingsViewModelTests {
             contributions: [
                 SourceContribution(source: .projectSettings, value: .string("light")),
                 SourceContribution(source: .projectLocal, value: .string("dark")),
-            ],
-            isDeprecated: true,
-            documentation: "Theme setting"
+            ]
         )
         let items = [testItem]
 
@@ -446,8 +444,6 @@ struct SettingsViewModelTests {
         #expect(preservedItem.value == .string("dark"), "Should preserve value")
         #expect(preservedItem.source == .projectSettings, "Should preserve source")
         #expect(preservedItem.overriddenBy == .projectLocal, "Should preserve override")
-        #expect(preservedItem.isDeprecated == true, "Should preserve deprecation status")
-        #expect(preservedItem.documentation == "Theme setting", "Should preserve documentation")
     }
 
     /// Test hierarchical tree with empty input

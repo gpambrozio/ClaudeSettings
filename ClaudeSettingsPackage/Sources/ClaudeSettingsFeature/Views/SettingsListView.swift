@@ -4,9 +4,16 @@ import SwiftUI
 public struct SettingsListView: View {
     let settingsViewModel: SettingsViewModel
     @Binding var selectedKey: String?
+    @ObservedObject var documentationLoader: DocumentationLoader
     @State private var expandedNodes: Set<String> = []
     @State private var showSaveError = false
     @State private var saveErrorMessage: String?
+
+    public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
+        self.settingsViewModel = settingsViewModel
+        self._selectedKey = selectedKey
+        self.documentationLoader = documentationLoader
+    }
 
     public var body: some View {
         Group {
@@ -112,7 +119,8 @@ public struct SettingsListView: View {
                     HierarchicalSettingNodeView(
                         node: node,
                         selectedKey: $selectedKey,
-                        expandedNodes: $expandedNodes
+                        expandedNodes: $expandedNodes,
+                        documentationLoader: documentationLoader
                     )
                 }
             } header: {
@@ -126,11 +134,6 @@ public struct SettingsListView: View {
             }
         }
         .searchable(text: .constant(""), prompt: "Search settings...")
-    }
-
-    public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>) {
-        self.settingsViewModel = settingsViewModel
-        self._selectedKey = selectedKey
     }
 }
 
@@ -210,6 +213,7 @@ struct HierarchicalSettingNodeView: View {
     let node: HierarchicalSettingNode
     @Binding var selectedKey: String?
     @Binding var expandedNodes: Set<String>
+    @ObservedObject var documentationLoader: DocumentationLoader
 
     var body: some View {
         Group {
@@ -231,7 +235,8 @@ struct HierarchicalSettingNodeView: View {
                         HierarchicalSettingNodeView(
                             node: childNode,
                             selectedKey: $selectedKey,
-                            expandedNodes: $expandedNodes
+                            expandedNodes: $expandedNodes,
+                            documentationLoader: documentationLoader
                         )
                         .padding(.leading, 16)
                     }
@@ -260,7 +265,8 @@ struct HierarchicalSettingNodeView: View {
                 SettingItemRow(
                     item: item,
                     isSelected: selectedKey == item.key,
-                    displayName: node.displayName
+                    displayName: node.displayName,
+                    documentationLoader: documentationLoader
                 )
                 .tag(item.key)
             }
@@ -273,11 +279,13 @@ struct SettingItemRow: View {
     let item: SettingItem
     let isSelected: Bool
     let displayName: String?
+    @ObservedObject var documentationLoader: DocumentationLoader
 
-    init(item: SettingItem, isSelected: Bool, displayName: String? = nil) {
+    init(item: SettingItem, isSelected: Bool, displayName: String? = nil, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
         self.item = item
         self.isSelected = isSelected
         self.displayName = displayName
+        self.documentationLoader = documentationLoader
     }
 
     var body: some View {
@@ -288,10 +296,10 @@ struct SettingItemRow: View {
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(isSelected ? .primary : .secondary)
 
-                    if item.isDeprecated {
-                        Symbols.clockArrowCirclepath.image
-                            .foregroundStyle(.orange)
-                            .font(.caption)
+                    if documentationLoader.isDeprecated(item.key) {
+                        Symbols.exclamationmarkTriangle.image
+                            .foregroundStyle(.red)
+                            .font(.body)
                     }
 
                     if !item.isActive {
@@ -493,9 +501,7 @@ struct SettingItemRow: View {
             key: "deprecated.setting",
             value: .bool(true),
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
-            isDeprecated: true,
-            documentation: "This setting is deprecated and will be removed in a future version"
+            contributions: [SourceContribution(source: .globalSettings, value: .bool(true))]
         ),
         SettingItem(
             key: "simpleValue",
@@ -646,11 +652,10 @@ struct SettingItemRow: View {
 #Preview("Setting Item Row - Deprecated") {
     SettingItemRow(
         item: SettingItem(
-            key: "deprecated.setting",
-            value: .bool(true),
+            key: "model",
+            value: .string("claude-sonnet-4-5-20250929"),
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
-            isDeprecated: true
+            contributions: [SourceContribution(source: .globalSettings, value: .string("claude-sonnet-4-5-20250929"))]
         ),
         isSelected: false
     )

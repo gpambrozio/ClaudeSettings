@@ -19,8 +19,6 @@ public struct SettingItem: Identifiable, Sendable {
     public let source: SettingsFileType
     public let overriddenBy: SettingsFileType?
     public let contributions: [SourceContribution]
-    public let isDeprecated: Bool
-    public let documentation: String?
 
     public init(
         id: UUID = UUID(),
@@ -28,9 +26,7 @@ public struct SettingItem: Identifiable, Sendable {
         value: SettingValue,
         source: SettingsFileType,
         overriddenBy: SettingsFileType? = nil,
-        contributions: [SourceContribution] = [],
-        isDeprecated: Bool = false,
-        documentation: String? = nil
+        contributions: [SourceContribution] = []
     ) {
         self.id = id
         self.key = key
@@ -38,8 +34,6 @@ public struct SettingItem: Identifiable, Sendable {
         self.source = source
         self.overriddenBy = overriddenBy
         self.contributions = contributions
-        self.isDeprecated = isDeprecated
-        self.documentation = documentation
     }
 
     /// Whether this setting is currently active (not overridden)

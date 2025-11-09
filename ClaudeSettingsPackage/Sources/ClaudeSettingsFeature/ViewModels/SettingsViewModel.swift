@@ -323,9 +323,7 @@ final public class SettingsViewModel {
                 value: activeSource.1,
                 source: lowestSource.0,
                 overriddenBy: overriddenBy,
-                contributions: contributions,
-                isDeprecated: false, // TODO: Implement deprecation checking
-                documentation: nil // TODO: Add documentation lookup
+                contributions: contributions
             )
 
             items.append(item)

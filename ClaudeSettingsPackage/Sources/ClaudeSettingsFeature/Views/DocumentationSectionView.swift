@@ -13,12 +13,25 @@ struct DocumentationSectionView: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
+            // Deprecation warning
+            if documentationLoader.isDeprecated(settingItem.key) {
+                HStack(spacing: 6) {
+                    Symbols.exclamationmarkTriangle.image
+                        .foregroundStyle(.red)
+                    Text("DEPRECATED")
+                        .font(.headline)
+                        .foregroundStyle(.red)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(6)
+            }
+
             if documentationLoader.isLoading {
                 loadingState
             } else if let settingDoc = documentationLoader.documentationWithFallback(for: settingItem.key) {
                 comprehensiveDocumentation(settingDoc)
-            } else if let documentation = settingItem.documentation {
-                basicDocumentation(documentation)
             }
         }
     }
@@ -135,15 +148,6 @@ struct DocumentationSectionView: View {
         }
     }
 
-    // MARK: - Basic Documentation
-
-    @ViewBuilder
-    private func basicDocumentation(_ documentation: String) -> some View {
-        Text(documentation)
-            .font(.body)
-            .foregroundStyle(.secondary)
-    }
-
     // MARK: - Loading State
 
     @ViewBuilder
@@ -167,8 +171,7 @@ struct DocumentationSectionView: View {
         key: "permissions.allow",
         value: .array([.string("Bash(git:*)")]),
         source: .globalSettings,
-        contributions: [SourceContribution(source: .globalSettings, value: .array([.string("Bash(git:*)")]))],
-        documentation: "Controls which tools and commands are allowed"
+        contributions: [SourceContribution(source: .globalSettings, value: .array([.string("Bash(git:*)")]))]
     )
 
     return DocumentationSectionView(settingItem: settingItem, documentationLoader: loader)
@@ -182,8 +185,7 @@ struct DocumentationSectionView: View {
         key: "unknown.setting",
         value: .bool(true),
         source: .globalSettings,
-        contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
-        documentation: "This is some basic documentation without comprehensive details"
+        contributions: [SourceContribution(source: .globalSettings, value: .bool(true))]
     )
 
     return DocumentationSectionView(settingItem: settingItem, documentationLoader: loader)

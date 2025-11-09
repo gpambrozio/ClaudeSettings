@@ -62,10 +62,10 @@ public struct InspectorView: View {
                             .foregroundStyle(typeInfo.1)
                             .cornerRadius(6)
 
-                        if item.isDeprecated {
-                            Symbols.clockArrowCirclepath.image
-                                .foregroundStyle(.orange)
-                                .font(.caption)
+                        if documentationLoader.isDeprecated(item.key) {
+                            Symbols.exclamationmarkTriangle.image
+                                .foregroundStyle(.red)
+                                .font(.body)
                         }
 
                         if !item.isActive {
@@ -89,7 +89,7 @@ public struct InspectorView: View {
                 }
 
                 // Documentation section
-                if documentationLoader.documentationWithFallback(for: item.key) != nil || item.documentation != nil {
+                if documentationLoader.documentationWithFallback(for: item.key) != nil {
                     Divider()
 
                     DocumentationSectionView(
@@ -1131,8 +1131,7 @@ extension NSTextView {
             contributions: [
                 SourceContribution(source: .globalSettings, value: .int(14)),
                 SourceContribution(source: .projectLocal, value: .int(16)),
-            ],
-            documentation: "Controls the font size of the editor"
+            ]
         ),
         SettingItem(
             key: "editor.theme",
@@ -1159,8 +1158,7 @@ extension NSTextView {
                 SourceContribution(source: .globalSettings, value: .array([.string("node_modules"), .string(".git")])),
                 SourceContribution(source: .projectSettings, value: .array([.string("dist")])),
                 SourceContribution(source: .projectLocal, value: .array([.string("build")])),
-            ],
-            documentation: "Files and directories to exclude from file operations"
+            ]
         ),
     ]
 
@@ -1178,9 +1176,7 @@ extension NSTextView {
             key: "deprecated.setting",
             value: .bool(true),
             source: .globalSettings,
-            contributions: [SourceContribution(source: .globalSettings, value: .bool(true))],
-            isDeprecated: true,
-            documentation: "This setting is deprecated and will be removed in version 2"
+            contributions: [SourceContribution(source: .globalSettings, value: .bool(true))]
         ),
     ]
 
@@ -1199,8 +1195,7 @@ extension NSTextView {
                     source: .projectSettings,
                     value: .object(["tabSize": .int(2), "insertSpaces": .bool(true), "detectIndentation": .bool(false)])
                 ),
-            ],
-            documentation: "Editor configuration object"
+            ]
         ),
     ]
 
@@ -1220,8 +1215,7 @@ extension NSTextView {
             contributions: [
                 SourceContribution(source: .globalSettings, value: .bool(false)),
                 SourceContribution(source: .projectLocal, value: .bool(true)),
-            ],
-            documentation: "Automatically format code when saving files"
+            ]
         ),
     ]
 

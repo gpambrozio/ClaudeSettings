@@ -534,22 +534,11 @@ public actor SettingsParser {
     }
 
     /// Validate known settings keys and values
+    ///
+    /// Note: Deprecation checking is handled at the UI level via DocumentationLoader.
+    /// This validation focuses on structural/syntactic correctness.
     private func validateKnownSettings(_ content: [String: SettingValue]) -> [ValidationError] {
         var errors: [ValidationError] = []
-
-        // Check for common deprecated keys (example - extend as needed)
-        let deprecatedKeys = [
-            "old_setting_name": "Use 'new_setting_name' instead",
-        ]
-
-        for (key, suggestion) in deprecatedKeys where content[key] != nil {
-            errors.append(ValidationError(
-                type: .deprecated,
-                message: "Setting '\(key)' is deprecated",
-                key: key,
-                suggestion: suggestion
-            ))
-        }
 
         // Validate specific known settings structure
         // Example: hooks should be an object

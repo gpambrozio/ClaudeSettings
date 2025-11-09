@@ -72,6 +72,7 @@ public struct SettingDocumentation: Codable, Sendable, Identifiable {
     public let type: String
     public let defaultValue: String?
     public let description: String
+    public let deprecated: Bool?
     public let enumValues: [String]?
     public let format: String?
     public let itemType: String?
@@ -99,6 +100,7 @@ public struct SettingDocumentation: Codable, Sendable, Identifiable {
         case type
         case defaultValue
         case description
+        case deprecated
         case enumValues
         case format
         case itemType
@@ -203,6 +205,11 @@ final public class DocumentationLoader: ObservableObject {
 
         let parentKey = String(key[..<lastDotIndex])
         return documentation(for: parentKey)
+    }
+
+    /// Check if a setting is deprecated
+    public func isDeprecated(_ key: String) -> Bool {
+        documentation(for: key)?.deprecated ?? false
     }
 }
 
