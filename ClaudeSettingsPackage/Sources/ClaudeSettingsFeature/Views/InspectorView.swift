@@ -746,19 +746,21 @@ public struct InspectorView: View {
                     .textFieldStyle(.roundedBorder)
                 }
 
-            case let .int(intValue):
-                TextField("Value", value: Binding(
-                    get: { if case let .int(val) = pendingEdit.value { return val } else { return intValue } },
-                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .int($0), targetFileType: pendingEdit.targetFileType) }
-                ), format: .number)
-                    .textFieldStyle(.roundedBorder)
+            case .int:
+                NumberTextFieldView(
+                    item: item,
+                    pendingEdit: pendingEdit,
+                    viewModel: viewModel,
+                    numberType: .integer
+                )
 
-            case let .double(doubleValue):
-                TextField("Value", value: Binding(
-                    get: { if case let .double(val) = pendingEdit.value { return val } else { return doubleValue } },
-                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .double($0), targetFileType: pendingEdit.targetFileType) }
-                ), format: .number)
-                    .textFieldStyle(.roundedBorder)
+            case .double:
+                NumberTextFieldView(
+                    item: item,
+                    pendingEdit: pendingEdit,
+                    viewModel: viewModel,
+                    numberType: .double
+                )
 
             case .array,
                  .object:
@@ -976,6 +978,131 @@ private struct JSONTextEditorView: View {
                 rawEditingText: newText
             )
             localValidationError = "Value is required"
+        }
+    }
+}
+
+// MARK: - Number TextField View
+
+private struct NumberTextFieldView: View {
+    let item: SettingItem
+    let pendingEdit: PendingEdit
+    let viewModel: SettingsViewModel
+    let numberType: NumberType
+
+    enum NumberType {
+        case integer
+        case double
+    }
+
+    @State private var localText = ""
+    @State private var localValidationError: String?
+    @State private var isUpdatingFromExternal = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField(numberType == .integer ? "Enter integer" : "Enter number", text: $localText)
+                .textFieldStyle(.roundedBorder)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(localValidationError != nil ? Color.red.opacity(0.5) : Color.clear, lineWidth: 1)
+                )
+                .onChange(of: localText) { _, newText in
+                    guard !isUpdatingFromExternal else { return }
+                    validateAndUpdate(newText)
+                }
+                .onAppear {
+                    localText = pendingEdit.rawEditingText ?? pendingEdit.value.formatted()
+                    localValidationError = pendingEdit.validationError
+                }
+                .onChange(of: pendingEdit.rawEditingText) { _, newRawText in
+                    let newText = newRawText ?? pendingEdit.value.formatted()
+                    guard newText != localText else { return }
+
+                    isUpdatingFromExternal = true
+                    localText = newText
+                    isUpdatingFromExternal = false
+                }
+                .onChange(of: pendingEdit.validationError) { oldValue, newError in
+                    guard oldValue != newError else { return }
+                    localValidationError = newError
+                }
+
+            if let validationError = localValidationError {
+                HStack(spacing: 4) {
+                    Symbols.exclamationmarkTriangle.image
+                        .font(.caption2)
+                    Text(validationError)
+                        .font(.caption)
+                }
+                .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func validateAndUpdate(_ newText: String) {
+        let trimmedText = newText.trimmingCharacters(in: .whitespaces)
+
+        // Check for empty input
+        guard !trimmedText.isEmpty else {
+            viewModel.updatePendingEdit(
+                key: item.key,
+                value: pendingEdit.value,
+                targetFileType: pendingEdit.targetFileType,
+                validationError: "Value is required",
+                rawEditingText: trimmedText
+            )
+            localValidationError = "Value is required"
+            return
+        }
+
+        // Validate based on number type
+        switch numberType {
+        case .integer:
+            if let intValue = Int(trimmedText) {
+                // Valid integer
+                viewModel.updatePendingEditIfChanged(
+                    item: item,
+                    value: .int(intValue),
+                    targetFileType: pendingEdit.targetFileType,
+                    validationError: nil,
+                    rawEditingText: trimmedText
+                )
+                localValidationError = nil
+            } else {
+                // Invalid integer
+                viewModel.updatePendingEdit(
+                    key: item.key,
+                    value: pendingEdit.value,
+                    targetFileType: pendingEdit.targetFileType,
+                    validationError: "Must be a valid integer",
+                    rawEditingText: trimmedText
+                )
+                localValidationError = "Must be a valid integer"
+            }
+
+        case .double:
+            if let doubleValue = Double(trimmedText) {
+                // Valid double
+                viewModel.updatePendingEditIfChanged(
+                    item: item,
+                    value: .double(doubleValue),
+                    targetFileType: pendingEdit.targetFileType,
+                    validationError: nil,
+                    rawEditingText: trimmedText
+                )
+                localValidationError = nil
+            } else {
+                // Invalid double
+                viewModel.updatePendingEdit(
+                    key: item.key,
+                    value: pendingEdit.value,
+                    targetFileType: pendingEdit.targetFileType,
+                    validationError: "Must be a valid number",
+                    rawEditingText: trimmedText
+                )
+                localValidationError = "Must be a valid number"
+            }
         }
     }
 }
