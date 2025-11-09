@@ -729,7 +729,6 @@ public struct InspectorView: View {
                                 Text(stringValue)
                                     .font(.system(.body, design: .monospaced))
                             }
-                            Spacer()
                             Symbols.chevronUpChevronDown.image
                                 .font(.caption2)
                         }
