@@ -104,7 +104,7 @@ public enum SettingValue: Codable, Sendable, Hashable {
     public func formatted() -> String {
         switch self {
         case let .string(value):
-            return "\"\(value)\""
+            return "\"\(Self.escapeJSONString(value))\""
         case let .int(value):
             return "\(value)"
         case let .double(value):
@@ -121,11 +121,40 @@ public enum SettingValue: Codable, Sendable, Hashable {
             if dict.isEmpty {
                 return "{}"
             }
-            let items = dict.map { "\"\($0)\": \($1.formatted())" }.joined(separator: ", ")
+            let items = dict.map { "\"\(Self.escapeJSONString($0))\": \($1.formatted())" }.joined(separator: ", ")
             return "{\(items)}"
         case .null:
             return "null"
         }
+    }
+
+    /// Escape special characters in a JSON string
+    /// - Parameter string: The string to escape
+    /// - Returns: The escaped string suitable for JSON output
+    private static func escapeJSONString(_ string: String) -> String {
+        var escaped = ""
+        for char in string {
+            switch char {
+            case "\"": escaped += "\\\""
+            case "\\": escaped += "\\\\"
+            case "\n": escaped += "\\n"
+            case "\r": escaped += "\\r"
+            case "\t": escaped += "\\t"
+            case "\u{08}": escaped += "\\b" // Backspace
+            case "\u{0C}": escaped += "\\f" // Form feed
+            default:
+                // Escape control characters (U+0000 to U+001F) as \uXXXX
+                if
+                    char.unicodeScalars.count == 1,
+                    let scalar = char.unicodeScalars.first,
+                    scalar.value <= 0x1F {
+                    escaped += String(format: "\\u%04x", scalar.value)
+                } else {
+                    escaped.append(char)
+                }
+            }
+        }
+        return escaped
     }
 
     /// Get the type name of this value for error messages
