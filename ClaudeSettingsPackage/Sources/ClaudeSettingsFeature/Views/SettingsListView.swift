@@ -296,23 +296,53 @@ struct HierarchicalSettingNodeView: View {
                 .sheet(isPresented: $showCopySheet, onDismiss: {
                     selectedSourceType = nil
                 }) {
-                    copyMoveSheetForNode(mode: .copy)
+                    NodeCopyMoveSheet(
+                        nodeKey: node.key,
+                        mode: .copy,
+                        contributingSources: SettingsActionHelpers.contributingFileTypes(for: node.key, in: settingsViewModel),
+                        availableFileTypes: SettingsActionHelpers.availableFileTypes(for: settingsViewModel),
+                        selectedSourceType: $selectedSourceType,
+                        onConfirm: { source, destination in
+                            performCopyNode(from: source, to: destination)
+                            showCopySheet = false
+                            selectedSourceType = nil
+                        },
+                        onCancel: {
+                            showCopySheet = false
+                            selectedSourceType = nil
+                        }
+                    )
                 }
                 .sheet(isPresented: $showMoveSheet, onDismiss: {
                     selectedSourceType = nil
                 }) {
-                    copyMoveSheetForNode(mode: .move)
+                    NodeCopyMoveSheet(
+                        nodeKey: node.key,
+                        mode: .move,
+                        contributingSources: SettingsActionHelpers.contributingFileTypes(for: node.key, in: settingsViewModel),
+                        availableFileTypes: SettingsActionHelpers.availableFileTypes(for: settingsViewModel),
+                        selectedSourceType: $selectedSourceType,
+                        onConfirm: { source, destination in
+                            performMoveNode(from: source, to: destination)
+                            showMoveSheet = false
+                            selectedSourceType = nil
+                        },
+                        onCancel: {
+                            showMoveSheet = false
+                            selectedSourceType = nil
+                        }
+                    )
                 }
                 .confirmationDialog(
                     "Delete Setting Group",
                     isPresented: $showDeleteConfirmation,
                     titleVisibility: .visible
                 ) {
-                    let contributingSources = contributingFileTypes()
+                    let contributingSources = SettingsActionHelpers.contributingFileTypes(for: node.key, in: settingsViewModel)
 
                     // Show delete option for each writable file
                     ForEach(contributingSources, id: \.self) { fileType in
-                        if !isReadOnly(fileType: fileType) {
+                        if !SettingsActionHelpers.isReadOnly(fileType: fileType, in: settingsViewModel) {
                             Button("Delete from \(fileType.displayName)", role: .destructive) {
                                 performDeleteNode(from: fileType)
                             }
@@ -320,7 +350,7 @@ struct HierarchicalSettingNodeView: View {
                     }
 
                     // Option to delete from all files if there are multiple
-                    let writableFiles = contributingSources.filter { !isReadOnly(fileType: $0) }
+                    let writableFiles = contributingSources.filter { !SettingsActionHelpers.isReadOnly(fileType: $0, in: settingsViewModel) }
                     if writableFiles.count > 1 {
                         Divider()
                         Button("Delete from All Files", role: .destructive) {
@@ -358,131 +388,7 @@ struct HierarchicalSettingNodeView: View {
         }
     }
 
-    // MARK: - Parent Node Context Menu Helpers
-
-    enum CopyMoveMode {
-        case copy
-        case move
-
-        var title: String {
-            switch self {
-            case .copy: return "Copy Setting"
-            case .move: return "Move Setting"
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func copyMoveSheetForNode(mode: CopyMoveMode) -> some View {
-        VStack(spacing: 20) {
-            Text(mode.title)
-                .font(.title2)
-                .bold()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Setting Key")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(node.key)
-                    .font(.system(.body, design: .monospaced))
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.secondary.opacity(0.1))
-                    .cornerRadius(4)
-            }
-
-            let contributingSources = contributingFileTypes()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Select Source File")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                ForEach(contributingSources, id: \.self) { sourceType in
-                    Button(action: {
-                        // Show destination picker for this source
-                        selectedSourceType = sourceType
-                    }) {
-                        HStack {
-                            Circle()
-                                .fill(sourceColor(for: sourceType))
-                                .frame(width: 8, height: 8)
-                            Text(sourceType.displayName)
-                            Spacer()
-                            Symbols.chevronRight.image
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.secondary.opacity(0.05))
-                        .cornerRadius(6)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            if let selectedSource = selectedSourceType {
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Select Destination File")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    ForEach(availableFileTypes(), id: \.self) { destType in
-                        Button(action: {
-                            if mode == .copy {
-                                performCopyNode(from: selectedSource, to: destType)
-                                showCopySheet = false
-                                selectedSourceType = nil
-                            } else {
-                                performMoveNode(from: selectedSource, to: destType)
-                                showMoveSheet = false
-                                selectedSourceType = nil
-                            }
-                        }) {
-                            HStack {
-                                Circle()
-                                    .fill(sourceColor(for: destType))
-                                    .frame(width: 8, height: 8)
-                                Text(destType.displayName)
-                                Spacer()
-                                Symbols.chevronRight.image
-                                    .font(.caption)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.secondary.opacity(0.05))
-                            .cornerRadius(6)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            HStack {
-                Button("Cancel") {
-                    if mode == .copy {
-                        showCopySheet = false
-                    } else {
-                        showMoveSheet = false
-                    }
-                    selectedSourceType = nil
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-            }
-        }
-        .padding()
-        .frame(width: 400)
-    }
-
-    private func contributingFileTypes() -> [SettingsFileType] {
-        let childSettings = settingsViewModel.settingItems.filter { $0.key.hasPrefix(node.key + ".") || $0.key == node.key }
-        let fileTypes = Set(childSettings.flatMap { $0.contributions.map(\.source) })
-        return Array(fileTypes).sorted { $0.displayName < $1.displayName }
-    }
+    // MARK: - Parent Node Action Handlers
 
     private func performCopyNode(from source: SettingsFileType, to destination: SettingsFileType) {
         Task {
@@ -532,51 +438,6 @@ struct HierarchicalSettingNodeView: View {
                     settingsViewModel.errorMessage = "Failed to delete '\(node.key)' from all files (\(fileNames)): \(error.localizedDescription)"
                 }
             }
-        }
-    }
-
-    private func isReadOnly(fileType: SettingsFileType) -> Bool {
-        if let file = settingsViewModel.settingsFiles.first(where: { $0.type == fileType }) {
-            return file.isReadOnly
-        }
-        return false
-    }
-
-    private func availableFileTypes() -> [SettingsFileType] {
-        var types: [SettingsFileType] = []
-
-        // Global files (always available)
-        types.append(.globalSettings)
-        types.append(.globalLocal)
-
-        // Project files (only if there's a project)
-        if settingsViewModel.settingItems.contains(where: { !$0.source.isGlobal }) {
-            types.append(.projectSettings)
-            types.append(.projectLocal)
-        }
-
-        // Filter out read-only files
-        return types.filter { type in
-            if let file = settingsViewModel.settingsFiles.first(where: { $0.type == type }) {
-                return !file.isReadOnly
-            }
-            return true // Can create new files
-        }
-    }
-
-    private func sourceColor(for type: SettingsFileType) -> Color {
-        switch type {
-        case .enterpriseManaged:
-            return .purple
-        case .globalSettings,
-             .globalLocal,
-             .globalMemory:
-            return .blue
-        case .projectSettings,
-             .projectLocal,
-             .projectMemory,
-             .projectLocalMemory:
-            return .green
         }
     }
 }
@@ -696,10 +557,32 @@ struct SettingItemRow: View {
             .disabled(settingsViewModel.isEditingMode)
         }
         .sheet(isPresented: $showCopySheet) {
-            copyMoveSheet(mode: .copy)
+            SettingCopyMoveSheet(
+                settingKey: item.key,
+                mode: .copy,
+                availableFileTypes: SettingsActionHelpers.availableFileTypes(for: settingsViewModel),
+                onSelectDestination: { destination in
+                    performCopy(to: destination)
+                    showCopySheet = false
+                },
+                onCancel: {
+                    showCopySheet = false
+                }
+            )
         }
         .sheet(isPresented: $showMoveSheet) {
-            copyMoveSheet(mode: .move)
+            SettingCopyMoveSheet(
+                settingKey: item.key,
+                mode: .move,
+                availableFileTypes: SettingsActionHelpers.availableFileTypes(for: settingsViewModel),
+                onSelectDestination: { destination in
+                    performMove(to: destination)
+                    showMoveSheet = false
+                },
+                onCancel: {
+                    showMoveSheet = false
+                }
+            )
         }
         .confirmationDialog(
             "Delete Setting",
@@ -708,7 +591,7 @@ struct SettingItemRow: View {
         ) {
             // Show delete option for each writable file that contains this setting
             ForEach(item.contributions, id: \.source) { contribution in
-                if !isReadOnly(fileType: contribution.source) {
+                if !SettingsActionHelpers.isReadOnly(fileType: contribution.source, in: settingsViewModel) {
                     Button("Delete from \(contribution.source.displayName)", role: .destructive) {
                         performDelete(from: contribution.source)
                     }
@@ -716,7 +599,7 @@ struct SettingItemRow: View {
             }
 
             // Option to delete from all files if there are multiple
-            if item.contributions.filter({ !isReadOnly(fileType: $0.source) }).count > 1 {
+            if item.contributions.filter({ !SettingsActionHelpers.isReadOnly(fileType: $0.source, in: settingsViewModel) }).count > 1 {
                 Divider()
                 Button("Delete from All Files", role: .destructive) {
                     performDeleteFromAll()
@@ -745,7 +628,7 @@ struct SettingItemRow: View {
     private func sourceIndicator(for type: SettingsFileType, label: String) -> some View {
         HStack(spacing: 2) {
             Circle()
-                .fill(sourceColor(for: type))
+                .fill(SettingsActionHelpers.sourceColor(for: type))
                 .frame(width: 6, height: 6)
 
             Text(sourceLabel(for: type))
@@ -838,7 +721,7 @@ struct SettingItemRow: View {
         }
     }
 
-    // MARK: - Context Menu Helpers
+    // MARK: - Action Helpers
 
     private func copyToClipboard(_ text: String) {
         let pasteboard = NSPasteboard.general
@@ -850,86 +733,7 @@ struct SettingItemRow: View {
         value.formatted()
     }
 
-    @ViewBuilder
-    private func copyMoveSheet(mode: CopyMoveMode) -> some View {
-        VStack(spacing: 20) {
-            Text(mode.title)
-                .font(.title2)
-                .bold()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Setting Key")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(item.key)
-                    .font(.system(.body, design: .monospaced))
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.secondary.opacity(0.1))
-                    .cornerRadius(4)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Select Destination File")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                ForEach(availableFileTypes(), id: \.self) { fileType in
-                    Button(action: {
-                        if mode == .copy {
-                            performCopy(to: fileType)
-                            showCopySheet = false
-                        } else {
-                            performMove(to: fileType)
-                            showMoveSheet = false
-                        }
-                    }) {
-                        HStack {
-                            Circle()
-                                .fill(sourceColor(for: fileType))
-                                .frame(width: 8, height: 8)
-                            Text(fileType.displayName)
-                            Spacer()
-                            Symbols.chevronRight.image
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.secondary.opacity(0.05))
-                        .cornerRadius(6)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            HStack {
-                Button("Cancel") {
-                    if mode == .copy {
-                        showCopySheet = false
-                    } else {
-                        showMoveSheet = false
-                    }
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-            }
-        }
-        .padding()
-        .frame(width: 400)
-    }
-
-    enum CopyMoveMode {
-        case copy
-        case move
-
-        var title: String {
-            switch self {
-            case .copy: return "Copy Setting"
-            case .move: return "Move Setting"
-            }
-        }
-    }
+    // MARK: - Action Handlers
 
     private func performCopy(to destination: SettingsFileType) {
         let sourceType = item.contributions.last?.source ?? item.source
@@ -974,7 +778,7 @@ struct SettingItemRow: View {
     private func performDeleteFromAll() {
         Task {
             do {
-                for contribution in item.contributions where !isReadOnly(fileType: contribution.source) {
+                for contribution in item.contributions where !SettingsActionHelpers.isReadOnly(fileType: contribution.source, in: settingsViewModel) {
                     try await settingsViewModel.deleteSetting(key: item.key, from: contribution.source)
                 }
             } catch {
@@ -982,35 +786,6 @@ struct SettingItemRow: View {
                     settingsViewModel.errorMessage = error.localizedDescription
                 }
             }
-        }
-    }
-
-    private func isReadOnly(fileType: SettingsFileType) -> Bool {
-        if let file = settingsViewModel.settingsFiles.first(where: { $0.type == fileType }) {
-            return file.isReadOnly
-        }
-        return false
-    }
-
-    private func availableFileTypes() -> [SettingsFileType] {
-        var types: [SettingsFileType] = []
-
-        // Global files (always available)
-        types.append(.globalSettings)
-        types.append(.globalLocal)
-
-        // Project files (only if there's a project)
-        if settingsViewModel.settingItems.contains(where: { !$0.source.isGlobal }) {
-            types.append(.projectSettings)
-            types.append(.projectLocal)
-        }
-
-        // Filter out read-only files
-        return types.filter { type in
-            if let file = settingsViewModel.settingsFiles.first(where: { $0.type == type }) {
-                return !file.isReadOnly
-            }
-            return true // Can create new files
         }
     }
 }
