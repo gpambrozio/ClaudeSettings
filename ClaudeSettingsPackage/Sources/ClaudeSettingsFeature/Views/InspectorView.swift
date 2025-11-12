@@ -159,78 +159,14 @@ public struct InspectorView: View {
                 Spacer()
             }
             .padding()
-            .sheet(isPresented: $showCopySheet) {
-                if let viewModel = settingsViewModel {
-                    SettingCopyMoveSheet(
-                        settingKey: item.key,
-                        mode: .copy,
-                        availableFileTypes: SettingsActionHelpers.availableFileTypes(for: viewModel),
-                        onSelectDestination: { destination in
-                            performCopy(item: item, to: destination)
-                            showCopySheet = false
-                        },
-                        onCancel: {
-                            showCopySheet = false
-                        }
-                    )
-                }
-            }
-            .sheet(isPresented: $showMoveSheet) {
-                if let viewModel = settingsViewModel {
-                    SettingCopyMoveSheet(
-                        settingKey: item.key,
-                        mode: .move,
-                        availableFileTypes: SettingsActionHelpers.availableFileTypes(for: viewModel),
-                        onSelectDestination: { destination in
-                            performMove(item: item, to: destination)
-                            showMoveSheet = false
-                        },
-                        onCancel: {
-                            showMoveSheet = false
-                        }
-                    )
-                }
-            }
-            .confirmationDialog(
-                "Delete Setting",
-                isPresented: $showDeleteConfirmation,
-                titleVisibility: .visible
-            ) {
-                if let viewModel = settingsViewModel {
-                    // Show delete option for each writable file that contains this setting
-                    ForEach(item.contributions, id: \.source) { contribution in
-                        if !SettingsActionHelpers.isReadOnly(fileType: contribution.source, in: viewModel) {
-                            Button("Delete from \(contribution.source.displayName)", role: .destructive) {
-                                performDelete(item: item, from: contribution.source)
-                            }
-                        }
-                    }
-
-                    // Option to delete from all files if there are multiple
-                    if item.contributions.filter({ !SettingsActionHelpers.isReadOnly(fileType: $0.source, in: viewModel) }).count > 1 {
-                        Divider()
-                        Button("Delete from All Files", role: .destructive) {
-                            performDeleteFromAll(item: item)
-                        }
-                    }
-                }
-
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("Choose which file to delete '\(item.key)' from. This action cannot be undone.")
-            }
-            .alert("Error", isPresented: $showErrorAlert) {
-                Button("OK", role: .cancel) {
-                    settingsViewModel?.errorMessage = nil
-                }
-            } message: {
-                if let errorMessage = settingsViewModel?.errorMessage {
-                    Text(errorMessage)
-                }
-            }
-            .onChange(of: settingsViewModel?.errorMessage) { _, newValue in
-                showErrorAlert = newValue != nil
-            }
+            .settingItemActions(
+                item: item,
+                viewModel: viewModel,
+                showCopySheet: $showCopySheet,
+                showMoveSheet: $showMoveSheet,
+                showDeleteConfirmation: $showDeleteConfirmation,
+                showErrorAlert: $showErrorAlert
+            )
         }
     }
 
@@ -525,94 +461,16 @@ public struct InspectorView: View {
             }
             .padding()
         }
-        .sheet(isPresented: $showCopySheet, onDismiss: {
-            selectedSourceType = nil
-        }) {
-            if let key = selectedKey, let viewModel = settingsViewModel {
-                NodeCopyMoveSheet(
-                    nodeKey: key,
-                    mode: .copy,
-                    contributingSources: SettingsActionHelpers.contributingFileTypes(for: key, in: viewModel),
-                    availableFileTypes: SettingsActionHelpers.availableFileTypes(for: viewModel),
-                    selectedSourceType: $selectedSourceType,
-                    onConfirm: { source, destination in
-                        performCopyNode(key: key, from: source, to: destination)
-                        showCopySheet = false
-                        selectedSourceType = nil
-                    },
-                    onCancel: {
-                        showCopySheet = false
-                        selectedSourceType = nil
-                    }
-                )
-            }
-        }
-        .sheet(isPresented: $showMoveSheet, onDismiss: {
-            selectedSourceType = nil
-        }) {
-            if let key = selectedKey, let viewModel = settingsViewModel {
-                NodeCopyMoveSheet(
-                    nodeKey: key,
-                    mode: .move,
-                    contributingSources: SettingsActionHelpers.contributingFileTypes(for: key, in: viewModel),
-                    availableFileTypes: SettingsActionHelpers.availableFileTypes(for: viewModel),
-                    selectedSourceType: $selectedSourceType,
-                    onConfirm: { source, destination in
-                        performMoveNode(key: key, from: source, to: destination)
-                        showMoveSheet = false
-                        selectedSourceType = nil
-                    },
-                    onCancel: {
-                        showMoveSheet = false
-                        selectedSourceType = nil
-                    }
-                )
-            }
-        }
-        .confirmationDialog(
-            "Delete Setting Group",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            if let key = selectedKey, let viewModel = settingsViewModel {
-                let contributingSources = SettingsActionHelpers.contributingFileTypes(for: key, in: viewModel)
-
-                // Show delete option for each writable file
-                ForEach(contributingSources, id: \.self) { fileType in
-                    if !SettingsActionHelpers.isReadOnly(fileType: fileType, in: viewModel) {
-                        Button("Delete from \(fileType.displayName)", role: .destructive) {
-                            performDeleteNode(key: key, from: fileType)
-                        }
-                    }
-                }
-
-                // Option to delete from all files if there are multiple
-                let writableFiles = contributingSources.filter { !SettingsActionHelpers.isReadOnly(fileType: $0, in: viewModel) }
-                if writableFiles.count > 1 {
-                    Divider()
-                    Button("Delete from All Files", role: .destructive) {
-                        performDeleteNodeFromAll(key: key, fileTypes: writableFiles)
-                    }
-                }
-            }
-
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            if let key = selectedKey {
-                Text("Choose which file to delete '\(key)' and all its child settings from. This action cannot be undone.")
-            }
-        }
-        .alert("Error", isPresented: $showErrorAlert) {
-            Button("OK", role: .cancel) {
-                settingsViewModel?.errorMessage = nil
-            }
-        } message: {
-            if let errorMessage = settingsViewModel?.errorMessage {
-                Text(errorMessage)
-            }
-        }
-        .onChange(of: settingsViewModel?.errorMessage) { _, newValue in
-            showErrorAlert = newValue != nil
+        .if(selectedKey != nil && viewModel != nil) { view in
+            view.parentNodeActions(
+                nodeKey: selectedKey!,
+                viewModel: viewModel!,
+                showCopySheet: $showCopySheet,
+                showMoveSheet: $showMoveSheet,
+                showDeleteConfirmation: $showDeleteConfirmation,
+                showErrorAlert: $showErrorAlert,
+                selectedSourceType: $selectedSourceType
+            )
         }
     }
 
@@ -699,94 +557,16 @@ public struct InspectorView: View {
             }
             .padding()
         }
-        .sheet(isPresented: $showCopySheet, onDismiss: {
-            selectedSourceType = nil
-        }) {
-            if let key = selectedKey, let viewModel = settingsViewModel {
-                NodeCopyMoveSheet(
-                    nodeKey: key,
-                    mode: .copy,
-                    contributingSources: SettingsActionHelpers.contributingFileTypes(for: key, in: viewModel),
-                    availableFileTypes: SettingsActionHelpers.availableFileTypes(for: viewModel),
-                    selectedSourceType: $selectedSourceType,
-                    onConfirm: { source, destination in
-                        performCopyNode(key: key, from: source, to: destination)
-                        showCopySheet = false
-                        selectedSourceType = nil
-                    },
-                    onCancel: {
-                        showCopySheet = false
-                        selectedSourceType = nil
-                    }
-                )
-            }
-        }
-        .sheet(isPresented: $showMoveSheet, onDismiss: {
-            selectedSourceType = nil
-        }) {
-            if let key = selectedKey, let viewModel = settingsViewModel {
-                NodeCopyMoveSheet(
-                    nodeKey: key,
-                    mode: .move,
-                    contributingSources: SettingsActionHelpers.contributingFileTypes(for: key, in: viewModel),
-                    availableFileTypes: SettingsActionHelpers.availableFileTypes(for: viewModel),
-                    selectedSourceType: $selectedSourceType,
-                    onConfirm: { source, destination in
-                        performMoveNode(key: key, from: source, to: destination)
-                        showMoveSheet = false
-                        selectedSourceType = nil
-                    },
-                    onCancel: {
-                        showMoveSheet = false
-                        selectedSourceType = nil
-                    }
-                )
-            }
-        }
-        .confirmationDialog(
-            "Delete Setting Group",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            if let key = selectedKey, let viewModel = settingsViewModel {
-                let contributingSources = SettingsActionHelpers.contributingFileTypes(for: key, in: viewModel)
-
-                // Show delete option for each writable file
-                ForEach(contributingSources, id: \.self) { fileType in
-                    if !SettingsActionHelpers.isReadOnly(fileType: fileType, in: viewModel) {
-                        Button("Delete from \(fileType.displayName)", role: .destructive) {
-                            performDeleteNode(key: key, from: fileType)
-                        }
-                    }
-                }
-
-                // Option to delete from all files if there are multiple
-                let writableFiles = contributingSources.filter { !SettingsActionHelpers.isReadOnly(fileType: $0, in: viewModel) }
-                if writableFiles.count > 1 {
-                    Divider()
-                    Button("Delete from All Files", role: .destructive) {
-                        performDeleteNodeFromAll(key: key, fileTypes: writableFiles)
-                    }
-                }
-            }
-
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            if let key = selectedKey {
-                Text("Choose which file to delete '\(key)' and all its child settings from. This action cannot be undone.")
-            }
-        }
-        .alert("Error", isPresented: $showErrorAlert) {
-            Button("OK", role: .cancel) {
-                settingsViewModel?.errorMessage = nil
-            }
-        } message: {
-            if let errorMessage = settingsViewModel?.errorMessage {
-                Text(errorMessage)
-            }
-        }
-        .onChange(of: settingsViewModel?.errorMessage) { _, newValue in
-            showErrorAlert = newValue != nil
+        .if(selectedKey != nil && viewModel != nil) { view in
+            view.parentNodeActions(
+                nodeKey: selectedKey!,
+                viewModel: viewModel!,
+                showCopySheet: $showCopySheet,
+                showMoveSheet: $showMoveSheet,
+                showDeleteConfirmation: $showDeleteConfirmation,
+                showErrorAlert: $showErrorAlert,
+                selectedSourceType: $selectedSourceType
+            )
         }
     }
 
@@ -966,134 +746,6 @@ public struct InspectorView: View {
                 Text("null")
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    // MARK: - Copy/Move/Delete Actions
-
-    private func performCopy(item: SettingItem, to destination: SettingsFileType) {
-        guard let viewModel = settingsViewModel else { return }
-
-        // Find the source file type for the active value
-        let sourceType = item.contributions.last?.source ?? item.source
-
-        Task {
-            do {
-                try await viewModel.copySetting(key: item.key, from: sourceType, to: destination)
-            } catch {
-                await MainActor.run {
-                    viewModel.errorMessage = error.localizedDescription
-                }
-            }
-        }
-    }
-
-    private func performMove(item: SettingItem, to destination: SettingsFileType) {
-        guard let viewModel = settingsViewModel else { return }
-
-        // Find the source file type for the active value
-        let sourceType = item.contributions.last?.source ?? item.source
-
-        Task {
-            do {
-                try await viewModel.moveSetting(key: item.key, from: sourceType, to: destination)
-            } catch {
-                await MainActor.run {
-                    viewModel.errorMessage = error.localizedDescription
-                }
-            }
-        }
-    }
-
-    private func performDelete(item: SettingItem, from fileType: SettingsFileType) {
-        guard let viewModel = settingsViewModel else { return }
-
-        Task {
-            do {
-                try await viewModel.deleteSetting(key: item.key, from: fileType)
-            } catch {
-                await MainActor.run {
-                    viewModel.errorMessage = error.localizedDescription
-                }
-            }
-        }
-    }
-
-    private func performDeleteFromAll(item: SettingItem) {
-        guard let viewModel = settingsViewModel else { return }
-
-        // Delete from all writable files that have this setting
-        Task {
-            do {
-                for contribution in item.contributions where !SettingsActionHelpers.isReadOnly(fileType: contribution.source, in: viewModel) {
-                    try await viewModel.deleteSetting(key: item.key, from: contribution.source)
-                }
-            } catch {
-                await MainActor.run {
-                    viewModel.errorMessage = error.localizedDescription
-                }
-            }
-        }
-    }
-
-    // MARK: - Node Operations (for parent nodes)
-
-    private func performCopyNode(key: String, from source: SettingsFileType, to destination: SettingsFileType) {
-        guard let viewModel = settingsViewModel else { return }
-
-        Task {
-            do {
-                try await viewModel.copyNode(key: key, from: source, to: destination)
-            } catch {
-                await MainActor.run {
-                    viewModel.errorMessage = "Failed to copy '\(key)' from \(source.displayName) to \(destination.displayName): \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    private func performMoveNode(key: String, from source: SettingsFileType, to destination: SettingsFileType) {
-        guard let viewModel = settingsViewModel else { return }
-
-        Task {
-            do {
-                try await viewModel.moveNode(key: key, from: source, to: destination)
-            } catch {
-                await MainActor.run {
-                    viewModel.errorMessage = "Failed to move '\(key)' from \(source.displayName) to \(destination.displayName): \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    private func performDeleteNode(key: String, from fileType: SettingsFileType) {
-        guard let viewModel = settingsViewModel else { return }
-
-        Task {
-            do {
-                try await viewModel.deleteNode(key: key, from: fileType)
-            } catch {
-                await MainActor.run {
-                    viewModel.errorMessage = "Failed to delete '\(key)' from \(fileType.displayName): \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    private func performDeleteNodeFromAll(key: String, fileTypes: [SettingsFileType]) {
-        guard let viewModel = settingsViewModel else { return }
-
-        Task {
-            do {
-                for fileType in fileTypes where !SettingsActionHelpers.isReadOnly(fileType: fileType, in: viewModel) {
-                    try await viewModel.deleteNode(key: key, from: fileType)
-                }
-            } catch {
-                await MainActor.run {
-                    let fileNames = fileTypes.map { $0.displayName }.joined(separator: ", ")
-                    viewModel.errorMessage = "Failed to delete '\(key)' from all files (\(fileNames)): \(error.localizedDescription)"
-                }
             }
         }
     }
