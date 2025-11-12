@@ -946,8 +946,9 @@ final public class SettingsViewModel {
                 let originalFile = originalDestinationFile,
                 let destIndex = destinationIndex {
                 logger.warning("Copy failed, rolling back destination file to original state")
-                settingsFiles[destIndex] = originalFile
-                try? await settingsParser.writeSettingsFile(&settingsFiles[destIndex])
+                var rollbackFile = originalFile
+                try? await settingsParser.writeSettingsFile(&rollbackFile)
+                settingsFiles[destIndex] = rollbackFile
 
                 // Recompute state after rollback
                 settingItems = computeSettingItems(from: settingsFiles)
@@ -1016,15 +1017,17 @@ final public class SettingsViewModel {
             if
                 let originalDest = originalDestinationFile,
                 let destIndex = destinationIndex {
-                settingsFiles[destIndex] = originalDest
-                try? await settingsParser.writeSettingsFile(&settingsFiles[destIndex])
+                var rollbackFile = originalDest
+                try? await settingsParser.writeSettingsFile(&rollbackFile)
+                settingsFiles[destIndex] = rollbackFile
             }
 
             if
                 let originalSrc = originalSourceFile,
                 let srcIndex = sourceIndex {
-                settingsFiles[srcIndex] = originalSrc
-                try? await settingsParser.writeSettingsFile(&settingsFiles[srcIndex])
+                var rollbackFile = originalSrc
+                try? await settingsParser.writeSettingsFile(&rollbackFile)
+                settingsFiles[srcIndex] = rollbackFile
             }
 
             // Recompute state after rollback
@@ -1076,8 +1079,9 @@ final public class SettingsViewModel {
                 let original = originalFile,
                 let index = fileIndex {
                 logger.warning("Delete failed, rolling back file to original state")
-                settingsFiles[index] = original
-                try? await settingsParser.writeSettingsFile(&settingsFiles[index])
+                var rollbackFile = original
+                try? await settingsParser.writeSettingsFile(&rollbackFile)
+                settingsFiles[index] = rollbackFile
 
                 // Recompute state after rollback
                 settingItems = computeSettingItems(from: settingsFiles)
