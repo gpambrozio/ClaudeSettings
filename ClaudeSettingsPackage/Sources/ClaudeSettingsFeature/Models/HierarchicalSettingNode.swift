@@ -44,4 +44,15 @@ public struct HierarchicalSettingNode: Identifiable, Sendable {
         }
         return nil
     }
+
+    /// Recursively collects all leaf setting keys under this node
+    /// - Returns: Array of setting keys for all leaf nodes in this subtree
+    public func allLeafKeys() -> [String] {
+        if isLeaf, let item = settingItem {
+            return [item.key]
+        }
+
+        // For parent nodes, recursively collect keys from all children
+        return children.flatMap { $0.allLeafKeys() }
+    }
 }

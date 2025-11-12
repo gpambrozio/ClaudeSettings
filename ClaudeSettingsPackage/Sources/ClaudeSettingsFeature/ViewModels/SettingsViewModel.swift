@@ -761,11 +761,12 @@ final public class SettingsViewModel {
     ///   - key: The setting key to update
     ///   - value: The new value
     ///   - fileType: The file type to update (defaults to the highest precedence non-enterprise file)
-    public func updateSetting(key: String, value: SettingValue, in fileType: SettingsFileType) async throws {
+    ///   - skipBackup: If true, skip creating a backup (used for batch operations)
+    public func updateSetting(key: String, value: SettingValue, in fileType: SettingsFileType, skipBackup: Bool = false) async throws {
         logger.info("Updating setting '\(key)' in \(fileType.displayName)")
 
-        // Create backup before modifying (only if file exists)
-        if let file = settingsFiles.first(where: { $0.type == fileType }) {
+        // Create backup before modifying (only if file exists, unless skipped for batch operations)
+        if !skipBackup, let file = settingsFiles.first(where: { $0.type == fileType }) {
             _ = try await fileSystemManager.createBackup(of: file.path)
         }
 
@@ -783,7 +784,8 @@ final public class SettingsViewModel {
     /// - Parameters:
     ///   - key: The setting key to delete
     ///   - fileType: The file type to delete from
-    public func deleteSetting(key: String, from fileType: SettingsFileType) async throws {
+    ///   - skipBackup: If true, skip creating a backup (used for batch operations)
+    public func deleteSetting(key: String, from fileType: SettingsFileType, skipBackup: Bool = false) async throws {
         logger.info("Deleting setting '\(key)' from \(fileType.displayName)")
 
         guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
@@ -799,8 +801,10 @@ final public class SettingsViewModel {
             throw SettingsError.fileIsReadOnly(file.path)
         }
 
-        // Create backup before modifying
-        _ = try await fileSystemManager.createBackup(of: file.path)
+        // Create backup before modifying (unless skipped for batch operations)
+        if !skipBackup {
+            _ = try await fileSystemManager.createBackup(of: file.path)
+        }
 
         // Remove the nested value from the content dictionary
         var updatedContent = file.content
@@ -823,7 +827,8 @@ final public class SettingsViewModel {
     ///   - key: The setting key to copy
     ///   - sourceType: The source file type
     ///   - destinationType: The destination file type
-    public func copySetting(key: String, from sourceType: SettingsFileType, to destinationType: SettingsFileType) async throws {
+    ///   - skipBackup: If true, skip creating a backup (used for batch operations)
+    public func copySetting(key: String, from sourceType: SettingsFileType, to destinationType: SettingsFileType, skipBackup: Bool = false) async throws {
         logger.info("Copying setting '\(key)' from \(sourceType.displayName) to \(destinationType.displayName)")
 
         // Find the setting in the source file
@@ -834,7 +839,7 @@ final public class SettingsViewModel {
         }
 
         // Copy the value to the destination
-        try await updateSetting(key: key, value: contribution.value, in: destinationType)
+        try await updateSetting(key: key, value: contribution.value, in: destinationType, skipBackup: skipBackup)
 
         logger.info("Successfully copied setting '\(key)' to \(destinationType.displayName)")
     }
@@ -854,6 +859,127 @@ final public class SettingsViewModel {
         try await deleteSetting(key: key, from: sourceType)
 
         logger.info("Successfully moved setting '\(key)' to \(destinationType.displayName)")
+    }
+
+    /// Find a node by key in the hierarchical settings tree
+    /// - Parameter key: The key to search for
+    /// - Returns: The node if found, nil otherwise
+    private func findNode(withKey key: String, in nodes: [HierarchicalSettingNode]) -> HierarchicalSettingNode? {
+        for node in nodes {
+            if node.key == key {
+                return node
+            }
+            if let found = findNode(withKey: key, in: node.children) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    /// Copy a setting or entire setting subtree from one file to another
+    /// - Parameters:
+    ///   - key: The setting key to copy (can be leaf or parent node)
+    ///   - sourceType: The source file type
+    ///   - destinationType: The destination file type
+    public func copyNode(key: String, from sourceType: SettingsFileType, to destinationType: SettingsFileType) async throws {
+        // Find the node in the hierarchical tree
+        guard let node = findNode(withKey: key, in: hierarchicalSettings) else {
+            throw SettingsError.settingNotFound(key)
+        }
+
+        // Get all leaf keys under this node (including the node itself if it's a leaf)
+        let leafKeys = node.allLeafKeys()
+
+        guard !leafKeys.isEmpty else {
+            throw SettingsError.settingNotFound(key)
+        }
+
+        logger.info("Copying node '\(key)' (\(leafKeys.count) settings) from \(sourceType.displayName) to \(destinationType.displayName)")
+
+        // Create a single backup of the destination file before batch operation
+        if let destinationFile = settingsFiles.first(where: { $0.type == destinationType }) {
+            _ = try await fileSystemManager.createBackup(of: destinationFile.path)
+        }
+
+        // Copy each leaf setting (skip individual backups since we created one above)
+        for leafKey in leafKeys {
+            try await copySetting(key: leafKey, from: sourceType, to: destinationType, skipBackup: true)
+        }
+
+        logger.info("Successfully copied node '\(key)' (\(leafKeys.count) settings) to \(destinationType.displayName)")
+    }
+
+    /// Move a setting or entire setting subtree from one file to another
+    /// - Parameters:
+    ///   - key: The setting key to move (can be leaf or parent node)
+    ///   - sourceType: The source file type
+    ///   - destinationType: The destination file type
+    public func moveNode(key: String, from sourceType: SettingsFileType, to destinationType: SettingsFileType) async throws {
+        // Find the node in the hierarchical tree
+        guard let node = findNode(withKey: key, in: hierarchicalSettings) else {
+            throw SettingsError.settingNotFound(key)
+        }
+
+        // Get all leaf keys under this node (including the node itself if it's a leaf)
+        let leafKeys = node.allLeafKeys()
+
+        guard !leafKeys.isEmpty else {
+            throw SettingsError.settingNotFound(key)
+        }
+
+        logger.info("Moving node '\(key)' (\(leafKeys.count) settings) from \(sourceType.displayName) to \(destinationType.displayName)")
+
+        // Create backups of both files before batch operations
+        if let destinationFile = settingsFiles.first(where: { $0.type == destinationType }) {
+            _ = try await fileSystemManager.createBackup(of: destinationFile.path)
+        }
+        if let sourceFile = settingsFiles.first(where: { $0.type == sourceType }) {
+            _ = try await fileSystemManager.createBackup(of: sourceFile.path)
+        }
+
+        // Copy all leaf settings to destination first (skip individual backups)
+        for leafKey in leafKeys {
+            try await copySetting(key: leafKey, from: sourceType, to: destinationType, skipBackup: true)
+        }
+
+        // Then delete all leaf settings from source (skip individual backups)
+        for leafKey in leafKeys {
+            try await deleteSetting(key: leafKey, from: sourceType, skipBackup: true)
+        }
+
+        logger.info("Successfully moved node '\(key)' (\(leafKeys.count) settings) to \(destinationType.displayName)")
+    }
+
+    /// Delete a setting or entire setting subtree from a specific file
+    /// - Parameters:
+    ///   - key: The setting key to delete (can be leaf or parent node)
+    ///   - fileType: The file type to delete from
+    public func deleteNode(key: String, from fileType: SettingsFileType) async throws {
+        // Find the node in the hierarchical tree
+        guard let node = findNode(withKey: key, in: hierarchicalSettings) else {
+            throw SettingsError.settingNotFound(key)
+        }
+
+        // Get all leaf keys under this node (including the node itself if it's a leaf)
+        let leafKeys = node.allLeafKeys()
+
+        guard !leafKeys.isEmpty else {
+            throw SettingsError.settingNotFound(key)
+        }
+
+        logger.info("Deleting node '\(key)' (\(leafKeys.count) settings) from \(fileType.displayName)")
+
+        // Create a single backup before batch operation
+        if let file = settingsFiles.first(where: { $0.type == fileType }) {
+            _ = try await fileSystemManager.createBackup(of: file.path)
+        }
+
+        // Delete each leaf setting (skip individual backups since we created one above)
+        for leafKey in leafKeys {
+            try await deleteSetting(key: leafKey, from: fileType, skipBackup: true)
+        }
+
+        logger.info("Successfully deleted node '\(key)' (\(leafKeys.count) settings) from \(fileType.displayName)")
     }
 
     // MARK: - Helper Methods

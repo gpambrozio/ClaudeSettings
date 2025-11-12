@@ -151,7 +151,11 @@ public actor SettingsParser {
                 objectKeyOrder = providedOrder
             } else if let storedOrder = nestedKeyOrders[path] {
                 // Nested object with stored order from original JSON
-                objectKeyOrder = storedOrder.filter { dict.keys.contains($0) }
+                // Include new keys first (sorted), then existing keys in original order
+                let storedKeys = Set(storedOrder)
+                let newKeysInDict = dict.keys.filter { !storedKeys.contains($0) }.sorted()
+                let existingKeysInOrder = storedOrder.filter { dict.keys.contains($0) }
+                objectKeyOrder = newKeysInDict + existingKeysInOrder
             } else {
                 // No stored order - use sorted keys
                 objectKeyOrder = dict.keys.sorted()
