@@ -699,12 +699,16 @@ public struct InspectorView: View {
             }
             .padding()
         }
-        .sheet(isPresented: $showCopySheet) {
+        .sheet(isPresented: $showCopySheet, onDismiss: {
+            selectedSourceType = nil
+        }) {
             if let key = selectedKey {
                 copyMoveSheetForNode(key: key, mode: .copy)
             }
         }
-        .sheet(isPresented: $showMoveSheet) {
+        .sheet(isPresented: $showMoveSheet, onDismiss: {
+            selectedSourceType = nil
+        }) {
             if let key = selectedKey {
                 copyMoveSheetForNode(key: key, mode: .move)
             }
@@ -839,12 +843,16 @@ public struct InspectorView: View {
             }
             .padding()
         }
-        .sheet(isPresented: $showCopySheet) {
+        .sheet(isPresented: $showCopySheet, onDismiss: {
+            selectedSourceType = nil
+        }) {
             if let key = selectedKey {
                 copyMoveSheetForNode(key: key, mode: .copy)
             }
         }
-        .sheet(isPresented: $showMoveSheet) {
+        .sheet(isPresented: $showMoveSheet, onDismiss: {
+            selectedSourceType = nil
+        }) {
             if let key = selectedKey {
                 copyMoveSheetForNode(key: key, mode: .move)
             }
@@ -1199,7 +1207,7 @@ public struct InspectorView: View {
                 try await viewModel.copyNode(key: key, from: source, to: destination)
             } catch {
                 await MainActor.run {
-                    viewModel.errorMessage = error.localizedDescription
+                    viewModel.errorMessage = "Failed to copy '\(key)' from \(source.displayName) to \(destination.displayName): \(error.localizedDescription)"
                 }
             }
         }
@@ -1213,7 +1221,7 @@ public struct InspectorView: View {
                 try await viewModel.moveNode(key: key, from: source, to: destination)
             } catch {
                 await MainActor.run {
-                    viewModel.errorMessage = error.localizedDescription
+                    viewModel.errorMessage = "Failed to move '\(key)' from \(source.displayName) to \(destination.displayName): \(error.localizedDescription)"
                 }
             }
         }
@@ -1227,7 +1235,7 @@ public struct InspectorView: View {
                 try await viewModel.deleteNode(key: key, from: fileType)
             } catch {
                 await MainActor.run {
-                    viewModel.errorMessage = error.localizedDescription
+                    viewModel.errorMessage = "Failed to delete '\(key)' from \(fileType.displayName): \(error.localizedDescription)"
                 }
             }
         }
@@ -1243,7 +1251,8 @@ public struct InspectorView: View {
                 }
             } catch {
                 await MainActor.run {
-                    viewModel.errorMessage = error.localizedDescription
+                    let fileNames = fileTypes.map { $0.displayName }.joined(separator: ", ")
+                    viewModel.errorMessage = "Failed to delete '\(key)' from all files (\(fileNames)): \(error.localizedDescription)"
                 }
             }
         }
