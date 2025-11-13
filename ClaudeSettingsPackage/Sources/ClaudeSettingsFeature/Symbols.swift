@@ -4,10 +4,13 @@ import SwiftUI
 @SFSymbol
 public enum Symbols: String {
     case arrowRight = "arrow.right"
+    case arrowRightDocOnClipboard = "arrow.right.doc.on.clipboard"
+    case arrowshapeTurnUpForward = "arrowshape.turn.up.forward"
     case checkmarkCircle = "checkmark.circle"
     case chevronRight = "chevron.right"
     case chevronUpChevronDown = "chevron.up.chevron.down"
     case clockArrowCirclepath = "clock.arrow.circlepath"
+    case docOnDoc = "doc.on.doc"
     case docText = "doc.text"
     case ellipsisCircle = "ellipsis.circle"
     case exclamationmark2 = "exclamationmark.2"
@@ -22,4 +25,5 @@ public enum Symbols: String {
     case plusCircle = "plus.circle"
     case questionmarkCircle = "questionmark.circle"
     case sidebarLeft = "sidebar.left"
+    case trash
 }

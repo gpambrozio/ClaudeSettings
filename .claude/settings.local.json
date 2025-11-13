@@ -33,7 +33,8 @@
       "SlashCommand(/git:code-review)",
       "WebFetch(domain:stackoverflow.com)",
       "WebFetch(domain:www.schemastore.org)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "mcp__plugin_SwiftDevelopment_sosumi__searchAppleDocumentation"
     ],
     "defaultMode": "acceptEdits"
   },

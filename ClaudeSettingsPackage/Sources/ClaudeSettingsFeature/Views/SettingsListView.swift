@@ -95,6 +95,25 @@ public struct SettingsListView: View {
     @ViewBuilder
     private var settingsContent: some View {
         List(selection: $selectedKey) {
+            // Editing Mode Indicator
+            if settingsViewModel.isEditingMode {
+                Section {
+                    HStack {
+                        Symbols.exclamationmarkCircle.image
+                            .foregroundStyle(.orange)
+                        Text("Editing Mode Active")
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Text("Actions are disabled")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(Color.orange.opacity(0.1))
+                }
+            }
+
             // Validation Errors Section (if any)
             if !settingsViewModel.validationErrors.isEmpty {
                 Section {
@@ -120,7 +139,8 @@ public struct SettingsListView: View {
                         node: node,
                         selectedKey: $selectedKey,
                         expandedNodes: $expandedNodes,
-                        documentationLoader: documentationLoader
+                        documentationLoader: documentationLoader,
+                        settingsViewModel: settingsViewModel
                     )
                 }
             } header: {
@@ -214,6 +234,8 @@ struct HierarchicalSettingNodeView: View {
     @Binding var selectedKey: String?
     @Binding var expandedNodes: Set<String>
     @ObservedObject var documentationLoader: DocumentationLoader
+    let settingsViewModel: SettingsViewModel
+    @State private var actionState = SettingActionState()
 
     var body: some View {
         Group {
@@ -236,7 +258,8 @@ struct HierarchicalSettingNodeView: View {
                             node: childNode,
                             selectedKey: $selectedKey,
                             expandedNodes: $expandedNodes,
-                            documentationLoader: documentationLoader
+                            documentationLoader: documentationLoader,
+                            settingsViewModel: settingsViewModel
                         )
                         .padding(.leading, 16)
                     }
@@ -258,15 +281,26 @@ struct HierarchicalSettingNodeView: View {
                     .onTapGesture {
                         selectedKey = node.key
                     }
+                    .parentNodeContextMenu(
+                        nodeKey: node.key,
+                        viewModel: settingsViewModel,
+                        actionState: actionState
+                    )
                 }
                 .tag(node.key)
+                .parentNodeActions(
+                    nodeKey: node.key,
+                    viewModel: settingsViewModel,
+                    actionState: actionState
+                )
             } else if let item = node.settingItem {
                 // Leaf node - display as regular setting item row
                 SettingItemRow(
                     item: item,
                     isSelected: selectedKey == item.key,
                     displayName: node.displayName,
-                    documentationLoader: documentationLoader
+                    documentationLoader: documentationLoader,
+                    settingsViewModel: settingsViewModel
                 )
                 .tag(item.key)
             }
@@ -280,12 +314,15 @@ struct SettingItemRow: View {
     let isSelected: Bool
     let displayName: String?
     @ObservedObject var documentationLoader: DocumentationLoader
+    let settingsViewModel: SettingsViewModel
+    @State private var actionState = SettingActionState()
 
-    init(item: SettingItem, isSelected: Bool, displayName: String? = nil, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
+    init(item: SettingItem, isSelected: Bool, displayName: String? = nil, documentationLoader: DocumentationLoader = DocumentationLoader.shared, settingsViewModel: SettingsViewModel) {
         self.item = item
         self.isSelected = isSelected
         self.displayName = displayName
         self.documentationLoader = documentationLoader
+        self.settingsViewModel = settingsViewModel
     }
 
     var body: some View {
@@ -348,13 +385,23 @@ struct SettingItemRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .settingItemContextMenu(
+            item: item,
+            viewModel: settingsViewModel,
+            actionState: actionState
+        )
+        .settingItemActions(
+            item: item,
+            viewModel: settingsViewModel,
+            actionState: actionState
+        )
     }
 
     @ViewBuilder
     private func sourceIndicator(for type: SettingsFileType, label: String) -> some View {
         HStack(spacing: 2) {
             Circle()
-                .fill(sourceColor(for: type))
+                .fill(SettingsActionHelpers.sourceColor(for: type))
                 .frame(width: 6, height: 6)
 
             Text(sourceLabel(for: type))
@@ -364,38 +411,7 @@ struct SettingItemRow: View {
     }
 
     private func sourceLabel(for type: SettingsFileType) -> String {
-        switch type {
-        case .globalSettings:
-            return "Global"
-        case .globalLocal:
-            return "Global Local"
-        case .projectSettings:
-            return "Project"
-        case .projectLocal:
-            return "Project Local"
-        case .enterpriseManaged:
-            return "Enterprise"
-        case .globalMemory,
-             .projectMemory,
-             .projectLocalMemory:
-            return "Memory"
-        }
-    }
-
-    private func sourceColor(for type: SettingsFileType) -> Color {
-        switch type {
-        case .enterpriseManaged:
-            return .purple
-        case .globalSettings,
-             .globalLocal,
-             .globalMemory:
-            return .blue
-        case .projectSettings,
-             .projectLocal,
-             .projectMemory,
-             .projectLocalMemory:
-            return .green
-        }
+        SettingsActionHelpers.sourceLabel(for: type)
     }
 
     private var valueDescription: String {
@@ -452,7 +468,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - With Data") {
     @Previewable @State var selectedKey: String?
-    let viewModel = SettingsViewModel(project: nil)
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = [
         SettingItem(
             key: "editor.fontSize",
@@ -534,7 +550,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - Empty") {
     @Previewable @State var selectedKey: String?
-    let viewModel = SettingsViewModel(project: nil)
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = []
 
     return NavigationStack {
@@ -545,7 +561,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - Loading") {
     @Previewable @State var selectedKey: String?
-    let viewModel = SettingsViewModel(project: nil)
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.isLoading = true
 
     return NavigationStack {
@@ -591,32 +607,37 @@ struct SettingItemRow: View {
 }
 
 #Preview("Setting Item Row - String") {
-    SettingItemRow(
+    let viewModel = SettingsViewModel(project: nil)
+    return SettingItemRow(
         item: SettingItem(
             key: "editor.theme",
             value: .string("dark"),
             source: .projectSettings,
             contributions: [SourceContribution(source: .projectSettings, value: .string("dark"))]
         ),
-        isSelected: false
+        isSelected: false,
+        settingsViewModel: viewModel
     )
     .padding()
 }
 
 #Preview("Setting Item Row - Number") {
-    SettingItemRow(
+    let viewModel = SettingsViewModel(project: nil)
+    return SettingItemRow(
         item: SettingItem(
             key: "editor.fontSize",
             value: .int(14),
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(14))]
         ),
-        isSelected: false
+        isSelected: false,
+        settingsViewModel: viewModel
     )
     .padding()
 }
 
 #Preview("Setting Item Row - Array (Additive)") {
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     SettingItemRow(
         item: SettingItem(
             key: "files.exclude",
@@ -627,12 +648,14 @@ struct SettingItemRow: View {
                 SourceContribution(source: .projectSettings, value: .array([.string("dist")])),
             ]
         ),
-        isSelected: false
+        isSelected: false,
+        settingsViewModel: viewModel
     )
     .padding()
 }
 
 #Preview("Setting Item Row - Overridden") {
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     SettingItemRow(
         item: SettingItem(
             key: "editor.tabSize",
@@ -644,12 +667,14 @@ struct SettingItemRow: View {
                 SourceContribution(source: .projectLocal, value: .int(2)),
             ]
         ),
-        isSelected: false
+        isSelected: false,
+        settingsViewModel: viewModel
     )
     .padding()
 }
 
 #Preview("Setting Item Row - Deprecated") {
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     SettingItemRow(
         item: SettingItem(
             key: "model",
@@ -657,20 +682,23 @@ struct SettingItemRow: View {
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .string("claude-sonnet-4-5-20250929"))]
         ),
-        isSelected: false
+        isSelected: false,
+        settingsViewModel: viewModel
     )
     .padding()
 }
 
 #Preview("Setting Item Row - Selected") {
-    SettingItemRow(
+    let viewModel = SettingsViewModel(project: nil)
+    return SettingItemRow(
         item: SettingItem(
             key: "editor.fontSize",
             value: .int(16),
             source: .globalSettings,
             contributions: [SourceContribution(source: .globalSettings, value: .int(16))]
         ),
-        isSelected: true
+        isSelected: true,
+        settingsViewModel: viewModel
     )
     .padding()
 }
