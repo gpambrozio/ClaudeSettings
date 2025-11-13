@@ -277,9 +277,6 @@ struct HierarchicalSettingNodeView: View {
                 }
                 .padding(.vertical, 4)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedKey = node.key
-                }
                 .parentNodeContextMenu(
                     nodeKey: node.key,
                     viewModel: settingsViewModel,
