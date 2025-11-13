@@ -3,7 +3,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// Transferable representation of one or more settings for drag and drop operations
-public struct DraggableSetting: Codable, Transferable {
+public struct DraggableSetting: Codable, Transferable, Sendable {
     /// Individual setting entry
     public struct SettingEntry: Codable, Sendable {
         public let key: String

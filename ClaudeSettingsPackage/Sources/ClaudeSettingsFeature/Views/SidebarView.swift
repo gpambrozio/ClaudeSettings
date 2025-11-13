@@ -23,7 +23,8 @@ public struct SidebarView: View {
     @State private var droppedSetting: DraggableSetting?
     @State private var targetProject: ClaudeProject?
     @State private var showFileTypeDialog = false
-    @State private var isDropTargeted = false
+    @State private var showErrorAlert = false
+    @State private var errorMessage: String?
 
     public var body: some View {
         List(selection: $selection) {
@@ -104,6 +105,13 @@ public struct SidebarView: View {
                 Text(alertMessage(setting: setting, project: project))
             }
         }
+        .alert("Copy Failed", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let errorMessage {
+                Text(errorMessage)
+            }
+        }
     }
 
     private var alertTitle: String {
@@ -136,8 +144,12 @@ public struct SidebarView: View {
                 droppedSetting = nil
                 targetProject = nil
             } catch {
-                // TODO: Show error alert
-                print("Error copying setting: \(error)")
+                await MainActor.run {
+                    errorMessage = "Failed to copy setting(s): \(error.localizedDescription)"
+                    showErrorAlert = true
+                    droppedSetting = nil
+                    targetProject = nil
+                }
             }
         }
     }
