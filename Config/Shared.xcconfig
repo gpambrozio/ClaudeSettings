@@ -20,7 +20,9 @@ MACOSX_DEPLOYMENT_TARGET = 15.4
 // ==========================================
 // Info PLIST
 // ==========================================
+// Generate Info.plist from build settings and merge with supplementary file
 GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_FILE = ClaudeSettings/Info.plist
 
 // ==========================================
 // Entitlements

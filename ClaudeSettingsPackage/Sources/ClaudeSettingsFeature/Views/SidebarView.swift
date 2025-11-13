@@ -20,6 +20,11 @@ public enum SidebarSelection: Hashable, Identifiable {
 public struct SidebarView: View {
     @Bindable var viewModel: ProjectListViewModel
     @Binding var selection: SidebarSelection?
+    @State private var droppedSetting: DraggableSetting?
+    @State private var targetProject: ClaudeProject?
+    @State private var showFileTypeDialog = false
+    @State private var showErrorAlert = false
+    @State private var errorMessage: String?
 
     public var body: some View {
         List(selection: $selection) {
@@ -49,33 +54,13 @@ public struct SidebarView: View {
                     }
                 } else {
                     ForEach(viewModel.projects) { project in
-                        NavigationLink(value: SidebarSelection.project(project)) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(project.name)
-                                    .font(.headline)
-
-                                HStack(spacing: 8) {
-                                    if project.hasSharedSettings {
-                                        Text("project")
-                                            .font(.caption2)
-                                            .foregroundStyle(.green)
-                                    }
-                                    if project.hasLocalSettings {
-                                        Text("local")
-                                            .font(.caption2)
-                                            .foregroundStyle(.orange)
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
-                        .contextMenu {
-                            Button {
-                                NSWorkspace.shared.activateFileViewerSelecting([project.path])
-                            } label: {
-                                Label("Reveal in Finder", symbol: .macwindow)
-                            }
-                        }
+                        ProjectRow(
+                            project: project,
+                            selection: $selection,
+                            droppedSetting: $droppedSetting,
+                            targetProject: $targetProject,
+                            showFileTypeDialog: $showFileTypeDialog
+                        )
                     }
                 }
             } header: {
@@ -104,11 +89,129 @@ public struct SidebarView: View {
                 viewModel.scanProjects()
             }
         }
+        .alert(alertTitle, isPresented: $showFileTypeDialog) {
+            Button("Project File (.claude/settings.json)") {
+                copySettingToProject(fileType: .projectSettings)
+            }
+            Button("Local File (.claude/settings.local.json)") {
+                copySettingToProject(fileType: .projectLocal)
+            }
+            Button("Cancel", role: .cancel) {
+                droppedSetting = nil
+                targetProject = nil
+            }
+        } message: {
+            if let setting = droppedSetting, let project = targetProject {
+                Text(alertMessage(setting: setting, project: project))
+            }
+        }
+        .alert("Copy Failed", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let errorMessage {
+                Text(errorMessage)
+            }
+        }
+    }
+
+    private var alertTitle: String {
+        guard let setting = droppedSetting else { return "Copy to Project" }
+        return setting.isCollection ? "Copy Settings to Project" : "Copy Setting to Project"
+    }
+
+    private func alertMessage(setting: DraggableSetting, project: ClaudeProject) -> String {
+        if setting.isCollection {
+            return "Where would you like to copy \(setting.settings.count) settings to '\(project.name)'?"
+        } else {
+            return "Where would you like to copy '\(setting.key)' to '\(project.name)'?"
+        }
+    }
+
+    private func copySettingToProject(fileType: SettingsFileType) {
+        guard
+            let setting = droppedSetting,
+            let project = targetProject else {
+            return
+        }
+
+        Task {
+            do {
+                try await SettingsCopyHelper.copySetting(
+                    setting: setting,
+                    to: project,
+                    fileType: fileType
+                )
+                droppedSetting = nil
+                targetProject = nil
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to copy setting(s): \(error.localizedDescription)"
+                    showErrorAlert = true
+                    droppedSetting = nil
+                    targetProject = nil
+                }
+            }
+        }
     }
 
     public init(viewModel: ProjectListViewModel, selection: Binding<SidebarSelection?>) {
         self.viewModel = viewModel
         self._selection = selection
+    }
+}
+
+/// Individual project row with drag and drop support
+struct ProjectRow: View {
+    let project: ClaudeProject
+    @Binding var selection: SidebarSelection?
+    @Binding var droppedSetting: DraggableSetting?
+    @Binding var targetProject: ClaudeProject?
+    @Binding var showFileTypeDialog: Bool
+    @State private var isDropTargeted = false
+
+    var body: some View {
+        NavigationLink(value: SidebarSelection.project(project)) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(project.name)
+                        .font(.headline)
+
+                    HStack(spacing: 8) {
+                        if project.hasSharedSettings {
+                            Text("project")
+                                .font(.caption2)
+                                .foregroundStyle(.green)
+                        }
+                        if project.hasLocalSettings {
+                            Text("local")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+                Spacer()
+            }
+            .padding(.vertical, 2)
+        }
+        .background(isDropTargeted ? Color.accentColor.opacity(0.2) : Color.clear)
+        .contextMenu {
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([project.path])
+            } label: {
+                Label("Reveal in Finder", symbol: .macwindow)
+            }
+        }
+        .dropDestination(for: DraggableSetting.self) { items, _ in
+            if let setting = items.first {
+                droppedSetting = setting
+                targetProject = project
+                showFileTypeDialog = true
+                return true
+            }
+            return false
+        } isTargeted: { isTargeted in
+            isDropTargeted = isTargeted
+        }
     }
 }
 

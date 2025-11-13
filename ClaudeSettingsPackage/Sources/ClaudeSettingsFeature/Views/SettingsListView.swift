@@ -238,72 +238,68 @@ struct HierarchicalSettingNodeView: View {
     @State private var actionState = SettingActionState()
 
     var body: some View {
-        Group {
-            if node.isParent {
-                // Parent node with children - use DisclosureGroup
-                DisclosureGroup(
-                    isExpanded: Binding(
-                        get: { expandedNodes.contains(node.id) },
-                        set: { isExpanded in
-                            if isExpanded {
-                                expandedNodes.insert(node.id)
-                            } else {
-                                expandedNodes.remove(node.id)
-                            }
-                        }
-                    )
-                ) {
-                    ForEach(node.children) { childNode in
-                        HierarchicalSettingNodeView(
-                            node: childNode,
-                            selectedKey: $selectedKey,
-                            expandedNodes: $expandedNodes,
-                            documentationLoader: documentationLoader,
-                            settingsViewModel: settingsViewModel
-                        )
-                        .padding(.leading, 16)
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(node.displayName)
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(selectedKey == node.key ? .primary : .secondary)
-                            .fontWeight(.medium)
-
-                        if case let .parent(childCount) = node.nodeType {
-                            Text("(\(childCount))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+        if node.isParent {
+            // Parent node with children - use DisclosureGroup
+            DisclosureGroup(
+                isExpanded: Binding(
+                    get: { expandedNodes.contains(node.id) },
+                    set: { isExpanded in
+                        if isExpanded {
+                            expandedNodes.insert(node.id)
+                        } else {
+                            expandedNodes.remove(node.id)
                         }
                     }
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedKey = node.key
-                    }
-                    .parentNodeContextMenu(
-                        nodeKey: node.key,
-                        viewModel: settingsViewModel,
-                        actionState: actionState
+                )
+            ) {
+                ForEach(node.children) { childNode in
+                    HierarchicalSettingNodeView(
+                        node: childNode,
+                        selectedKey: $selectedKey,
+                        expandedNodes: $expandedNodes,
+                        documentationLoader: documentationLoader,
+                        settingsViewModel: settingsViewModel
                     )
+                    .padding(.leading, 16)
                 }
-                .tag(node.key)
-                .parentNodeActions(
+            } label: {
+                HStack(spacing: 6) {
+                    Text(node.displayName)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(selectedKey == node.key ? .primary : .secondary)
+                        .fontWeight(.medium)
+
+                    if case let .parent(childCount) = node.nodeType {
+                        Text("(\(childCount))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .parentNodeContextMenu(
                     nodeKey: node.key,
                     viewModel: settingsViewModel,
                     actionState: actionState
                 )
-            } else if let item = node.settingItem {
-                // Leaf node - display as regular setting item row
-                SettingItemRow(
-                    item: item,
-                    isSelected: selectedKey == item.key,
-                    displayName: node.displayName,
-                    documentationLoader: documentationLoader,
-                    settingsViewModel: settingsViewModel
-                )
-                .tag(item.key)
+                .draggable(DraggableSetting(settings: node.allDraggableEntries()))
             }
+            .tag(node.key)
+            .parentNodeActions(
+                nodeKey: node.key,
+                viewModel: settingsViewModel,
+                actionState: actionState
+            )
+        } else if let item = node.settingItem {
+            // Leaf node - display as regular setting item row
+            SettingItemRow(
+                item: item,
+                isSelected: selectedKey == item.key,
+                displayName: node.displayName,
+                documentationLoader: documentationLoader,
+                settingsViewModel: settingsViewModel
+            )
+            .tag(item.key)
         }
     }
 }
@@ -395,6 +391,11 @@ struct SettingItemRow: View {
             viewModel: settingsViewModel,
             actionState: actionState
         )
+        .draggable(DraggableSetting(
+            key: item.key,
+            value: item.value,
+            sourceFileType: item.overriddenBy ?? item.source
+        ))
     }
 
     @ViewBuilder

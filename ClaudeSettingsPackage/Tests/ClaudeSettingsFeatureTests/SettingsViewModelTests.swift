@@ -461,3 +461,361 @@ struct SettingsViewModelTests {
         #expect(hierarchy.isEmpty, "Should return empty hierarchy")
     }
 }
+
+/// Tests for SettingsViewModel file operations (batch operations, move, delete)
+@Suite("SettingsViewModel File Operations")
+@MainActor
+struct SettingsViewModelFileOperationsTests {
+    /// Helper to create a temporary settings file with given content
+    func createTempSettingsFile(content: [String: SettingValue], type: SettingsFileType) async throws -> (url: URL, file: SettingsFile) {
+        let tempDir = FileManager.default.temporaryDirectory
+        let testFile = tempDir.appendingPathComponent("test-\(UUID().uuidString).json")
+
+        // Convert SettingValue dictionary to JSON-compatible dictionary
+        func convertToJSON(_ value: SettingValue) -> Any {
+            switch value {
+            case let .string(str): return str
+            case let .bool(bool): return bool
+            case let .int(int): return int
+            case let .double(double): return double
+            case let .array(arr): return arr.map { convertToJSON($0) }
+            case let .object(dict): return dict.mapValues { convertToJSON($0) }
+            case .null: return NSNull()
+            }
+        }
+
+        let jsonDict = content.mapValues { convertToJSON($0) }
+        let jsonData = try JSONSerialization.data(withJSONObject: jsonDict, options: .prettyPrinted)
+        try jsonData.write(to: testFile)
+
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let settingsFile = try await parser.parseSettingsFile(at: testFile, type: type)
+
+        return (testFile, settingsFile)
+    }
+
+    /// Helper to cleanup test files
+    func cleanup(_ urls: URL...) {
+        for url in urls {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Test batchDeleteSettings removes multiple settings in one operation
+    @Test("batchDeleteSettings removes multiple settings")
+    func batchDeleteSettingsRemovesMultiple() async throws {
+        // Given: A settings file with multiple settings
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "theme": .string("dark"),
+                "fontSize": .int(14),
+                "tabSize": .int(4),
+                "lineNumbers": .bool(true),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Batch deleting multiple settings
+        try await viewModel.batchDeleteSettings(["theme", "fontSize", "tabSize"], from: .globalSettings)
+
+        // Then: Settings should be deleted from the file
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        #expect(updatedFile.content["theme"] == nil, "theme should be deleted")
+        #expect(updatedFile.content["fontSize"] == nil, "fontSize should be deleted")
+        #expect(updatedFile.content["tabSize"] == nil, "tabSize should be deleted")
+        #expect(updatedFile.content["lineNumbers"] != nil, "lineNumbers should remain")
+
+        // And: SettingItems should be updated
+        #expect(!viewModel.settingItems.contains(where: { $0.key == "theme" }), "theme should be removed from items")
+        #expect(viewModel.settingItems.contains(where: { $0.key == "lineNumbers" }), "lineNumbers should remain in items")
+    }
+
+    /// Test batchDeleteSettings handles nested settings
+    @Test("batchDeleteSettings removes nested settings")
+    func batchDeleteSettingsRemovesNested() async throws {
+        // Given: A settings file with nested settings
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "editor": .object([
+                    "theme": .string("dark"),
+                    "fontSize": .int(14),
+                ]),
+                "terminal": .object([
+                    "shell": .string("zsh"),
+                ]),
+            ],
+            type: .projectSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Batch deleting nested settings
+        try await viewModel.batchDeleteSettings(["editor.theme", "editor.fontSize"], from: .projectSettings)
+
+        // Then: Nested settings should be deleted
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .projectSettings)
+
+        // Editor object should either be removed entirely (if empty) or be an empty object
+        if let editorValue = updatedFile.content["editor"] {
+            if case let .object(editorDict) = editorValue {
+                #expect(editorDict.isEmpty, "editor object should be empty after deleting all children")
+            } else {
+                Issue.record("editor should be an object if it exists")
+            }
+        }
+        // If editor is nil, that's also acceptable (parent removed when all children deleted)
+
+        #expect(updatedFile.content["terminal"] != nil, "terminal should remain")
+    }
+
+    /// Test batchDeleteSettings handles empty array gracefully
+    @Test("batchDeleteSettings handles empty keys array")
+    func batchDeleteSettingsHandlesEmpty() async throws {
+        // Given: A settings file
+        let (url, file) = try await createTempSettingsFile(
+            content: ["setting1": .string("value1"), "setting2": .string("value2")],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Batch deleting empty array
+        // Then: Should not throw and should be a no-op
+        try await viewModel.batchDeleteSettings([], from: .globalSettings)
+
+        // Verify file unchanged
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        #expect(updatedFile.content["setting1"] == .string("value1"), "setting1 should remain")
+        #expect(updatedFile.content["setting2"] == .string("value2"), "setting2 should remain")
+    }
+
+    /// Test moveNode moves settings between files using batch operations
+    @Test("moveNode moves settings from source to destination")
+    func moveNodeMovesSettings() async throws {
+        // Given: Source and destination files
+        let (sourceURL, sourceFile) = try await createTempSettingsFile(
+            content: [
+                "editor": .object([
+                    "theme": .string("dark"),
+                    "fontSize": .int(14),
+                ]),
+            ],
+            type: .globalSettings
+        )
+        let (destURL, destFile) = try await createTempSettingsFile(
+            content: ["existing": .string("value")],
+            type: .projectSettings
+        )
+        defer { cleanup(sourceURL, destURL) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [sourceFile, destFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [sourceFile, destFile])
+        viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
+
+        // When: Moving the editor node
+        try await viewModel.moveNode(key: "editor", from: .globalSettings, to: .projectSettings)
+
+        // Then: Settings should be in destination and removed from source
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedSource = try await parser.parseSettingsFile(at: sourceURL, type: .globalSettings)
+        let updatedDest = try await parser.parseSettingsFile(at: destURL, type: .projectSettings)
+
+        #expect(updatedSource.content["editor"] == nil, "editor should be removed from source")
+
+        if case let .object(editorDict) = updatedDest.content["editor"] {
+            #expect(editorDict["theme"] == .string("dark"), "editor.theme should be in destination")
+            #expect(editorDict["fontSize"] == .int(14), "editor.fontSize should be in destination")
+        } else {
+            Issue.record("editor should exist in destination as object")
+        }
+
+        #expect(updatedDest.content["existing"] == .string("value"), "existing setting should remain")
+    }
+
+    /// Test moveNode handles single leaf settings
+    @Test("moveNode moves single leaf setting")
+    func moveNodeMovesSingleLeaf() async throws {
+        // Given: Source and destination files with a single setting to move
+        let (sourceURL, sourceFile) = try await createTempSettingsFile(
+            content: ["theme": .string("dark"), "fontSize": .int(14)],
+            type: .globalSettings
+        )
+        let (destURL, destFile) = try await createTempSettingsFile(
+            content: [:],
+            type: .projectLocal
+        )
+        defer { cleanup(sourceURL, destURL) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [sourceFile, destFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [sourceFile, destFile])
+        viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
+
+        // When: Moving a single leaf setting
+        try await viewModel.moveNode(key: "theme", from: .globalSettings, to: .projectLocal)
+
+        // Then: Only that setting should be moved
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedSource = try await parser.parseSettingsFile(at: sourceURL, type: .globalSettings)
+        let updatedDest = try await parser.parseSettingsFile(at: destURL, type: .projectLocal)
+
+        #expect(updatedSource.content["theme"] == nil, "theme should be removed from source")
+        #expect(updatedSource.content["fontSize"] == .int(14), "fontSize should remain in source")
+        #expect(updatedDest.content["theme"] == .string("dark"), "theme should be in destination")
+    }
+
+    /// Test moveNode with same source and destination is a no-op
+    @Test("moveNode skips when source equals destination")
+    func moveNodeSkipsSameSourceAndDestination() async throws {
+        // Given: A settings file
+        let (url, file) = try await createTempSettingsFile(
+            content: ["setting": .string("value")],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+        viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
+
+        // When: Moving to the same file
+        // Then: Should not throw and should be a no-op
+        try await viewModel.moveNode(key: "setting", from: .globalSettings, to: .globalSettings)
+
+        // Verify file unchanged
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        #expect(updatedFile.content["setting"] == .string("value"), "setting should remain unchanged")
+    }
+
+    /// Test deleteNode removes entire parent node with children
+    @Test("deleteNode removes parent node with all children")
+    func deleteNodeRemovesParentWithChildren() async throws {
+        // Given: A settings file with nested structure
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "editor": .object([
+                    "theme": .string("dark"),
+                    "fontSize": .int(14),
+                    "font": .object([
+                        "family": .string("Monaco"),
+                        "size": .int(12),
+                    ]),
+                ]),
+                "terminal": .object([
+                    "shell": .string("zsh"),
+                ]),
+            ],
+            type: .projectSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+        viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
+
+        // When: Deleting the editor parent node
+        try await viewModel.deleteNode(key: "editor", from: .projectSettings)
+
+        // Then: All editor settings should be removed
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .projectSettings)
+
+        #expect(updatedFile.content["editor"] == nil, "editor node should be completely removed")
+        #expect(updatedFile.content["terminal"] != nil, "terminal should remain")
+
+        // And: SettingItems should be updated
+        #expect(!viewModel.settingItems.contains(where: { $0.key.starts(with: "editor") }), "No editor settings should remain")
+        #expect(viewModel.settingItems.contains(where: { $0.key.starts(with: "terminal") }), "terminal settings should remain")
+    }
+
+    /// Test deleteNode removes single leaf setting
+    @Test("deleteNode removes single leaf setting")
+    func deleteNodeRemovesSingleLeaf() async throws {
+        // Given: A settings file with multiple settings
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "theme": .string("dark"),
+                "fontSize": .int(14),
+                "tabSize": .int(4),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+        viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
+
+        // When: Deleting a single leaf setting
+        try await viewModel.deleteNode(key: "fontSize", from: .globalSettings)
+
+        // Then: Only that setting should be removed
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        #expect(updatedFile.content["fontSize"] == nil, "fontSize should be removed")
+        #expect(updatedFile.content["theme"] == .string("dark"), "theme should remain")
+        #expect(updatedFile.content["tabSize"] == .int(4), "tabSize should remain")
+    }
+
+    /// Test deleteNode with multi-level nested structure
+    @Test("deleteNode handles deeply nested parent nodes")
+    func deleteNodeHandlesDeeplyNested() async throws {
+        // Given: A parent node with deeply nested children
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "hooks": .object([
+                    "onRead": .string("read.sh"),
+                    "onWrite": .string("write.sh"),
+                    "nested": .object([
+                        "level1": .string("value1"),
+                        "level2": .object([
+                            "deep": .string("deepValue"),
+                        ]),
+                    ]),
+                ]),
+                "otherSetting": .string("keep"),
+            ],
+            type: .projectSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+        viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
+
+        // When: Deleting the parent node with nested children
+        try await viewModel.deleteNode(key: "hooks", from: .projectSettings)
+
+        // Then: All nested children should be removed
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .projectSettings)
+
+        #expect(updatedFile.content["hooks"] == nil, "hooks node should be completely removed")
+        #expect(updatedFile.content["otherSetting"] == .string("keep"), "Other settings should remain")
+
+        // Verify all nested keys are gone from settingItems
+        #expect(!viewModel.settingItems.contains(where: { $0.key.starts(with: "hooks") }), "No hooks.* settings should remain")
+    }
+}
