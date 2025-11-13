@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Represents different selections in the sidebar
@@ -67,6 +68,13 @@ public struct SidebarView: View {
                                 }
                             }
                             .padding(.vertical, 2)
+                        }
+                        .contextMenu {
+                            Button {
+                                NSWorkspace.shared.activateFileViewerSelecting([project.path])
+                            } label: {
+                                Label("Reveal in Finder", symbol: .macwindow)
+                            }
                         }
                     }
                 }
