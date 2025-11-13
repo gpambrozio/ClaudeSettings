@@ -10,6 +10,7 @@ public enum SettingsCopyHelper {
     ///   - setting: The setting to copy
     ///   - project: The target project
     ///   - fileType: The file type (projectSettings or projectLocal)
+    @MainActor
     public static func copySetting(
         setting: DraggableSetting,
         to project: ClaudeProject,
@@ -38,4 +39,3 @@ public enum SettingsCopyHelper {
         logger.info("Successfully copied setting '\(setting.key)' to \(fileType.displayName)")
     }
 }
-

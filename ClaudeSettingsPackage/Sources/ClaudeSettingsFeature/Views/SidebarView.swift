@@ -107,8 +107,9 @@ public struct SidebarView: View {
     }
 
     private func copySettingToProject(fileType: SettingsFileType) {
-        guard let setting = droppedSetting,
-              let project = targetProject else {
+        guard
+            let setting = droppedSetting,
+            let project = targetProject else {
             return
         }
 
@@ -145,22 +146,25 @@ struct ProjectRow: View {
 
     var body: some View {
         NavigationLink(value: SidebarSelection.project(project)) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(project.name)
-                    .font(.headline)
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(project.name)
+                        .font(.headline)
 
-                HStack(spacing: 8) {
-                    if project.hasSharedSettings {
-                        Text("project")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                    }
-                    if project.hasLocalSettings {
-                        Text("local")
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
+                    HStack(spacing: 8) {
+                        if project.hasSharedSettings {
+                            Text("project")
+                                .font(.caption2)
+                                .foregroundStyle(.green)
+                        }
+                        if project.hasLocalSettings {
+                            Text("local")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
                     }
                 }
+                Spacer()
             }
             .padding(.vertical, 2)
         }
@@ -172,28 +176,16 @@ struct ProjectRow: View {
                 Label("Reveal in Finder", symbol: .macwindow)
             }
         }
-        .onDrop(of: [.claudeSetting], isTargeted: $isDropTargeted) { providers in
-            handleDrop(providers: providers)
-            return true
-        }
-    }
-
-    private func handleDrop(providers: [NSItemProvider]) {
-        guard let provider = providers.first else { return }
-
-        _ = provider.loadTransferable(type: DraggableSetting.self) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case let .success(setting):
-                    if let setting {
-                        droppedSetting = setting
-                        targetProject = project
-                        showFileTypeDialog = true
-                    }
-                case let .failure(error):
-                    print("Error loading draggable setting: \(error)")
-                }
+        .dropDestination(for: DraggableSetting.self) { items, _ in
+            if let setting = items.first {
+                droppedSetting = setting
+                targetProject = project
+                showFileTypeDialog = true
+                return true
             }
+            return false
+        } isTargeted: { isTargeted in
+            isDropTargeted = isTargeted
         }
     }
 }
