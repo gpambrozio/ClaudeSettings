@@ -1159,6 +1159,8 @@ public enum SettingsError: LocalizedError {
     case validationFailed(String)
     case typeMismatch(key: String, expected: String, found: String)
     case serializationFailed(String)
+    case invalidFileType(String)
+    case invalidKey(String)
 
     public var errorDescription: String? {
         switch self {
@@ -1178,6 +1180,10 @@ public enum SettingsError: LocalizedError {
             return "Type mismatch for '\(key)': expected \(expected), but found \(found)"
         case let .serializationFailed(message):
             return "Failed to serialize settings: \(message)"
+        case let .invalidFileType(message):
+            return "Invalid file type: \(message)"
+        case let .invalidKey(message):
+            return "Invalid key: \(message)"
         }
     }
 }

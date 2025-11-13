@@ -395,6 +395,14 @@ struct SettingItemRow: View {
             viewModel: settingsViewModel,
             actionState: actionState
         )
+        .onDrag {
+            let draggable = DraggableSetting(
+                key: item.key,
+                value: item.value,
+                sourceFileType: item.overriddenBy ?? item.source
+            )
+            return NSItemProvider(object: draggable)
+        }
     }
 
     @ViewBuilder
