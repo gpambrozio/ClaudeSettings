@@ -21,6 +21,7 @@ public enum Symbols: String {
     case globe
     case listBullet = "list.bullet"
     case lockFill = "lock.fill"
+    case macwindow
     case plus
     case plusCircle = "plus.circle"
     case questionmarkCircle = "questionmark.circle"
