@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// Represents different selections in the sidebar
 public enum SidebarSelection: Hashable, Identifiable {
@@ -71,7 +71,7 @@ public struct SidebarView: View {
                         }
                         .contextMenu {
                             Button {
-                                NSWorkspace.shared.selectFile(nil, inFileViewer: project.path.path)
+                                NSWorkspace.shared.activateFileViewerSelecting([project.path])
                             } label: {
                                 Label("Reveal in Finder", symbol: .macwindow)
                             }
