@@ -5,9 +5,9 @@ import Logging
 public enum SettingsCopyHelper {
     private static let logger = Logger(label: "com.claudesettings.copy")
 
-    /// Copy a setting to a project's settings file
+    /// Copy one or more settings to a project's settings file
     /// - Parameters:
-    ///   - setting: The setting to copy
+    ///   - setting: The setting(s) to copy (can be single or collection)
     ///   - project: The target project
     ///   - fileType: The file type (projectSettings or projectLocal)
     @MainActor
@@ -21,21 +21,27 @@ public enum SettingsCopyHelper {
             throw SettingsError.invalidFileType("Can only copy to project settings or project local files")
         }
 
-        logger.info("Copying setting '\(setting.key)' to \(project.name) (\(fileType.displayName))")
+        let settingCount = setting.settings.count
+        let settingLabel = settingCount == 1 ? "setting '\(setting.key)'" : "\(settingCount) settings"
+        logger.info("Copying \(settingLabel) to \(project.name) (\(fileType.displayName))")
 
         // Create a temporary SettingsViewModel for the target project
-        // This reuses all existing file handling, validation, and backup logic
+        // This reuses all existing file handling, validation, backup, and rollback logic
         let viewModel = SettingsViewModel(project: project)
         viewModel.loadSettings()
 
-        // Use the existing updateSetting method which handles:
+        // Convert entries to (key, value) tuples for batch update
+        let updates = setting.settings.map { ($0.key, $0.value) }
+
+        // Use the unified batch update method which handles:
+        // - Creating a single backup before all updates
         // - Creating the file if it doesn't exist
         // - Creating .claude directory if needed
-        // - Creating backups before modification
         // - Proper nested value handling
         // - File watching and validation
-        try await viewModel.updateSetting(key: setting.key, value: setting.value, in: fileType)
+        // - Rollback on failure
+        try await viewModel.batchUpdateSettings(updates, in: fileType)
 
-        logger.info("Successfully copied setting '\(setting.key)' to \(fileType.displayName)")
+        logger.info("Successfully copied \(settingLabel) to \(fileType.displayName)")
     }
 }

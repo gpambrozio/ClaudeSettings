@@ -798,6 +798,48 @@ final public class SettingsViewModel {
         logger.info("Successfully updated setting '\(key)' in \(fileType.displayName)")
     }
 
+    /// Batch update multiple settings to a specific file with a single backup
+    /// - Parameters:
+    ///   - updates: Array of (key, value) tuples to update
+    ///   - fileType: The file type to update
+    /// - Note: This method creates a single backup before applying all updates and includes rollback on failure
+    public func batchUpdateSettings(_ updates: [(key: String, value: SettingValue)], in fileType: SettingsFileType) async throws {
+        guard !updates.isEmpty else { return }
+
+        logger.info("Batch updating \(updates.count) settings in \(fileType.displayName)")
+
+        // Snapshot the file state for potential rollback
+        let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType })
+        let originalFile = fileIndex.map { settingsFiles[$0] }
+
+        // Create a single backup before batch operation
+        if let file = originalFile {
+            _ = try await fileSystemManager.createBackup(of: file.path)
+        }
+
+        do {
+            // Apply all updates (skip individual backups since we created one above)
+            for (key, value) in updates {
+                try await updateSetting(key: key, value: value, in: fileType, skipBackup: true)
+            }
+
+            logger.info("Successfully batch updated \(updates.count) settings in \(fileType.displayName)")
+        } catch {
+            // Rollback on failure: restore file from snapshot
+            if let originalFile = originalFile, let index = fileIndex {
+                logger.warning("Batch update failed, rolling back file to original state")
+                var rollbackFile = originalFile
+                try? await settingsParser.writeSettingsFile(&rollbackFile)
+                settingsFiles[index] = rollbackFile
+
+                // Recompute state after rollback
+                settingItems = computeSettingItems(from: settingsFiles)
+                hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+            }
+            throw error
+        }
+    }
+
     /// Delete a setting from a specific file
     /// - Parameters:
     ///   - key: The setting key to delete
@@ -924,38 +966,21 @@ final public class SettingsViewModel {
 
         logger.info("Copying node '\(key)' (\(leafKeys.count) settings) from \(sourceType.displayName) to \(destinationType.displayName)")
 
-        // Snapshot the destination file state for potential rollback
-        let destinationIndex = settingsFiles.firstIndex(where: { $0.type == destinationType })
-        let originalDestinationFile = destinationIndex.map { settingsFiles[$0] }
-
-        // Create a single backup of the destination file before batch operation
-        if let destinationFile = originalDestinationFile {
-            _ = try await fileSystemManager.createBackup(of: destinationFile.path)
+        // Collect all (key, value) pairs from the source file
+        var updates: [(key: String, value: SettingValue)] = []
+        for leafKey in leafKeys {
+            guard
+                let item = settingItems.first(where: { $0.key == leafKey }),
+                let contribution = item.contributions.first(where: { $0.source == sourceType }) else {
+                throw SettingsError.settingNotFound(leafKey)
+            }
+            updates.append((leafKey, contribution.value))
         }
 
-        do {
-            // Copy each leaf setting (skip individual backups since we created one above)
-            for leafKey in leafKeys {
-                try await copySetting(key: leafKey, from: sourceType, to: destinationType, skipBackup: true)
-            }
+        // Use the unified batch update method which handles backup, rollback, and all file operations
+        try await batchUpdateSettings(updates, in: destinationType)
 
-            logger.info("Successfully copied node '\(key)' (\(leafKeys.count) settings) to \(destinationType.displayName)")
-        } catch {
-            // Rollback on failure: restore destination file from snapshot
-            if
-                let originalFile = originalDestinationFile,
-                let destIndex = destinationIndex {
-                logger.warning("Copy failed, rolling back destination file to original state")
-                var rollbackFile = originalFile
-                try? await settingsParser.writeSettingsFile(&rollbackFile)
-                settingsFiles[destIndex] = rollbackFile
-
-                // Recompute state after rollback
-                settingItems = computeSettingItems(from: settingsFiles)
-                hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
-            }
-            throw error
-        }
+        logger.info("Successfully copied node '\(key)' (\(leafKeys.count) settings) to \(destinationType.displayName)")
     }
 
     /// Move a setting or entire setting subtree from one file to another

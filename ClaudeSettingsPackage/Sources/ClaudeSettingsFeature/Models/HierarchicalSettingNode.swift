@@ -55,4 +55,19 @@ public struct HierarchicalSettingNode: Identifiable, Sendable {
         // For parent nodes, recursively collect keys from all children
         return children.flatMap { $0.allLeafKeys() }
     }
+
+    /// Recursively collects all leaf settings as draggable entries
+    /// - Returns: Array of draggable setting entries for all leaf nodes in this subtree
+    public func allDraggableEntries() -> [DraggableSetting.SettingEntry] {
+        if isLeaf, let item = settingItem {
+            return [DraggableSetting.SettingEntry(
+                key: item.key,
+                value: item.value,
+                sourceFileType: item.overriddenBy ?? item.source
+            )]
+        }
+
+        // For parent nodes, recursively collect entries from all children
+        return children.flatMap { $0.allDraggableEntries() }
+    }
 }

@@ -88,7 +88,7 @@ public struct SidebarView: View {
                 viewModel.scanProjects()
             }
         }
-        .alert("Copy Setting to Project", isPresented: $showFileTypeDialog) {
+        .alert(alertTitle, isPresented: $showFileTypeDialog) {
             Button("Project File (.claude/settings.json)") {
                 copySettingToProject(fileType: .projectSettings)
             }
@@ -101,8 +101,21 @@ public struct SidebarView: View {
             }
         } message: {
             if let setting = droppedSetting, let project = targetProject {
-                Text("Where would you like to copy '\(setting.key)' to '\(project.name)'?")
+                Text(alertMessage(setting: setting, project: project))
             }
+        }
+    }
+
+    private var alertTitle: String {
+        guard let setting = droppedSetting else { return "Copy to Project" }
+        return setting.isCollection ? "Copy Settings to Project" : "Copy Setting to Project"
+    }
+
+    private func alertMessage(setting: DraggableSetting, project: ClaudeProject) -> String {
+        if setting.isCollection {
+            return "Where would you like to copy \(setting.settings.count) settings to '\(project.name)'?"
+        } else {
+            return "Where would you like to copy '\(setting.key)' to '\(project.name)'?"
         }
     }
 
