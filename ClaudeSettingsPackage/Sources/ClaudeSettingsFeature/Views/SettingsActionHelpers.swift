@@ -591,6 +591,93 @@ struct ParentNodeActionsModifier: ViewModifier {
     }
 }
 
+/// View modifier that adds a context menu for setting items (leaf nodes)
+struct SettingItemContextMenuModifier: ViewModifier {
+    let item: SettingItem
+    let viewModel: SettingsViewModel
+    let actionState: SettingActionState
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            Button(action: {
+                copyToClipboard(formatValue(item.value))
+            }) {
+                Label("Copy Value", symbol: .docOnDoc)
+            }
+            .disabled(viewModel.isEditingMode)
+
+            Divider()
+
+            Button(action: {
+                actionState.showCopySheet = true
+            }) {
+                Label("Copy to...", symbol: .arrowRightDocOnClipboard)
+            }
+            .disabled(viewModel.isEditingMode)
+
+            Button(action: {
+                actionState.showMoveSheet = true
+            }) {
+                Label("Move to...", symbol: .arrowshapeTurnUpForward)
+            }
+            .disabled(viewModel.isEditingMode)
+
+            Divider()
+
+            Button(role: .destructive, action: {
+                actionState.showDeleteConfirmation = true
+            }) {
+                Label("Delete", symbol: .trash)
+            }
+            .disabled(viewModel.isEditingMode)
+        }
+    }
+
+    private func copyToClipboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    private func formatValue(_ value: SettingValue) -> String {
+        value.formatted()
+    }
+}
+
+/// View modifier that adds a context menu for parent nodes
+struct ParentNodeContextMenuModifier: ViewModifier {
+    let nodeKey: String
+    let viewModel: SettingsViewModel
+    let actionState: SettingActionState
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            Button(action: {
+                actionState.showCopySheet = true
+            }) {
+                Label("Copy to...", symbol: .arrowRightDocOnClipboard)
+            }
+            .disabled(viewModel.isEditingMode)
+
+            Button(action: {
+                actionState.showMoveSheet = true
+            }) {
+                Label("Move to...", symbol: .arrowshapeTurnUpForward)
+            }
+            .disabled(viewModel.isEditingMode)
+
+            Divider()
+
+            Button(role: .destructive, action: {
+                actionState.showDeleteConfirmation = true
+            }) {
+                Label("Delete", symbol: .trash)
+            }
+            .disabled(viewModel.isEditingMode)
+        }
+    }
+}
+
 /// Wrapper modifier that only applies ParentNodeActionsModifier if both nodeKey and viewModel are non-nil
 struct OptionalParentNodeActionsModifier: ViewModifier {
     let nodeKey: String?
@@ -660,6 +747,32 @@ extension View {
         actionState: SettingActionState
     ) -> some View {
         modifier(ParentNodeActionsModifier(
+            nodeKey: nodeKey,
+            viewModel: viewModel,
+            actionState: actionState
+        ))
+    }
+
+    /// Adds a context menu for setting items (leaf nodes)
+    func settingItemContextMenu(
+        item: SettingItem,
+        viewModel: SettingsViewModel,
+        actionState: SettingActionState
+    ) -> some View {
+        modifier(SettingItemContextMenuModifier(
+            item: item,
+            viewModel: viewModel,
+            actionState: actionState
+        ))
+    }
+
+    /// Adds a context menu for parent nodes
+    func parentNodeContextMenu(
+        nodeKey: String,
+        viewModel: SettingsViewModel,
+        actionState: SettingActionState
+    ) -> some View {
+        modifier(ParentNodeContextMenuModifier(
             nodeKey: nodeKey,
             viewModel: viewModel,
             actionState: actionState

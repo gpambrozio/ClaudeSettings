@@ -95,6 +95,25 @@ public struct SettingsListView: View {
     @ViewBuilder
     private var settingsContent: some View {
         List(selection: $selectedKey) {
+            // Editing Mode Indicator
+            if settingsViewModel.isEditingMode {
+                Section {
+                    HStack {
+                        Symbols.exclamationmarkCircle.image
+                            .foregroundStyle(.orange)
+                        Text("Editing Mode Active")
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Text("Actions are disabled")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(Color.orange.opacity(0.1))
+                }
+            }
+
             // Validation Errors Section (if any)
             if !settingsViewModel.validationErrors.isEmpty {
                 Section {
@@ -262,30 +281,11 @@ struct HierarchicalSettingNodeView: View {
                     .onTapGesture {
                         selectedKey = node.key
                     }
-                    .contextMenu {
-                        Button(action: {
-                            actionState.showCopySheet = true
-                        }) {
-                            Label("Copy to...", symbol: .arrowRightDocOnClipboard)
-                        }
-                        .disabled(settingsViewModel.isEditingMode)
-
-                        Button(action: {
-                            actionState.showMoveSheet = true
-                        }) {
-                            Label("Move to...", symbol: .arrowshapeTurnUpForward)
-                        }
-                        .disabled(settingsViewModel.isEditingMode)
-
-                        Divider()
-
-                        Button(role: .destructive, action: {
-                            actionState.showDeleteConfirmation = true
-                        }) {
-                            Label("Delete", symbol: .trash)
-                        }
-                        .disabled(settingsViewModel.isEditingMode)
-                    }
+                    .parentNodeContextMenu(
+                        nodeKey: node.key,
+                        viewModel: settingsViewModel,
+                        actionState: actionState
+                    )
                 }
                 .tag(node.key)
                 .parentNodeActions(
@@ -385,39 +385,11 @@ struct SettingItemRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
-        .contextMenu {
-            Button(action: {
-                copyToClipboard(formatValue(item.value))
-            }) {
-                Label("Copy Value", symbol: .docOnDoc)
-            }
-            .disabled(settingsViewModel.isEditingMode)
-
-            Divider()
-
-            Button(action: {
-                actionState.showCopySheet = true
-            }) {
-                Label("Copy to...", symbol: .arrowRightDocOnClipboard)
-            }
-            .disabled(settingsViewModel.isEditingMode)
-
-            Button(action: {
-                actionState.showMoveSheet = true
-            }) {
-                Label("Move to...", symbol: .arrowshapeTurnUpForward)
-            }
-            .disabled(settingsViewModel.isEditingMode)
-
-            Divider()
-
-            Button(role: .destructive, action: {
-                actionState.showDeleteConfirmation = true
-            }) {
-                Label("Delete", symbol: .trash)
-            }
-            .disabled(settingsViewModel.isEditingMode)
-        }
+        .settingItemContextMenu(
+            item: item,
+            viewModel: settingsViewModel,
+            actionState: actionState
+        )
         .settingItemActions(
             item: item,
             viewModel: settingsViewModel,
@@ -490,25 +462,13 @@ struct SettingItemRow: View {
             return ("null", .gray)
         }
     }
-
-    // MARK: - Helpers
-
-    private func copyToClipboard(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-    }
-
-    private func formatValue(_ value: SettingValue) -> String {
-        value.formatted()
-    }
 }
 
 // MARK: - Previews
 
 #Preview("Settings List - With Data") {
     @Previewable @State var selectedKey: String?
-    let viewModel = SettingsViewModel(project: nil)
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = [
         SettingItem(
             key: "editor.fontSize",
@@ -590,7 +550,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - Empty") {
     @Previewable @State var selectedKey: String?
-    let viewModel = SettingsViewModel(project: nil)
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = []
 
     return NavigationStack {
@@ -601,7 +561,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - Loading") {
     @Previewable @State var selectedKey: String?
-    let viewModel = SettingsViewModel(project: nil)
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.isLoading = true
 
     return NavigationStack {
@@ -677,8 +637,8 @@ struct SettingItemRow: View {
 }
 
 #Preview("Setting Item Row - Array (Additive)") {
-    let viewModel = SettingsViewModel(project: nil)
-    return SettingItemRow(
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
+    SettingItemRow(
         item: SettingItem(
             key: "files.exclude",
             value: .array([.string("node_modules"), .string(".git"), .string("dist")]),
@@ -695,8 +655,8 @@ struct SettingItemRow: View {
 }
 
 #Preview("Setting Item Row - Overridden") {
-    let viewModel = SettingsViewModel(project: nil)
-    return SettingItemRow(
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
+    SettingItemRow(
         item: SettingItem(
             key: "editor.tabSize",
             value: .int(2),
@@ -714,8 +674,8 @@ struct SettingItemRow: View {
 }
 
 #Preview("Setting Item Row - Deprecated") {
-    let viewModel = SettingsViewModel(project: nil)
-    return SettingItemRow(
+    @Previewable @State var viewModel = SettingsViewModel(project: nil)
+    SettingItemRow(
         item: SettingItem(
             key: "model",
             value: .string("claude-sonnet-4-5-20250929"),
