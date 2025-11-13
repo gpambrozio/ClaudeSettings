@@ -1,5 +1,38 @@
 import SwiftUI
 
+// MARK: - Action State
+
+/// Observable state object for managing action sheet and dialog presentation
+@Observable
+class SettingActionState {
+    var showDeleteConfirmation = false
+    var showCopySheet = false
+    var showMoveSheet = false
+    var showErrorAlert = false
+    var selectedSourceType: SettingsFileType?
+
+    /// Reset all state to default values
+    func reset() {
+        showDeleteConfirmation = false
+        showCopySheet = false
+        showMoveSheet = false
+        showErrorAlert = false
+        selectedSourceType = nil
+    }
+
+    /// Dismiss the copy sheet and reset source selection
+    func dismissCopySheet() {
+        showCopySheet = false
+        selectedSourceType = nil
+    }
+
+    /// Dismiss the move sheet and reset source selection
+    func dismissMoveSheet() {
+        showMoveSheet = false
+        selectedSourceType = nil
+    }
+}
+
 // MARK: - Shared Action Sheets
 
 /// Reusable sheet for copying or moving a setting to another file
@@ -177,8 +210,8 @@ enum CopyMoveMode {
 
     var title: String {
         switch self {
-        case .copy: return "Copy Setting"
-        case .move: return "Move Setting"
+        case .copy: return "Copy"
+        case .move: return "Move"
         }
     }
 }
@@ -187,6 +220,7 @@ enum CopyMoveMode {
 
 enum SettingsActionHelpers {
     /// Returns the list of writable file types available for operations
+    @MainActor
     static func availableFileTypes(for viewModel: SettingsViewModel) -> [SettingsFileType] {
         var types: [SettingsFileType] = []
 
@@ -210,6 +244,7 @@ enum SettingsActionHelpers {
     }
 
     /// Checks if a file type is read-only
+    @MainActor
     static func isReadOnly(fileType: SettingsFileType, in viewModel: SettingsViewModel) -> Bool {
         if let file = viewModel.settingsFiles.first(where: { $0.type == fileType }) {
             return file.isReadOnly
@@ -234,7 +269,28 @@ enum SettingsActionHelpers {
         }
     }
 
+    /// Returns the display label for a settings file type
+    static func sourceLabel(for type: SettingsFileType) -> String {
+        switch type {
+        case .globalSettings:
+            return "Global Settings"
+        case .globalLocal:
+            return "Global Local"
+        case .projectSettings:
+            return "Project Settings"
+        case .projectLocal:
+            return "Project Local"
+        case .enterpriseManaged:
+            return "Enterprise Managed"
+        case .globalMemory,
+             .projectMemory,
+             .projectLocalMemory:
+            return "Memory File"
+        }
+    }
+
     /// Returns all file types that contribute to a parent node
+    @MainActor
     static func contributingFileTypes(for key: String, in viewModel: SettingsViewModel) -> [SettingsFileType] {
         let childSettings = viewModel.settingItems.filter { $0.key.hasPrefix(key + ".") || $0.key == key }
         let fileTypes = Set(childSettings.flatMap { $0.contributions.map(\.source) })
@@ -261,6 +317,7 @@ enum SettingsActionHelpers {
     }
 
     /// Deletes a setting from all writable files that contain it
+    @MainActor
     static func deleteSettingFromAll(item: SettingItem, viewModel: SettingsViewModel) async throws {
         for contribution in item.contributions where !isReadOnly(fileType: contribution.source, in: viewModel) {
             try await viewModel.deleteSetting(key: item.key, from: contribution.source)
@@ -283,6 +340,7 @@ enum SettingsActionHelpers {
     }
 
     /// Deletes a parent node from all specified files
+    @MainActor
     static func deleteNodeFromAll(key: String, fileTypes: [SettingsFileType], viewModel: SettingsViewModel) async throws {
         for fileType in fileTypes where !isReadOnly(fileType: fileType, in: viewModel) {
             try await viewModel.deleteNode(key: key, from: fileType)
@@ -296,15 +354,11 @@ enum SettingsActionHelpers {
 struct SettingItemActionsModifier: ViewModifier {
     let item: SettingItem
     let viewModel: SettingsViewModel
-
-    @Binding var showCopySheet: Bool
-    @Binding var showMoveSheet: Bool
-    @Binding var showDeleteConfirmation: Bool
-    @Binding var showErrorAlert: Bool
+    @Bindable var actionState: SettingActionState
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $showCopySheet) {
+            .sheet(isPresented: $actionState.showCopySheet) {
                 SettingCopyMoveSheet(
                     settingKey: item.key,
                     mode: .copy,
@@ -314,21 +368,22 @@ struct SettingItemActionsModifier: ViewModifier {
                             do {
                                 try await SettingsActionHelpers.copySetting(item: item, to: destination, viewModel: viewModel)
                                 await MainActor.run {
-                                    showCopySheet = false
+                                    actionState.dismissCopySheet()
                                 }
                             } catch {
                                 await MainActor.run {
-                                    viewModel.errorMessage = error.localizedDescription
+                                    let source = item.contributions.last?.source ?? item.source
+                                    viewModel.errorMessage = "Failed to copy '\(item.key)' from \(source.displayName) to \(destination.displayName): \(error.localizedDescription)"
                                 }
                             }
                         }
                     },
                     onCancel: {
-                        showCopySheet = false
+                        actionState.dismissCopySheet()
                     }
                 )
             }
-            .sheet(isPresented: $showMoveSheet) {
+            .sheet(isPresented: $actionState.showMoveSheet) {
                 SettingCopyMoveSheet(
                     settingKey: item.key,
                     mode: .move,
@@ -338,23 +393,24 @@ struct SettingItemActionsModifier: ViewModifier {
                             do {
                                 try await SettingsActionHelpers.moveSetting(item: item, to: destination, viewModel: viewModel)
                                 await MainActor.run {
-                                    showMoveSheet = false
+                                    actionState.dismissMoveSheet()
                                 }
                             } catch {
                                 await MainActor.run {
-                                    viewModel.errorMessage = error.localizedDescription
+                                    let source = item.contributions.last?.source ?? item.source
+                                    viewModel.errorMessage = "Failed to move '\(item.key)' from \(source.displayName) to \(destination.displayName): \(error.localizedDescription)"
                                 }
                             }
                         }
                     },
                     onCancel: {
-                        showMoveSheet = false
+                        actionState.dismissMoveSheet()
                     }
                 )
             }
             .confirmationDialog(
                 "Delete Setting",
-                isPresented: $showDeleteConfirmation,
+                isPresented: $actionState.showDeleteConfirmation,
                 titleVisibility: .visible
             ) {
                 // Show delete option for each writable file that contains this setting
@@ -366,7 +422,7 @@ struct SettingItemActionsModifier: ViewModifier {
                                     try await SettingsActionHelpers.deleteSetting(item: item, from: contribution.source, viewModel: viewModel)
                                 } catch {
                                     await MainActor.run {
-                                        viewModel.errorMessage = error.localizedDescription
+                                        viewModel.errorMessage = "Failed to delete '\(item.key)' from \(contribution.source.displayName): \(error.localizedDescription)"
                                     }
                                 }
                             }
@@ -383,7 +439,8 @@ struct SettingItemActionsModifier: ViewModifier {
                                 try await SettingsActionHelpers.deleteSettingFromAll(item: item, viewModel: viewModel)
                             } catch {
                                 await MainActor.run {
-                                    viewModel.errorMessage = error.localizedDescription
+                                    let fileNames = item.contributions.map { $0.source.displayName }.joined(separator: ", ")
+                                    viewModel.errorMessage = "Failed to delete '\(item.key)' from all files (\(fileNames)): \(error.localizedDescription)"
                                 }
                             }
                         }
@@ -394,7 +451,7 @@ struct SettingItemActionsModifier: ViewModifier {
             } message: {
                 Text("Choose which file to delete '\(item.key)' from. This action cannot be undone.")
             }
-            .alert("Error", isPresented: $showErrorAlert) {
+            .alert("Error", isPresented: $actionState.showErrorAlert) {
                 Button("OK", role: .cancel) {
                     viewModel.errorMessage = nil
                 }
@@ -404,7 +461,7 @@ struct SettingItemActionsModifier: ViewModifier {
                 }
             }
             .onChange(of: viewModel.errorMessage) { _, newValue in
-                showErrorAlert = newValue != nil
+                actionState.showErrorAlert = newValue != nil
             }
     }
 }
@@ -413,31 +470,25 @@ struct SettingItemActionsModifier: ViewModifier {
 struct ParentNodeActionsModifier: ViewModifier {
     let nodeKey: String
     let viewModel: SettingsViewModel
-
-    @Binding var showCopySheet: Bool
-    @Binding var showMoveSheet: Bool
-    @Binding var showDeleteConfirmation: Bool
-    @Binding var showErrorAlert: Bool
-    @Binding var selectedSourceType: SettingsFileType?
+    @Bindable var actionState: SettingActionState
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $showCopySheet, onDismiss: {
-                selectedSourceType = nil
+            .sheet(isPresented: $actionState.showCopySheet, onDismiss: {
+                actionState.selectedSourceType = nil
             }) {
                 NodeCopyMoveSheet(
                     nodeKey: nodeKey,
                     mode: .copy,
                     contributingSources: SettingsActionHelpers.contributingFileTypes(for: nodeKey, in: viewModel),
                     availableFileTypes: SettingsActionHelpers.availableFileTypes(for: viewModel),
-                    selectedSourceType: $selectedSourceType,
+                    selectedSourceType: $actionState.selectedSourceType,
                     onConfirm: { source, destination in
                         Task {
                             do {
                                 try await SettingsActionHelpers.copyNode(key: nodeKey, from: source, to: destination, viewModel: viewModel)
                                 await MainActor.run {
-                                    showCopySheet = false
-                                    selectedSourceType = nil
+                                    actionState.dismissCopySheet()
                                 }
                             } catch {
                                 await MainActor.run {
@@ -447,27 +498,25 @@ struct ParentNodeActionsModifier: ViewModifier {
                         }
                     },
                     onCancel: {
-                        showCopySheet = false
-                        selectedSourceType = nil
+                        actionState.dismissCopySheet()
                     }
                 )
             }
-            .sheet(isPresented: $showMoveSheet, onDismiss: {
-                selectedSourceType = nil
+            .sheet(isPresented: $actionState.showMoveSheet, onDismiss: {
+                actionState.selectedSourceType = nil
             }) {
                 NodeCopyMoveSheet(
                     nodeKey: nodeKey,
                     mode: .move,
                     contributingSources: SettingsActionHelpers.contributingFileTypes(for: nodeKey, in: viewModel),
                     availableFileTypes: SettingsActionHelpers.availableFileTypes(for: viewModel),
-                    selectedSourceType: $selectedSourceType,
+                    selectedSourceType: $actionState.selectedSourceType,
                     onConfirm: { source, destination in
                         Task {
                             do {
                                 try await SettingsActionHelpers.moveNode(key: nodeKey, from: source, to: destination, viewModel: viewModel)
                                 await MainActor.run {
-                                    showMoveSheet = false
-                                    selectedSourceType = nil
+                                    actionState.dismissMoveSheet()
                                 }
                             } catch {
                                 await MainActor.run {
@@ -477,14 +526,13 @@ struct ParentNodeActionsModifier: ViewModifier {
                         }
                     },
                     onCancel: {
-                        showMoveSheet = false
-                        selectedSourceType = nil
+                        actionState.dismissMoveSheet()
                     }
                 )
             }
             .confirmationDialog(
                 "Delete Setting Group",
-                isPresented: $showDeleteConfirmation,
+                isPresented: $actionState.showDeleteConfirmation,
                 titleVisibility: .visible
             ) {
                 let contributingSources = SettingsActionHelpers.contributingFileTypes(for: nodeKey, in: viewModel)
@@ -528,7 +576,7 @@ struct ParentNodeActionsModifier: ViewModifier {
             } message: {
                 Text("Choose which file to delete '\(nodeKey)' and all its child settings from. This action cannot be undone.")
             }
-            .alert("Error", isPresented: $showErrorAlert) {
+            .alert("Error", isPresented: $actionState.showErrorAlert) {
                 Button("OK", role: .cancel) {
                     viewModel.errorMessage = nil
                 }
@@ -538,8 +586,27 @@ struct ParentNodeActionsModifier: ViewModifier {
                 }
             }
             .onChange(of: viewModel.errorMessage) { _, newValue in
-                showErrorAlert = newValue != nil
+                actionState.showErrorAlert = newValue != nil
             }
+    }
+}
+
+/// Wrapper modifier that only applies ParentNodeActionsModifier if both nodeKey and viewModel are non-nil
+struct OptionalParentNodeActionsModifier: ViewModifier {
+    let nodeKey: String?
+    let viewModel: SettingsViewModel?
+    let actionState: SettingActionState
+
+    func body(content: Content) -> some View {
+        if let nodeKey = nodeKey, let viewModel = viewModel {
+            content.parentNodeActions(
+                nodeKey: nodeKey,
+                viewModel: viewModel,
+                actionState: actionState
+            )
+        } else {
+            content
+        }
     }
 }
 
@@ -556,22 +623,33 @@ extension View {
         }
     }
 
+    /// Conditional view modifier that unwraps an optional value
+    /// - Parameters:
+    ///   - value: A closure returning an optional value
+    ///   - transform: A transform to apply if the value is non-nil
+    /// - Returns: The transformed view if value is non-nil, otherwise the original view
+    @ViewBuilder
+    func ifLet<T, Transform: View>(
+        _ value: @autoclosure () -> T?,
+        transform: (Self, T) -> Transform
+    ) -> some View {
+        if let unwrapped = value() {
+            transform(self, unwrapped)
+        } else {
+            self
+        }
+    }
+
     /// Adds action sheets and dialogs for setting item operations
     func settingItemActions(
         item: SettingItem,
         viewModel: SettingsViewModel,
-        showCopySheet: Binding<Bool>,
-        showMoveSheet: Binding<Bool>,
-        showDeleteConfirmation: Binding<Bool>,
-        showErrorAlert: Binding<Bool>
+        actionState: SettingActionState
     ) -> some View {
         modifier(SettingItemActionsModifier(
             item: item,
             viewModel: viewModel,
-            showCopySheet: showCopySheet,
-            showMoveSheet: showMoveSheet,
-            showDeleteConfirmation: showDeleteConfirmation,
-            showErrorAlert: showErrorAlert
+            actionState: actionState
         ))
     }
 
@@ -579,20 +657,12 @@ extension View {
     func parentNodeActions(
         nodeKey: String,
         viewModel: SettingsViewModel,
-        showCopySheet: Binding<Bool>,
-        showMoveSheet: Binding<Bool>,
-        showDeleteConfirmation: Binding<Bool>,
-        showErrorAlert: Binding<Bool>,
-        selectedSourceType: Binding<SettingsFileType?>
+        actionState: SettingActionState
     ) -> some View {
         modifier(ParentNodeActionsModifier(
             nodeKey: nodeKey,
             viewModel: viewModel,
-            showCopySheet: showCopySheet,
-            showMoveSheet: showMoveSheet,
-            showDeleteConfirmation: showDeleteConfirmation,
-            showErrorAlert: showErrorAlert,
-            selectedSourceType: selectedSourceType
+            actionState: actionState
         ))
     }
 }

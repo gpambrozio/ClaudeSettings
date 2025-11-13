@@ -216,12 +216,7 @@ struct HierarchicalSettingNodeView: View {
     @Binding var expandedNodes: Set<String>
     @ObservedObject var documentationLoader: DocumentationLoader
     let settingsViewModel: SettingsViewModel
-
-    @State private var showDeleteConfirmation = false
-    @State private var showCopySheet = false
-    @State private var showMoveSheet = false
-    @State private var showErrorAlert = false
-    @State private var selectedSourceType: SettingsFileType?
+    @State private var actionState = SettingActionState()
 
     var body: some View {
         Group {
@@ -269,14 +264,14 @@ struct HierarchicalSettingNodeView: View {
                     }
                     .contextMenu {
                         Button(action: {
-                            showCopySheet = true
+                            actionState.showCopySheet = true
                         }) {
                             Label("Copy to...", symbol: .arrowRightDocOnClipboard)
                         }
                         .disabled(settingsViewModel.isEditingMode)
 
                         Button(action: {
-                            showMoveSheet = true
+                            actionState.showMoveSheet = true
                         }) {
                             Label("Move to...", symbol: .arrowshapeTurnUpForward)
                         }
@@ -285,7 +280,7 @@ struct HierarchicalSettingNodeView: View {
                         Divider()
 
                         Button(role: .destructive, action: {
-                            showDeleteConfirmation = true
+                            actionState.showDeleteConfirmation = true
                         }) {
                             Label("Delete", symbol: .trash)
                         }
@@ -296,11 +291,7 @@ struct HierarchicalSettingNodeView: View {
                 .parentNodeActions(
                     nodeKey: node.key,
                     viewModel: settingsViewModel,
-                    showCopySheet: $showCopySheet,
-                    showMoveSheet: $showMoveSheet,
-                    showDeleteConfirmation: $showDeleteConfirmation,
-                    showErrorAlert: $showErrorAlert,
-                    selectedSourceType: $selectedSourceType
+                    actionState: actionState
                 )
             } else if let item = node.settingItem {
                 // Leaf node - display as regular setting item row
@@ -324,11 +315,7 @@ struct SettingItemRow: View {
     let displayName: String?
     @ObservedObject var documentationLoader: DocumentationLoader
     let settingsViewModel: SettingsViewModel
-
-    @State private var showDeleteConfirmation = false
-    @State private var showCopySheet = false
-    @State private var showMoveSheet = false
-    @State private var showErrorAlert = false
+    @State private var actionState = SettingActionState()
 
     init(item: SettingItem, isSelected: Bool, displayName: String? = nil, documentationLoader: DocumentationLoader = DocumentationLoader.shared, settingsViewModel: SettingsViewModel) {
         self.item = item
@@ -409,14 +396,14 @@ struct SettingItemRow: View {
             Divider()
 
             Button(action: {
-                showCopySheet = true
+                actionState.showCopySheet = true
             }) {
                 Label("Copy to...", symbol: .arrowRightDocOnClipboard)
             }
             .disabled(settingsViewModel.isEditingMode)
 
             Button(action: {
-                showMoveSheet = true
+                actionState.showMoveSheet = true
             }) {
                 Label("Move to...", symbol: .arrowshapeTurnUpForward)
             }
@@ -425,7 +412,7 @@ struct SettingItemRow: View {
             Divider()
 
             Button(role: .destructive, action: {
-                showDeleteConfirmation = true
+                actionState.showDeleteConfirmation = true
             }) {
                 Label("Delete", symbol: .trash)
             }
@@ -434,10 +421,7 @@ struct SettingItemRow: View {
         .settingItemActions(
             item: item,
             viewModel: settingsViewModel,
-            showCopySheet: $showCopySheet,
-            showMoveSheet: $showMoveSheet,
-            showDeleteConfirmation: $showDeleteConfirmation,
-            showErrorAlert: $showErrorAlert
+            actionState: actionState
         )
     }
 
@@ -455,38 +439,7 @@ struct SettingItemRow: View {
     }
 
     private func sourceLabel(for type: SettingsFileType) -> String {
-        switch type {
-        case .globalSettings:
-            return "Global"
-        case .globalLocal:
-            return "Global Local"
-        case .projectSettings:
-            return "Project"
-        case .projectLocal:
-            return "Project Local"
-        case .enterpriseManaged:
-            return "Enterprise"
-        case .globalMemory,
-             .projectMemory,
-             .projectLocalMemory:
-            return "Memory"
-        }
-    }
-
-    private func sourceColor(for type: SettingsFileType) -> Color {
-        switch type {
-        case .enterpriseManaged:
-            return .purple
-        case .globalSettings,
-             .globalLocal,
-             .globalMemory:
-            return .blue
-        case .projectSettings,
-             .projectLocal,
-             .projectMemory,
-             .projectLocalMemory:
-            return .green
-        }
+        SettingsActionHelpers.sourceLabel(for: type)
     }
 
     private var valueDescription: String {

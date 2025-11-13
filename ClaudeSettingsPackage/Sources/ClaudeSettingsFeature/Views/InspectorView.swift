@@ -6,12 +6,7 @@ public struct InspectorView: View {
     let selectedKey: String?
     let settingsViewModel: SettingsViewModel?
     @ObservedObject var documentationLoader: DocumentationLoader
-
-    @State private var showDeleteConfirmation = false
-    @State private var showCopySheet = false
-    @State private var showMoveSheet = false
-    @State private var showErrorAlert = false
-    @State private var selectedSourceType: SettingsFileType?
+    @State private var actionState = SettingActionState()
 
     public var body: some View {
         Group {
@@ -124,7 +119,7 @@ public struct InspectorView: View {
 
                         HStack(spacing: 20) {
                             Button(action: {
-                                showCopySheet = true
+                                actionState.showCopySheet = true
                             }) {
                                 Text("Copy to...")
                                     .padding(.horizontal, 10)
@@ -133,7 +128,7 @@ public struct InspectorView: View {
                             .disabled(viewModel.isEditingMode)
 
                             Button(action: {
-                                showMoveSheet = true
+                                actionState.showMoveSheet = true
                             }) {
                                 Text("Move to...")
                                     .padding(.horizontal, 10)
@@ -145,7 +140,7 @@ public struct InspectorView: View {
                         }
 
                         Button(action: {
-                            showDeleteConfirmation = true
+                            actionState.showDeleteConfirmation = true
                         }) {
                             Text("Delete")
                                 .padding(.horizontal, 10)
@@ -159,14 +154,13 @@ public struct InspectorView: View {
                 Spacer()
             }
             .padding()
-            .settingItemActions(
-                item: item,
-                viewModel: viewModel,
-                showCopySheet: $showCopySheet,
-                showMoveSheet: $showMoveSheet,
-                showDeleteConfirmation: $showDeleteConfirmation,
-                showErrorAlert: $showErrorAlert
-            )
+            .ifLet(settingsViewModel) { view, viewModel in
+                view.settingItemActions(
+                    item: item,
+                    viewModel: viewModel,
+                    actionState: actionState
+                )
+            }
         }
     }
 
@@ -209,7 +203,7 @@ public struct InspectorView: View {
     private func contributionHeaderEditing(item: SettingItem, pendingEdit: PendingEdit?) -> some View {
         if let viewModel = settingsViewModel {
             Menu {
-                ForEach(availableFileTypes(for: viewModel), id: \.self) { fileType in
+                ForEach(SettingsActionHelpers.availableFileTypes(for: viewModel), id: \.self) { fileType in
                     Button(action: {
                         // Update the target file type for this pending edit
                         // Find the value from this file's contribution, or use current edited value
@@ -411,7 +405,7 @@ public struct InspectorView: View {
 
                 // Actions section
                 if let viewModel = settingsViewModel {
-                    let contributingSources = contributingFileTypes(for: key, in: viewModel)
+                    let contributingSources = SettingsActionHelpers.contributingFileTypes(for: key, in: viewModel)
 
                     if !contributingSources.isEmpty {
                         Divider()
@@ -424,7 +418,7 @@ public struct InspectorView: View {
 
                             HStack(spacing: 20) {
                                 Button(action: {
-                                    showCopySheet = true
+                                    actionState.showCopySheet = true
                                 }) {
                                     Text("Copy to...")
                                         .padding(.horizontal, 10)
@@ -433,7 +427,7 @@ public struct InspectorView: View {
                                 .disabled(viewModel.isEditingMode)
 
                                 Button(action: {
-                                    showMoveSheet = true
+                                    actionState.showMoveSheet = true
                                 }) {
                                     Text("Move to...")
                                         .padding(.horizontal, 10)
@@ -445,7 +439,7 @@ public struct InspectorView: View {
                             }
 
                             Button(action: {
-                                showDeleteConfirmation = true
+                                actionState.showDeleteConfirmation = true
                             }) {
                                 Text("Delete")
                                     .padding(.horizontal, 10)
@@ -461,17 +455,11 @@ public struct InspectorView: View {
             }
             .padding()
         }
-        .if(selectedKey != nil && viewModel != nil) { view in
-            view.parentNodeActions(
-                nodeKey: selectedKey!,
-                viewModel: viewModel!,
-                showCopySheet: $showCopySheet,
-                showMoveSheet: $showMoveSheet,
-                showDeleteConfirmation: $showDeleteConfirmation,
-                showErrorAlert: $showErrorAlert,
-                selectedSourceType: $selectedSourceType
-            )
-        }
+        .modifier(OptionalParentNodeActionsModifier(
+            nodeKey: selectedKey,
+            viewModel: settingsViewModel,
+            actionState: actionState
+        ))
     }
 
     @ViewBuilder
@@ -508,7 +496,7 @@ public struct InspectorView: View {
                 }
 
                 // Actions section
-                let contributingSources = contributingFileTypes(for: key, in: viewModel)
+                let contributingSources = SettingsActionHelpers.contributingFileTypes(for: key, in: viewModel)
 
                 if !contributingSources.isEmpty {
                     Divider()
@@ -521,7 +509,7 @@ public struct InspectorView: View {
 
                         HStack(spacing: 20) {
                             Button(action: {
-                                showCopySheet = true
+                                actionState.showCopySheet = true
                             }) {
                                 Text("Copy to...")
                                     .padding(.horizontal, 10)
@@ -530,7 +518,7 @@ public struct InspectorView: View {
                             .disabled(viewModel.isEditingMode)
 
                             Button(action: {
-                                showMoveSheet = true
+                                actionState.showMoveSheet = true
                             }) {
                                 Text("Move to...")
                                     .padding(.horizontal, 10)
@@ -542,7 +530,7 @@ public struct InspectorView: View {
                         }
 
                         Button(action: {
-                            showDeleteConfirmation = true
+                            actionState.showDeleteConfirmation = true
                         }) {
                             Text("Delete")
                                 .padding(.horizontal, 10)
@@ -557,17 +545,11 @@ public struct InspectorView: View {
             }
             .padding()
         }
-        .if(selectedKey != nil && viewModel != nil) { view in
-            view.parentNodeActions(
-                nodeKey: selectedKey!,
-                viewModel: viewModel!,
-                showCopySheet: $showCopySheet,
-                showMoveSheet: $showMoveSheet,
-                showDeleteConfirmation: $showDeleteConfirmation,
-                showErrorAlert: $showErrorAlert,
-                selectedSourceType: $selectedSourceType
-            )
-        }
+        .parentNodeActions(
+            nodeKey: key,
+            viewModel: viewModel,
+            actionState: actionState
+        )
     }
 
     private func childCount(for key: String, in viewModel: SettingsViewModel) -> Int {
@@ -611,22 +593,7 @@ public struct InspectorView: View {
     }
 
     private func sourceLabel(for type: SettingsFileType) -> String {
-        switch type {
-        case .globalSettings:
-            return "Global Settings"
-        case .globalLocal:
-            return "Global Local"
-        case .projectSettings:
-            return "Project Settings"
-        case .projectLocal:
-            return "Project Local"
-        case .enterpriseManaged:
-            return "Enterprise Managed"
-        case .globalMemory,
-             .projectMemory,
-             .projectLocalMemory:
-            return "Memory File"
-        }
+        SettingsActionHelpers.sourceLabel(for: type)
     }
 
     @ViewBuilder
