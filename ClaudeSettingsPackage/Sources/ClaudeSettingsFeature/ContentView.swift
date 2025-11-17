@@ -79,11 +79,11 @@ public struct ContentView: View {
         case .globalSettings:
             let viewModel = SettingsViewModel(project: nil)
             settingsViewModel = viewModel
-            viewModel.loadSettings()
+            await viewModel.loadSettings()
         case let .project(project):
             let viewModel = SettingsViewModel(project: project)
             settingsViewModel = viewModel
-            viewModel.loadSettings()
+            await viewModel.loadSettings()
         case .none:
             settingsViewModel = nil
         }

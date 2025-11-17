@@ -58,88 +58,86 @@ final public class SettingsViewModel {
     }
 
     /// Load all settings files for the current project
-    public func loadSettings() {
-        loadSettingsFiles(includeProject: project != nil, projectPath: project?.path)
+    public func loadSettings() async {
+        await loadSettingsFiles(includeProject: project != nil, projectPath: project?.path)
     }
 
     /// Load settings files with optional project scope
-    private func loadSettingsFiles(includeProject: Bool, projectPath: URL?) {
+    private func loadSettingsFiles(includeProject: Bool, projectPath: URL?) async {
         isLoading = true
         errorMessage = nil
 
-        Task {
-            do {
-                var files: [SettingsFile] = []
-                let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+        do {
+            var files: [SettingsFile] = []
+            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 
-                // Load enterprise managed settings first (highest precedence, cannot be overridden)
-                for enterprisePath in SettingsFileType.enterpriseManagedPaths(homeDirectory: homeDirectory) where await fileSystemManager.exists(at: enterprisePath) {
-                    let file = try await settingsParser.parseSettingsFile(
-                        at: enterprisePath,
-                        type: .enterpriseManaged
-                    )
-                    files.append(file)
-                    logger.info("Loaded enterprise managed settings from: \(enterprisePath.path)")
-                    break // Only load the first found enterprise settings
-                }
-
-                // Load global settings (they form the base layer)
-                let globalSettingsPath = SettingsFileType.globalSettings.path(in: homeDirectory)
-                if await fileSystemManager.exists(at: globalSettingsPath) {
-                    let file = try await settingsParser.parseSettingsFile(
-                        at: globalSettingsPath,
-                        type: .globalSettings
-                    )
-                    files.append(file)
-                }
-
-                let globalLocalPath = SettingsFileType.globalLocal.path(in: homeDirectory)
-                if await fileSystemManager.exists(at: globalLocalPath) {
-                    let file = try await settingsParser.parseSettingsFile(
-                        at: globalLocalPath,
-                        type: .globalLocal
-                    )
-                    files.append(file)
-                }
-
-                // Load project settings if requested
-                if includeProject, let projectPath {
-                    let projectSettingsPath = SettingsFileType.projectSettings.path(in: projectPath)
-                    if await fileSystemManager.exists(at: projectSettingsPath) {
-                        let file = try await settingsParser.parseSettingsFile(
-                            at: projectSettingsPath,
-                            type: .projectSettings
-                        )
-                        files.append(file)
-                    }
-
-                    let projectLocalPath = SettingsFileType.projectLocal.path(in: projectPath)
-                    if await fileSystemManager.exists(at: projectLocalPath) {
-                        let file = try await settingsParser.parseSettingsFile(
-                            at: projectLocalPath,
-                            type: .projectLocal
-                        )
-                        files.append(file)
-                    }
-                }
-
-                settingsFiles = files
-                settingItems = computeSettingItems(from: files)
-                hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
-                validationErrors = files.flatMap(\.validationErrors)
-
-                let scope = includeProject ? "settings" : "global settings"
-                logger.info("Loaded \(files.count) \(scope) files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
-
-                // Set up file watching for live updates
-                await setupFileWatcher()
-            } catch {
-                logger.error("Failed to load settings: \(error)")
-                errorMessage = userFriendlyErrorMessage(for: error)
+            // Load enterprise managed settings first (highest precedence, cannot be overridden)
+            for enterprisePath in SettingsFileType.enterpriseManagedPaths(homeDirectory: homeDirectory) where await fileSystemManager.exists(at: enterprisePath) {
+                let file = try await settingsParser.parseSettingsFile(
+                    at: enterprisePath,
+                    type: .enterpriseManaged
+                )
+                files.append(file)
+                logger.info("Loaded enterprise managed settings from: \(enterprisePath.path)")
+                break // Only load the first found enterprise settings
             }
 
-            isLoading = false
+            // Load global settings (they form the base layer)
+            let globalSettingsPath = SettingsFileType.globalSettings.path(in: homeDirectory)
+            if await fileSystemManager.exists(at: globalSettingsPath) {
+                let file = try await settingsParser.parseSettingsFile(
+                    at: globalSettingsPath,
+                    type: .globalSettings
+                )
+                files.append(file)
+            }
+
+            let globalLocalPath = SettingsFileType.globalLocal.path(in: homeDirectory)
+            if await fileSystemManager.exists(at: globalLocalPath) {
+                let file = try await settingsParser.parseSettingsFile(
+                    at: globalLocalPath,
+                    type: .globalLocal
+                )
+                files.append(file)
+            }
+
+            // Load project settings if requested
+            if includeProject, let projectPath {
+                let projectSettingsPath = SettingsFileType.projectSettings.path(in: projectPath)
+                if await fileSystemManager.exists(at: projectSettingsPath) {
+                    let file = try await settingsParser.parseSettingsFile(
+                        at: projectSettingsPath,
+                        type: .projectSettings
+                    )
+                    files.append(file)
+                }
+
+                let projectLocalPath = SettingsFileType.projectLocal.path(in: projectPath)
+                if await fileSystemManager.exists(at: projectLocalPath) {
+                    let file = try await settingsParser.parseSettingsFile(
+                        at: projectLocalPath,
+                        type: .projectLocal
+                    )
+                    files.append(file)
+                }
+            }
+
+            settingsFiles = files
+            settingItems = computeSettingItems(from: files)
+            hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
+            validationErrors = files.flatMap(\.validationErrors)
+
+            let scope = includeProject ? "settings" : "global settings"
+            logger.info("Loaded \(files.count) \(scope) files with \(settingItems.count) settings and \(validationErrors.count) validation errors")
+
+            // Set up file watching for live updates
+            await setupFileWatcher()
+        } catch {
+            logger.error("Failed to load settings: \(error)")
+            errorMessage = userFriendlyErrorMessage(for: error)
         }
+
+        isLoading = false
     }
 
     /// Set up file watcher to monitor settings files for changes
