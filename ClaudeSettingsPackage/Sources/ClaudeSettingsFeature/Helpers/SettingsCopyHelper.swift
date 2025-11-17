@@ -28,7 +28,7 @@ public enum SettingsCopyHelper {
         // Create a temporary SettingsViewModel for the target project
         // This reuses all existing file handling, validation, backup, and rollback logic
         let viewModel = SettingsViewModel(project: project)
-        viewModel.loadSettings()
+        await viewModel.loadSettingsAsync()
 
         // Convert entries to (key, value) tuples for batch update
         let updates = setting.settings.map { ($0.key, $0.value) }

@@ -62,15 +62,29 @@ final public class SettingsViewModel {
         loadSettingsFiles(includeProject: project != nil, projectPath: project?.path)
     }
 
+    /// Load all settings files for the current project (async version)
+    public func loadSettingsAsync() async {
+        await loadSettingsFilesAsync(includeProject: project != nil, projectPath: project?.path)
+    }
+
     /// Load settings files with optional project scope
     private func loadSettingsFiles(includeProject: Bool, projectPath: URL?) {
         isLoading = true
         errorMessage = nil
 
         Task {
-            do {
-                var files: [SettingsFile] = []
-                let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            await loadSettingsFilesAsync(includeProject: includeProject, projectPath: projectPath)
+        }
+    }
+
+    /// Load settings files with optional project scope (async version)
+    private func loadSettingsFilesAsync(includeProject: Bool, projectPath: URL?) async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            var files: [SettingsFile] = []
+            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 
                 // Load enterprise managed settings first (highest precedence, cannot be overridden)
                 for enterprisePath in SettingsFileType.enterpriseManagedPaths(homeDirectory: homeDirectory) where await fileSystemManager.exists(at: enterprisePath) {
@@ -133,13 +147,12 @@ final public class SettingsViewModel {
 
                 // Set up file watching for live updates
                 await setupFileWatcher()
-            } catch {
-                logger.error("Failed to load settings: \(error)")
-                errorMessage = userFriendlyErrorMessage(for: error)
-            }
-
-            isLoading = false
+        } catch {
+            logger.error("Failed to load settings: \(error)")
+            errorMessage = userFriendlyErrorMessage(for: error)
         }
+
+        isLoading = false
     }
 
     /// Set up file watcher to monitor settings files for changes

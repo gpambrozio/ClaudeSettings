@@ -818,4 +818,84 @@ struct SettingsViewModelFileOperationsTests {
         // Verify all nested keys are gone from settingItems
         #expect(!viewModel.settingItems.contains(where: { $0.key.starts(with: "hooks") }), "No hooks.* settings should remain")
     }
+
+    /// Test drag and drop to existing file merges settings instead of replacing
+    @Test("Drag and drop merges with existing settings")
+    func dragAndDropMergesSettings() async throws {
+        // Given: A target project with existing settings
+        let tempDir = FileManager.default.temporaryDirectory
+        let projectDir = tempDir.appendingPathComponent("test-project-\(UUID().uuidString)")
+        let claudeDir = projectDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        let projectSettingsPath = claudeDir.appendingPathComponent("settings.json")
+
+        // Create existing settings in the project file
+        let existingContent: [String: Any] = [
+            "existingSetting1": "value1",
+            "existingSetting2": 42,
+            "editor": [
+                "theme": "light"
+            ]
+        ]
+        let existingData = try JSONSerialization.data(withJSONObject: existingContent, options: .prettyPrinted)
+        try existingData.write(to: projectSettingsPath)
+
+        defer { try? FileManager.default.removeItem(at: projectDir) }
+
+        // Create a project instance
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectDir,
+            claudeDirectory: claudeDir,
+            hasLocalSettings: false,
+            hasSharedSettings: true
+        )
+
+        // Create settings to drag and drop
+        let draggableSettings = DraggableSetting(settings: [
+            DraggableSetting.SettingEntry(
+                key: "newSetting1",
+                value: .string("newValue1"),
+                sourceFileType: .globalSettings
+            ),
+            DraggableSetting.SettingEntry(
+                key: "newSetting2",
+                value: .int(123),
+                sourceFileType: .globalSettings
+            ),
+            DraggableSetting.SettingEntry(
+                key: "editor.fontSize",
+                value: .int(14),
+                sourceFileType: .globalSettings
+            )
+        ])
+
+        // When: Dragging and dropping the settings to the project
+        try await SettingsCopyHelper.copySetting(
+            setting: draggableSettings,
+            to: project,
+            fileType: .projectSettings
+        )
+
+        // Then: The file should contain BOTH existing and new settings
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: projectSettingsPath, type: .projectSettings)
+
+        // Verify existing settings are still there
+        #expect(updatedFile.content["existingSetting1"] == .string("value1"), "Existing setting 1 should be preserved")
+        #expect(updatedFile.content["existingSetting2"] == .int(42), "Existing setting 2 should be preserved")
+
+        // Verify new settings were added
+        #expect(updatedFile.content["newSetting1"] == .string("newValue1"), "New setting 1 should be added")
+        #expect(updatedFile.content["newSetting2"] == .int(123), "New setting 2 should be added")
+
+        // Verify nested settings are merged correctly
+        if case let .object(editorDict) = updatedFile.content["editor"] {
+            #expect(editorDict["theme"] == .string("light"), "Existing editor.theme should be preserved")
+            #expect(editorDict["fontSize"] == .int(14), "New editor.fontSize should be added")
+        } else {
+            Issue.record("editor should exist as object with both old and new settings")
+        }
+    }
 }
