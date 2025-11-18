@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "jq -r '.tool_input.file_path' | { read file_path; if echo \"$file_path\" | grep -q '\\.swift$'; then swiftformat \"$file_path\"; fi; }",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|MultiEdit|Write"
+      },
+      {
+        "hooks": [
+          {
+            "command": "jq -r '.tool_input.relative_path' | { read relative_path; if echo \"$relative_path\" | grep -q '\\.swift$'; then swiftformat \"$relative_path\"; fi; }",
+            "type": "command"
+          }
+        ],
+        "matcher": "mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol|mcp__serena__replace_regex|mcp__serena__delete_lines|mcp__serena__replace_lines"
+      }
+    ]
+  }
+}
