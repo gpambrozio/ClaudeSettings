@@ -7,7 +7,7 @@
 // ==========================================
 // Test Target Settings (Customizable by scaffold tool)
 // ==========================================
-PRODUCT_BUNDLE_IDENTIFIER = br.eng.gustavo.ClaudeSettings
+PRODUCT_BUNDLE_IDENTIFIER = io.github.ClaudeSettings
 TEST_TARGET_NAME = ClaudeSettings
 
 // Fix duplicate module name issue
