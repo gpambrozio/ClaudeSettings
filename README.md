@@ -124,7 +124,7 @@ This project uses the [SFSymbolsMacro](https://github.com/lukepistrol/SFSymbolsM
 #### Using Symbols
 
 - **Never use string literals** for SF Symbols (enforced by SwiftLint rule)
-- **Always use the `Symbols` enum** from `MacVoiceHooksPackage/Sources/MacVoiceHooksFeature/Symbols.swift`
+- **Always use the `Symbols` enum** from `ClaudeSettingsPackage/Sources/ClaudeSettingsFeature/Symbols.swift`
 - Symbols are kept in **alphabetical order** within the enum
 
 #### Examples

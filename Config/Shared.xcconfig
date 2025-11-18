@@ -29,3 +29,11 @@ INFOPLIST_FILE = ClaudeSettings/Info.plist
 // ==========================================
 // AI agents can modify Config/ClaudeSettings.entitlements to add capabilities
 CODE_SIGN_ENTITLEMENTS = Config/ClaudeSettings.entitlements
+
+// ==========================================
+// Debug Symbols Configuration
+// ==========================================
+// Generate dSYM files for crash reporting and App Store symbolication
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+COPY_PHASE_STRIP = NO
+STRIP_INSTALLED_PRODUCT = YES
