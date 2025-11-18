@@ -1,0 +1,59 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background with gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF7A59;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF5533;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gearGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFE8E0;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect width="1024" height="1024" rx="225" fill="url(#bgGradient)"/>
+
+  <!-- Abstract Claude-style wave/arc elements in background -->
+  <path d="M 200 300 Q 350 250 500 300 T 800 300"
+        stroke="#FF9980"
+        stroke-width="40"
+        fill="none"
+        opacity="0.3"
+        stroke-linecap="round"/>
+  <path d="M 220 500 Q 370 450 520 500 T 820 500"
+        stroke="#FF9980"
+        stroke-width="40"
+        fill="none"
+        opacity="0.3"
+        stroke-linecap="round"/>
+  <path d="M 200 700 Q 350 650 500 700 T 800 700"
+        stroke="#FF9980"
+        stroke-width="40"
+        fill="none"
+        opacity="0.3"
+        stroke-linecap="round"/>
+
+  <!-- Gear icon (centered, larger) -->
+  <g transform="translate(512, 512)">
+    <!-- Outer gear teeth -->
+    <path d="M 0,-220 L 50,-250 L 50,-280 L -50,-280 L -50,-250 Z" fill="url(#gearGradient)" transform="rotate(0)"/>
+    <path d="M 0,-220 L 50,-250 L 50,-280 L -50,-280 L -50,-250 Z" fill="url(#gearGradient)" transform="rotate(60)"/>
+    <path d="M 0,-220 L 50,-250 L 50,-280 L -50,-280 L -50,-250 Z" fill="url(#gearGradient)" transform="rotate(120)"/>
+    <path d="M 0,-220 L 50,-250 L 50,-280 L -50,-280 L -50,-250 Z" fill="url(#gearGradient)" transform="rotate(180)"/>
+    <path d="M 0,-220 L 50,-250 L 50,-280 L -50,-280 L -50,-250 Z" fill="url(#gearGradient)" transform="rotate(240)"/>
+    <path d="M 0,-220 L 50,-250 L 50,-280 L -50,-280 L -50,-250 Z" fill="url(#gearGradient)" transform="rotate(300)"/>
+
+    <!-- Main gear circle -->
+    <circle r="220" fill="url(#gearGradient)"/>
+
+    <!-- Inner circle (center hole) -->
+    <circle r="80" fill="#FF6644"/>
+
+    <!-- Small decorative inner ring -->
+    <circle r="100" fill="none" stroke="#FF8866" stroke-width="3" opacity="0.5"/>
+  </g>
+
+  <!-- Subtle shadow/depth -->
+  <circle cx="512" cy="520" r="220" fill="#000000" opacity="0.1"/>
+</svg>
