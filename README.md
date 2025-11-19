@@ -19,7 +19,7 @@ This app was vibe coded ([vibe engineered?](https://simonwillison.net/2025/Oct/7
 
 Contributions are welcome! See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, build instructions, and development guidelines.
 
-## Warnings
+## Disclaimer
 
 As this is a side project mostly build with Claude Code it probably contains bugs. Feel free to open an issue if you find one or, better yet, fix and submit a pull request. The app does backup every file it touches to `~/Library/Application Support/ClaudeSettings/Backups`.
 
