@@ -6,9 +6,12 @@ Synchronize the settings documentation JSON file with the official Claude Code s
    - Fetch from https://www.schemastore.org/claude-code-settings.json
    - Parse and analyze the schema structure
 
+2. **Look at the documentation**:
+   - Look at https://code.claude.com/docs/en/settings for the official documentation and examples
+
 2. **Update existing fields** in `ClaudeSettingsPackage/Sources/ClaudeSettingsFeature/Resources/settings-documentation.json`:
-   - Compare descriptions - use schema version if clearer
-   - Compare examples - use schema examples if better
+   - Compare descriptions - use schema or documentation version if clearer
+   - Compare examples - use schema  or documentation examples if better
    - Add `enumValues` for fields with `enum` constraints (enables dropdown UI)
    - Add validation constraints: `minLength`, `minimum`, `uniqueItems`, `itemMinLength`
    - Update type definitions (e.g., `number` → `integer`)
@@ -18,6 +21,7 @@ Synchronize the settings documentation JSON file with the official Claude Code s
    - Identify fields present in schema but missing from our documentation
    - Add them to the appropriate category with description and examples
    - Generate UUIDs for example IDs
+   - Add missing fields in a way that reduces the diff to make it easier to review
 
 4. **Validate the result**:
    - Ensure JSON is valid
