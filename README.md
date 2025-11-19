@@ -1,175 +1,97 @@
-# ClaudeSettings - macOS App
+# ClaudeSettings
 
-A modern macOS application using a **workspace + SPM package** architecture for clean separation between app shell and feature code.
+A native macOS app for visually managing your Claude Code settings.
 
-## Project Architecture
+## Why ClaudeSettings?
 
-```
-ClaudeSettings/
-├── ClaudeSettings.xcworkspace/              # Open this file in Xcode
-├── ClaudeSettings.xcodeproj/                # App shell project
-├── ClaudeSettings/                          # App target (minimal)
-│   ├── Assets.xcassets/                # App-level assets (icons, colors)
-│   ├── ClaudeSettingsApp.swift              # App entry point
-│   ├── ClaudeSettings.entitlements          # App sandbox settings
-│   └── ClaudeSettings.xctestplan            # Test configuration
-├── ClaudeSettingsPackage/                   # 🚀 Primary development area
-│   ├── Package.swift                   # Package configuration
-│   ├── Sources/ClaudeSettingsFeature/       # Your feature code
-│   └── Tests/ClaudeSettingsFeatureTests/    # Unit tests
-└── ClaudeSettingsUITests/                   # UI automation tests
-```
+Claude Code stores its configuration in JSON files scattered across multiple locations—global settings, project settings, local overrides, enterprise policies. Managing these files means:
 
-## Key Architecture Points
+- Hunting through directories to find the right file
+- Remembering which settings override which
+- Manually editing JSON without validation
+- No easy way to see the "effective" configuration
 
-### Workspace + SPM Structure
-- **App Shell**: `ClaudeSettings/` contains minimal app lifecycle code
-- **Feature Code**: `ClaudeSettingsPackage/Sources/ClaudeSettingsFeature/` is where most development happens
-- **Separation**: Business logic lives in the SPM package, app target just imports and displays it
+ClaudeSettings gives you a visual interface to manage all of this in one place.
 
-### Buildable Folders (Xcode 16)
-- Files added to the filesystem automatically appear in Xcode
-- No need to manually add files to project targets
-- Reduces project file conflicts in teams
+## Built with Claude Code
 
-### App Sandbox
-The app is sandboxed by default with basic file access permissions. Modify `ClaudeSettings.entitlements` to add capabilities as needed.
+This app was vibe coded ([vibe engineered?](https://simonwillison.net/2025/Oct/7/vibe-engineering/)) almost entirely using [Claude Code](https://claude.ai/claude-code). It serves as both a useful tool and a demonstration of what's possible with AI-assisted development.
 
-## Development Notes
+Contributions are welcome! See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, build instructions, and development guidelines.
 
-### Code Organization
-Most development happens in `ClaudeSettingsPackage/Sources/ClaudeSettingsFeature/` - organize your code as you prefer.
+## Disclaimer
 
-### Public API Requirements
-Types exposed to the app target need `public` access:
-```swift
-public struct SettingsView: View {
-    public init() {}
-    
-    public var body: some View {
-        // Your view code
-    }
-}
-```
+As this is a side project mostly build with Claude Code it probably contains bugs. Feel free to open an issue if you find one or, better yet, fix and submit a pull request. The app does backup every file it touches to `~/Library/Application Support/ClaudeSettings/Backups`.
 
-### Adding Dependencies
-Edit `ClaudeSettingsPackage/Package.swift` to add SPM dependencies:
-```swift
-dependencies: [
-    .package(url: "https://github.com/example/SomePackage", from: "1.0.0")
-],
-targets: [
-    .target(
-        name: "ClaudeSettingsFeature",
-        dependencies: ["SomePackage"]
-    ),
-]
-```
+## Features
 
-### Test Structure
-- **Unit Tests**: `ClaudeSettingsPackage/Tests/ClaudeSettingsFeatureTests/` (Swift Testing framework)
-- **UI Tests**: `ClaudeSettingsUITests/` (XCUITest framework)
-- **Test Plan**: `ClaudeSettings.xctestplan` coordinates all tests
+### See Everything in One View
 
-## Configuration
+Browse all your Claude Code projects and their settings in a unified three-panel interface. The sidebar shows your projects, the list shows available settings organized by category, and the inspector shows details and lets you edit values.
 
-### Settings Documentation Schema
+### Understand Setting Precedence
 
-The app uses a custom documentation JSON file at `ClaudeSettingsPackage/Sources/ClaudeSettingsFeature/Resources/settings-documentation.json` that describes all available Claude Code settings.
+Settings can be defined at multiple levels—enterprise, project, global—and they override each other in specific ways. ClaudeSettings shows you exactly where each value comes from and what's being overridden.
 
-**Official Schema Source**: https://www.schemastore.org/claude-code-settings.json
+### Edit with Confidence
 
-**Updating**: Use the `/sync-settings-schema` slash command to synchronize our documentation with the latest official schema.
+- **Validation**: The app validates your changes before saving
+- **Backups**: Automatic backups before any modification
+- **Rollback**: If something goes wrong, your original settings are restored
+- **Batch editing**: Change multiple settings at once
 
-### XCConfig Build Settings
-Build settings are managed through **XCConfig files** in `Config/`:
-- `Config/Shared.xcconfig` - Common settings (bundle ID, versions, deployment target)
-- `Config/Debug.xcconfig` - Debug-specific settings
-- `Config/Release.xcconfig` - Release-specific settings
-- `Config/Tests.xcconfig` - Test-specific settings
+### Drag and Drop
 
-### App Sandbox & Entitlements
-The app is sandboxed by default with basic file access. Edit `ClaudeSettings/ClaudeSettings.entitlements` to add capabilities:
-```xml
-<key>com.apple.security.files.user-selected.read-write</key>
-<true/>
-<key>com.apple.security.network.client</key>
-<true/>
-<!-- Add other entitlements as needed -->
-```
+Move or copy settings between projects by dragging them in the sidebar. Reorganize your configuration without manual file copying.
 
-## macOS-Specific Features
+### Stay in Sync
 
-### Window Management
-Add multiple windows and settings panels:
-```swift
-@main
-struct ClaudeSettingsApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-        
-        Settings {
-            SettingsView()
-        }
-    }
-}
-```
+ClaudeSettings watches for external changes to your settings files. If you edit a file in your text editor or Claude Code updates something, the app reflects those changes automatically.
 
-### SF Symbols Usage
+### Built-in Documentation
 
-This project uses the [SFSymbolsMacro](https://github.com/lukepistrol/SFSymbolsMacro) library for type-safe SF Symbol management:
+Every setting includes documentation from the official Claude Code schema, so you know what each option does without leaving the app.
 
-#### Using Symbols
+## Installation
 
-- **Never use string literals** for SF Symbols (enforced by SwiftLint rule)
-- **Always use the `Symbols` enum** from `ClaudeSettingsPackage/Sources/ClaudeSettingsFeature/Symbols.swift`
-- Symbols are kept in **alphabetical order** within the enum
+### Requirements
 
-#### Examples
+- macOS 15.0 (Sequoia) or later
 
-```swift
-// ✅ Correct - Use Symbols enum
-Label("Settings", symbol: .gearshape)
-Symbols.micFill.image
-stateMachine.state.icon.image
+### Download
 
-// ❌ Wrong - Don't use string literals
-Label("Settings", systemImage: "gearshape")
-Image(systemName: "mic.fill")
-```
+Download the latest release from the [Releases](https://github.com/gpambrozio/ClaudeSettings/releases) page.
 
-#### Adding New Symbols
+### Build from Source
 
-1. Add the new case to `Symbols` enum in alphabetical order
-2. Use camelCase for the case name
-3. Specify raw value only if different from case name
-4. Make sure to keep the enum `public` for cross-module access
+1. Clone the repository
+2. Open `ClaudeSettings.xcworkspace` in Xcode 16 or later
+3. Build and run
 
-```swift
-@SFSymbol
-public enum Symbols: String {
-    case micFill = "mic.fill"  // Raw value needed
-    case terminal             // Raw value same as case name
-}
-```
+## Usage
 
-### Asset Management
-- **App-Level Assets**: `ClaudeSettings/Assets.xcassets/` (app icon with multiple sizes, accent color)
-- **Feature Assets**: Add `Resources/` folder to SPM package if needed
+1. **Launch the app** — It automatically scans for Claude Code projects on your system
+2. **Select a project** — Click on a project in the sidebar to view its settings
+3. **Browse settings** — Settings are organized by category in the list view
+4. **Edit values** — Click "Edit" to enter edit mode, make changes, then save
+5. **See overrides** — The inspector shows which file defines each setting and what it overrides
 
-### SPM Package Resources
-To include assets in your feature package:
-```swift
-.target(
-    name: "ClaudeSettingsFeature",
-    dependencies: [],
-    resources: [.process("Resources")]
-)
-```
+### Settings Locations
 
-## Notes
+ClaudeSettings manages these configuration files:
 
-### Generated with XcodeBuildMCP
-This project was scaffolded using [XcodeBuildMCP](https://github.com/cameroncooke/XcodeBuildMCP), which provides tools for AI-assisted macOS development workflows.
+| Scope | File | Description |
+|-------|------|-------------|
+| Global | `~/.claude/settings.json` | Your personal defaults |
+| Global Local | `~/.claude/settings.local.json` | Personal settings not synced |
+| Project | `.claude/settings.json` | Shared project settings |
+| Project Local | `.claude/settings.local.json` | Your local project overrides |
+| Enterprise | (managed) | Organization policies |
+
+## Contributing
+
+Interested in contributing? See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, build instructions, and development guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
