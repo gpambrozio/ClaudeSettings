@@ -15,9 +15,13 @@ ClaudeSettings gives you a visual interface to manage all of this in one place.
 
 ## Built with Claude Code
 
-This app was vibe coded entirely using [Claude Code](https://claude.ai/claude-code). It serves as both a useful tool and a demonstration of what's possible with AI-assisted development.
+This app was vibe coded ([vibe engineered?](https://simonwillison.net/2025/Oct/7/vibe-engineering/)) almost entirely using [Claude Code](https://claude.ai/claude-code). It serves as both a useful tool and a demonstration of what's possible with AI-assisted development.
 
 Contributions are welcome! See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, build instructions, and development guidelines.
+
+## Warnings
+
+As this is a side project mostly build with Claude Code it probably contains bugs. Feel free to open an issue if you find one or, better yet, fix and submit a pull request. The app does backup every file it touches to `~/Library/Application Support/ClaudeSettings/Backups`.
 
 ## Features
 
