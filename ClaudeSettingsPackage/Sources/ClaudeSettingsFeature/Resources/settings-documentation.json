@@ -9,9 +9,7 @@
         {
           "key": "model",
           "type": "string",
-          "defaultValue": "Auto-selected based on availability",
-          "description": "Deprecated: use env.ANTHROPIC_MODEL and env.ANTHROPIC_SMALL_FAST_MODEL instead. Either \"sonnet\", \"opus\", or a specific Claude model ID (see https://docs.anthropic.com/en/docs/about-claude/models/overview)",
-          "deprecated": true,
+          "description": "Override the default model used by Claude Code.",
           "examples": [
             {
               "code": "{\n  \"model\": \"claude-sonnet-4-5-20250929\"\n}",
@@ -24,7 +22,7 @@
           "key": "outputStyle",
           "type": "string",
           "minLength": 1,
-          "description": "The output style to use (case-sensitive). Can be 'default', 'Explanatory', 'Learning', or a custom style name.",
+          "description": "Controls the output style for assistant responses. Can be 'default', 'Explanatory', 'Learning', or a custom style name.",
           "examples": [
             {
               "code": "{\n  \"outputStyle\": \"Explanatory\"\n}",
@@ -41,7 +39,7 @@
         {
           "key": "statusLine",
           "type": "object",
-          "description": "Custom status line configuration. Requires 'type' (must be 'command') and 'command' (shell command to execute).",
+          "description": "Custom status line display configuration. Requires 'type' (must be 'command') and 'command' (shell command to execute).",
           "required": ["type", "command"],
           "properties": {
             "type": {
@@ -71,7 +69,7 @@
             "claudeai",
             "console"
           ],
-          "description": "Force a specific login method, and skip the login method selection screen.",
+          "description": "Force a specific login method: 'claudeai' for Claude Pro/Max, 'console' for Console billing.",
           "examples": [
             {
               "code": "{\n  \"forceLoginMethod\": \"console\"\n}",
@@ -91,6 +89,18 @@
               "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890"
             }
           ]
+        },
+        {
+          "key": "spinnerTipsEnabled",
+          "type": "boolean",
+          "description": "Whether to show tips in the spinner.",
+          "examples": [
+            {
+              "code": "{\n  \"spinnerTipsEnabled\": false\n}",
+              "description": "Disable spinner tips",
+              "id": "a3b4c5d6-e7f8-9012-bcde-f12345678901"
+            }
+          ]
         }
       ]
     },
@@ -103,7 +113,7 @@
           "key": "apiKeyHelper",
           "type": "string",
           "minLength": 1,
-          "description": "Custom script path to generate an auth value. The script should output credentials to stdout.",
+          "description": "Path to a script that outputs authentication values.",
           "relatedEnvVars": [
             "CLAUDE_CODE_API_KEY_HELPER_TTL_MS"
           ],
@@ -118,9 +128,8 @@
         {
           "key": "forceLoginOrgUUID",
           "type": "string",
-          "format": "uuid",
           "minLength": 1,
-          "description": "Force login with a specific organization UUID.",
+          "description": "Organization UUID to use for OAuth login.",
           "examples": [
             {
               "code": "{\n  \"forceLoginOrgUUID\": \"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\"\n}",
@@ -133,7 +142,7 @@
           "key": "awsAuthRefresh",
           "type": "string",
           "minLength": 1,
-          "description": "Command to refresh AWS credentials.",
+          "description": "Path to a script that refreshes AWS authentication.",
           "examples": [
             {
               "code": "{\n  \"awsAuthRefresh\": \"aws sso login --profile myprofile\"\n}",
@@ -146,12 +155,25 @@
           "key": "awsCredentialExport",
           "type": "string",
           "minLength": 1,
-          "description": "Command to export AWS credentials as JSON.",
+          "description": "Path to a script that exports AWS credentials.",
           "examples": [
             {
               "code": "{\n  \"awsCredentialExport\": \"/bin/generate_aws_grant.sh\"\n}",
               "description": "Export AWS credentials via script",
               "id": "e2f3a4b5-c6d7-8901-bcde-f12345678901"
+            }
+          ]
+        },
+        {
+          "key": "otelHeadersHelper",
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to a script that outputs OpenTelemetry headers.",
+          "examples": [
+            {
+              "code": "{\n  \"otelHeadersHelper\": \"/bin/otel_headers.sh\"\n}",
+              "description": "Custom OpenTelemetry headers script",
+              "id": "f3a4b5c6-d7e8-9012-cdef-123456789012"
             }
           ]
         }
@@ -167,7 +189,7 @@
           "type": "integer",
           "defaultValue": "30",
           "minimum": 0,
-          "description": "How long to locally retain chat transcripts (in days).",
+          "description": "Number of days to retain chat transcripts (0 to disable cleanup).",
           "examples": [
             {
               "code": "{\n  \"cleanupPeriodDays\": 60\n}",
@@ -180,7 +202,7 @@
           "key": "includeCoAuthoredBy",
           "type": "boolean",
           "defaultValue": "true",
-          "description": "Include 'co-authored-by Claude' byline in git commits and pull requests.",
+          "description": "Whether to include Claude's co-authored by attribution in commits and PRs (defaults to true).",
           "examples": [
             {
               "code": "{\n  \"includeCoAuthoredBy\": false\n}",
@@ -193,7 +215,7 @@
           "key": "env",
           "type": "object",
           "defaultValue": "{}",
-          "description": "Environment variables applied to every session. Variable names must match pattern ^[A-Z_][A-Z0-9_]*$.",
+          "description": "Environment variables to set for Claude Code sessions. Variable names must match pattern ^[A-Z_][A-Z0-9_]*$.",
           "examples": [
             {
               "code": "{\n  \"env\": {\n    \"ANTHROPIC_MODEL\": \"claude-opus-4-1\",\n    \"ANTHROPIC_SMALL_FAST_MODEL\": \"claude-3-5-haiku-latest\"\n  }\n}",
@@ -206,7 +228,8 @@
           "key": "companyAnnouncements",
           "type": "array",
           "itemType": "string",
-          "description": "Startup messages displayed to users, rotated randomly.",
+          "itemMinLength": 1,
+          "description": "Company announcements to display at startup (one will be randomly selected if multiple are provided).",
           "examples": [
             {
               "code": "{\n  \"companyAnnouncements\": [\n    \"Welcome to Acme Corp development environment!\",\n    \"Remember to run tests before committing!\",\n    \"Check the wiki for coding standards.\"\n  ]\n}",
@@ -216,14 +239,14 @@
           ]
         },
         {
-          "key": "spinnerTipsEnabled",
+          "key": "skipWebFetchPreflight",
           "type": "boolean",
-          "description": "Whether to show tips in the spinner.",
+          "description": "Skip the WebFetch blocklist check for enterprise environments with restrictive security policies.",
           "examples": [
             {
-              "code": "{\n  \"spinnerTipsEnabled\": false\n}",
-              "description": "Disable spinner tips",
-              "id": "a3b4c5d6-e7f8-9012-bcde-f12345678901"
+              "code": "{\n  \"skipWebFetchPreflight\": true\n}",
+              "description": "Skip WebFetch blocklist check",
+              "id": "g4h5i6j7-k8l9-0123-defg-234567890123"
             }
           ]
         }
@@ -261,7 +284,7 @@
           "key": "disableAllHooks",
           "type": "boolean",
           "defaultValue": "false",
-          "description": "Disable all hook functionality globally.",
+          "description": "Disable all hooks and statusLine execution.",
           "examples": [
             {
               "code": "{\n  \"disableAllHooks\": true\n}",
@@ -282,7 +305,7 @@
           "type": "array",
           "itemType": "string",
           "uniqueItems": true,
-          "description": "List of allowed tool permission rules. Supports tool patterns like 'ToolName(pattern)'.",
+          "description": "List of permission rules for allowed operations.",
           "patterns": [
             "Bash(command:*) - Prefix matching for bash commands",
             "Read(glob/pattern/**) - Glob patterns for file operations",
@@ -301,7 +324,7 @@
           "type": "array",
           "itemType": "string",
           "uniqueItems": true,
-          "description": "List of ask tool permission rules. User confirmation required before allowing tool use.",
+          "description": "List of permission rules that should always prompt for confirmation.",
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"ask\": [\n      \"Bash(gh pr create:*)\",\n      \"Bash(git commit:*)\"\n    ]\n  }\n}",
@@ -315,7 +338,7 @@
           "type": "array",
           "itemType": "string",
           "uniqueItems": true,
-          "description": "List of denied tool permission rules. Block specific tools or file patterns completely.",
+          "description": "List of permission rules for denied operations.",
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"deny\": [\n      \"Read(*.env)\",\n      \"Bash(rm:*)\",\n      \"Bash(curl:*)\"\n    ]\n  }\n}",
@@ -330,7 +353,7 @@
           "itemType": "string",
           "itemMinLength": 1,
           "uniqueItems": true,
-          "description": "Paths to additional directories Claude can access beyond the working directory.",
+          "description": "Additional directories to include in the permission scope.",
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"additionalDirectories\": [\n      \"//Users/alice/Documents\",\n      \"~/projects\"\n    ]\n  }\n}",
@@ -348,7 +371,7 @@
             "default",
             "plan"
           ],
-          "description": "Default permission mode for tool execution.",
+          "description": "Default permission mode when Claude Code needs access.",
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"defaultMode\": \"acceptEdits\"\n  }\n}",
@@ -363,7 +386,7 @@
           "enumValues": [
             "disable"
           ],
-          "description": "Prevent users from bypassing permission restrictions.",
+          "description": "Disable the ability to bypass permission prompts.",
           "examples": [
             {
               "code": "{\n  \"permissions\": {\n    \"disableBypassPermissionsMode\": \"disable\"\n  }\n}",
@@ -384,7 +407,7 @@
           "key": "sandbox.enabled",
           "type": "boolean",
           "defaultValue": "false",
-          "description": "Activate command sandboxing.",
+          "description": "Enable sandboxed bash.",
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"enabled\": true\n  }\n}",
@@ -396,15 +419,20 @@
         {
           "key": "sandbox.autoAllowBashIfSandboxed",
           "type": "boolean",
-          "defaultValue": "true",
-          "description": "Automatically approve Bash commands when they run in the sandbox.",
-          "examples": []
+          "description": "Automatically allow bash commands without prompting when they run in the sandbox. Only applies to commands that will run sandboxed.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"autoAllowBashIfSandboxed\": true\n  }\n}",
+              "description": "Auto-allow sandboxed bash commands",
+              "id": "h5i6j7k8-l9m0-1234-efgh-345678901234"
+            }
+          ]
         },
         {
           "key": "sandbox.allowUnsandboxedCommands",
           "type": "boolean",
           "defaultValue": "true",
-          "description": "Allow commands to escape the sandbox when necessary. Set to false for strict enterprise policies.",
+          "description": "Allow commands to run outside the sandbox via the dangerouslyDisableSandbox parameter. When false, the dangerouslyDisableSandbox parameter is completely ignored and all commands must run sandboxed.",
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"allowUnsandboxedCommands\": false\n  }\n}",
@@ -417,7 +445,7 @@
           "key": "sandbox.excludedCommands",
           "type": "array",
           "itemType": "string",
-          "description": "Commands that always run outside the sandbox (prefix matching).",
+          "description": "Commands that should never run in the sandbox (e.g., [\"git\", \"docker\"]).",
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"excludedCommands\": [\n      \"git\",\n      \"docker\",\n      \"npm\"\n    ]\n  }\n}",
@@ -427,10 +455,22 @@
           ]
         },
         {
+          "key": "sandbox.ignoreViolations",
+          "type": "object",
+          "description": "Map of command patterns to filesystem paths to ignore sandbox violations for. Use \"*\" to match all commands.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"ignoreViolations\": {\n      \"npm\": [\"/Users/*/npm-cache\"],\n      \"*\": [\"/tmp/allowed\"]\n    }\n  }\n}",
+              "description": "Ignore specific sandbox violations",
+              "id": "i6j7k8l9-m0n1-2345-fghi-456789012345"
+            }
+          ]
+        },
+        {
           "key": "sandbox.network.allowUnixSockets",
           "type": "array",
           "itemType": "string",
-          "description": "Unix socket paths accessible within the sandbox.",
+          "description": "Allow Unix domain sockets for local IPC (SSH agent, Docker, etc.). Provide an array of specific paths. Defaults to blocking if not specified.",
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"allowUnixSockets\": [\n        \"/var/run/docker.sock\",\n        \"/tmp/my-app.sock\"\n      ]\n    }\n  }\n}",
@@ -444,27 +484,55 @@
           "type": "boolean",
           "defaultValue": "false",
           "platformNote": "macOS only",
-          "description": "Allow binding to localhost ports within the sandbox.",
-          "examples": []
+          "description": "Allow binding to local network addresses (e.g., localhost ports). Defaults to false if not specified.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"allowLocalBinding\": true\n    }\n  }\n}",
+              "description": "Allow localhost port binding",
+              "id": "j7k8l9m0-n1o2-3456-ghij-567890123456"
+            }
+          ]
         },
         {
           "key": "sandbox.network.httpProxyPort",
-          "type": "number",
-          "description": "Custom HTTP proxy port for sandbox network requests.",
-          "examples": []
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "HTTP proxy port to use for network filtering. If not specified, a proxy server will be started automatically.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"httpProxyPort\": 8080\n    }\n  }\n}",
+              "description": "Set custom HTTP proxy port",
+              "id": "k8l9m0n1-o2p3-4567-hijk-678901234567"
+            }
+          ]
         },
         {
           "key": "sandbox.network.socksProxyPort",
-          "type": "number",
-          "description": "Custom SOCKS proxy port for sandbox network requests.",
-          "examples": []
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "SOCKS proxy port to use for network filtering. If not specified, a proxy server will be started automatically.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"socksProxyPort\": 1080\n    }\n  }\n}",
+              "description": "Set custom SOCKS proxy port",
+              "id": "l9m0n1o2-p3q4-5678-ijkl-789012345678"
+            }
+          ]
         },
         {
           "key": "sandbox.enableWeakerNestedSandbox",
           "type": "boolean",
           "defaultValue": "false",
-          "description": "Reduce sandbox security for Docker/container environments where full isolation causes issues.",
-          "examples": []
+          "description": "Enable weaker sandbox mode for unprivileged docker environments where --proc mounting fails. This significantly reduces the strength of the sandbox and should only be used when this risk is acceptable.",
+          "examples": [
+            {
+              "code": "{\n  \"sandbox\": {\n    \"enableWeakerNestedSandbox\": true\n  }\n}",
+              "description": "Enable weaker nested sandbox",
+              "id": "m0n1o2p3-q4r5-6789-jklm-890123456789"
+            }
+          ]
         }
       ]
     },
@@ -477,7 +545,7 @@
           "key": "enableAllProjectMcpServers",
           "type": "boolean",
           "defaultValue": "false",
-          "description": "Automatically approve all MCP servers defined in project-level configuration.",
+          "description": "Whether to automatically approve all MCP servers in the project.",
           "examples": [
             {
               "code": "{\n  \"enableAllProjectMcpServers\": true\n}",
@@ -491,7 +559,7 @@
           "type": "array",
           "itemType": "string",
           "itemMinLength": 1,
-          "description": "List of allowed MCP servers from .mcp.json.",
+          "description": "List of approved MCP servers from .mcp.json.",
           "examples": [
             {
               "code": "{\n  \"enabledMcpjsonServers\": [\n    \"memory\",\n    \"github\"\n  ]\n}",
@@ -505,7 +573,7 @@
           "type": "array",
           "itemType": "string",
           "itemMinLength": 1,
-          "description": "List of denied MCP servers from .mcp.json.",
+          "description": "List of rejected MCP servers from .mcp.json.",
           "examples": [
             {
               "code": "{\n  \"disabledMcpjsonServers\": [\n    \"filesystem\"\n  ]\n}",
@@ -517,12 +585,11 @@
         {
           "key": "allowedMcpServers",
           "type": "array",
-          "itemType": "string",
-          "defaultValue": "undefined (no restrictions)",
-          "description": "Enterprise allowlist. Only listed servers can be used.",
+          "itemType": "object",
+          "description": "Enterprise allowlist of MCP servers that can be used. Applies to all scopes including enterprise servers from managed-mcp.json. If undefined, all servers are allowed. If empty array, no servers are allowed. Denylist takes precedence - if a server is on both lists, it is denied.",
           "examples": [
             {
-              "code": "{\n  \"allowedMcpServers\": [\n    \"approved-internal-mcp\",\n    \"github-mcp\"\n  ]\n}",
+              "code": "{\n  \"allowedMcpServers\": [\n    { \"serverName\": \"github\" },\n    { \"serverName\": \"memory\" }\n  ]\n}",
               "description": "Restrict to approved servers only",
               "id": "5a68d8c0-d202-4837-b783-3a536d9794e4"
             }
@@ -531,11 +598,11 @@
         {
           "key": "deniedMcpServers",
           "type": "array",
-          "itemType": "string",
-          "description": "Enterprise denylist. Listed servers are blocked. Takes precedence over allowlist.",
+          "itemType": "object",
+          "description": "Enterprise denylist of MCP servers that are explicitly blocked. If a server is on the denylist, it will be blocked across all scopes including enterprise. Denylist takes precedence over allowlist - if a server is on both lists, it is denied.",
           "examples": [
             {
-              "code": "{\n  \"deniedMcpServers\": [\n    \"unapproved-external-mcp\",\n    \"experimental-*\"\n  ]\n}",
+              "code": "{\n  \"deniedMcpServers\": [\n    { \"serverName\": \"filesystem\" },\n    { \"serverName\": \"experimental\" }\n  ]\n}",
               "description": "Block specific MCP servers",
               "id": "dfcbf2ec-d9ea-4cec-a871-6be32a831fba"
             }
@@ -550,28 +617,65 @@
       "settings": [
         {
           "key": "enabledPlugins",
-          "type": "array",
-          "itemType": "string",
-          "format": "plugin-name@marketplace-name",
-          "description": "Control which plugins are enabled.",
+          "type": "object",
+          "description": "Enabled plugins using plugin-id@marketplace-id format. Values can be boolean (true/false) or array of strings for extended configuration.",
           "examples": [
             {
-              "code": "{\n  \"enabledPlugins\": [\n    \"swift-dev@official\",\n    \"custom-linter@company-marketplace\"\n  ]\n}",
-              "description": "Enable specific plugins",
+              "code": "{\n  \"enabledPlugins\": {\n    \"formatter@anthropic-tools\": true,\n    \"custom-linter@company-marketplace\": false\n  }\n}",
+              "description": "Enable or disable specific plugins",
               "id": "88e62e71-4ecb-4896-a530-1ffbb6b3d659"
             }
           ]
         },
         {
           "key": "extraKnownMarketplaces",
-          "type": "array",
-          "itemType": "object",
-          "description": "Define additional plugin sources beyond the official marketplace. Supports GitHub repositories, Git URLs, and local directories.",
+          "type": "object",
+          "description": "Additional marketplaces to make available for this repository. Typically used in repository .claude/settings.json to ensure team members have required plugin sources. Keys are marketplace names, values define the source configuration.",
           "examples": [
             {
-              "code": "{\n  \"extraKnownMarketplaces\": [\n    {\n      \"name\": \"company-marketplace\",\n      \"type\": \"github\",\n      \"url\": \"https://github.com/company/claude-plugins\"\n    },\n    {\n      \"name\": \"local-dev\",\n      \"type\": \"local\",\n      \"path\": \"/Users/dev/my-plugins\"\n    }\n  ]\n}",
+              "code": "{\n  \"extraKnownMarketplaces\": {\n    \"company-tools\": {\n      \"source\": {\n        \"source\": \"github\",\n        \"repo\": \"company/claude-plugins\",\n        \"ref\": \"main\"\n      }\n    },\n    \"local-dev\": {\n      \"source\": {\n        \"source\": \"directory\",\n        \"path\": \"/Users/dev/my-plugins\"\n      }\n    }\n  }\n}",
               "description": "Add custom plugin marketplaces",
               "id": "e265edc0-3d25-4ecc-be5a-f4fea1c16b67"
+            }
+          ]
+        },
+        {
+          "key": "skippedMarketplaces",
+          "type": "array",
+          "itemType": "string",
+          "itemMinLength": 1,
+          "description": "List of marketplace names the user has chosen not to install when prompted.",
+          "examples": [
+            {
+              "code": "{\n  \"skippedMarketplaces\": [\n    \"experimental-tools\",\n    \"beta-marketplace\"\n  ]\n}",
+              "description": "Skip specific marketplaces",
+              "id": "n1o2p3q4-r5s6-7890-klmn-901234567890"
+            }
+          ]
+        },
+        {
+          "key": "skippedPlugins",
+          "type": "array",
+          "itemType": "string",
+          "itemMinLength": 1,
+          "description": "List of plugin IDs (plugin@marketplace format) the user has chosen not to install when prompted.",
+          "examples": [
+            {
+              "code": "{\n  \"skippedPlugins\": [\n    \"deprecated-tool@old-marketplace\",\n    \"beta-feature@experimental\"\n  ]\n}",
+              "description": "Skip specific plugins",
+              "id": "o2p3q4r5-s6t7-8901-lmno-012345678901"
+            }
+          ]
+        },
+        {
+          "key": "pluginConfigs",
+          "type": "object",
+          "description": "Per-plugin configuration including MCP server user configs, keyed by plugin ID (plugin@marketplace format).",
+          "examples": [
+            {
+              "code": "{\n  \"pluginConfigs\": {\n    \"my-plugin@marketplace\": {\n      \"mcpServers\": {\n        \"my-server\": {\n          \"apiKey\": \"xxx\",\n          \"timeout\": 30\n        }\n      }\n    }\n  }\n}",
+              "description": "Configure plugin-specific MCP server settings",
+              "id": "p3q4r5s6-t7u8-9012-mnop-123456789012"
             }
           ]
         }
@@ -585,19 +689,19 @@
       "description": "Execute shell commands"
     },
     {
+      "name": "BashOutput",
+      "requiresPermission": false,
+      "description": "Retrieve output from background shells"
+    },
+    {
       "name": "Edit",
       "requiresPermission": true,
       "description": "Modify existing files"
     },
     {
-      "name": "Write",
-      "requiresPermission": true,
-      "description": "Create new files or overwrite existing ones"
-    },
-    {
-      "name": "Read",
+      "name": "ExitPlanMode",
       "requiresPermission": false,
-      "description": "Read file contents"
+      "description": "Exit planning mode"
     },
     {
       "name": "Glob",
@@ -610,24 +714,19 @@
       "description": "Search file contents by regex"
     },
     {
+      "name": "KillShell",
+      "requiresPermission": false,
+      "description": "Terminate background shells"
+    },
+    {
       "name": "NotebookEdit",
       "requiresPermission": true,
       "description": "Edit Jupyter notebook cells"
     },
     {
-      "name": "NotebookRead",
+      "name": "Read",
       "requiresPermission": false,
-      "description": "Read Jupyter notebooks"
-    },
-    {
-      "name": "WebFetch",
-      "requiresPermission": true,
-      "description": "Fetch content from URLs"
-    },
-    {
-      "name": "WebSearch",
-      "requiresPermission": true,
-      "description": "Search the web"
+      "description": "Read file contents"
     },
     {
       "name": "SlashCommand",
@@ -643,6 +742,21 @@
       "name": "TodoWrite",
       "requiresPermission": false,
       "description": "Manage task lists"
+    },
+    {
+      "name": "WebFetch",
+      "requiresPermission": true,
+      "description": "Fetch content from URLs"
+    },
+    {
+      "name": "WebSearch",
+      "requiresPermission": true,
+      "description": "Search the web"
+    },
+    {
+      "name": "Write",
+      "requiresPermission": true,
+      "description": "Create new files or overwrite existing ones"
     }
   ],
   "bestPractices": [
