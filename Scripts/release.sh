@@ -98,7 +98,12 @@ check_prerequisites() {
 
     # Check for clean git state
     if [[ -n $(git -C "$PROJECT_ROOT" status --porcelain) ]]; then
-        log_error "Git working directory is not clean. Please commit or stash changes first."
+        log_warning "Git working directory has uncommitted changes."
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_error "Release cancelled. Please commit or stash changes first."
+        fi
     fi
 
     log_success "All prerequisites satisfied"
@@ -113,13 +118,14 @@ build_archive() {
     mkdir -p "$BUILD_DIR"
 
     # Build archive
+    # Note: Don't override CODE_SIGN_IDENTITY here - let automatic signing work
+    # The export phase will re-sign with Developer ID using export-options.plist
     xcodebuild archive \
         -workspace "$WORKSPACE" \
         -scheme "$SCHEME" \
         -configuration Release \
         -archivePath "$ARCHIVE_PATH" \
         -quiet \
-        CODE_SIGN_IDENTITY="Developer ID Application" \
         || log_error "Archive build failed"
 
     log_success "Archive built successfully"
@@ -177,7 +183,8 @@ create_dmg() {
     local dmg_path="$BUILD_DIR/$dmg_name"
     local app_path="$EXPORT_PATH/$APP_NAME.app"
 
-    log_info "Creating DMG: $dmg_name..."
+    # Use stderr for log messages so they don't get captured in output
+    log_info "Creating DMG: $dmg_name..." >&2
 
     # Create a temporary directory for DMG contents
     local dmg_temp="$BUILD_DIR/dmg-temp"
@@ -190,24 +197,25 @@ create_dmg() {
     # Create symlink to Applications
     ln -s /Applications "$dmg_temp/Applications"
 
-    # Create DMG
+    # Create DMG (redirect hdiutil output to stderr)
     hdiutil create -volname "$APP_NAME" \
         -srcfolder "$dmg_temp" \
         -ov -format UDZO \
-        "$dmg_path" \
+        "$dmg_path" >&2 \
         || log_error "DMG creation failed"
 
     # Clean up
     rm -rf "$dmg_temp"
 
-    log_success "DMG created: $dmg_path"
+    log_success "DMG created: $dmg_path" >&2
     echo "$dmg_path"
 }
 
 # Generate release notes using Claude
 generate_release_notes() {
     local version=$1
-    log_info "Generating release notes with Claude..."
+    # Use stderr for log messages so they don't get captured in output
+    log_info "Generating release notes with Claude..." >&2
 
     # Get the previous tag
     local previous_tag
@@ -216,10 +224,10 @@ generate_release_notes() {
     local commit_range
     if [ -n "$previous_tag" ]; then
         commit_range="$previous_tag..HEAD"
-        log_info "Analyzing commits from $previous_tag to HEAD"
+        log_info "Analyzing commits from $previous_tag to HEAD" >&2
     else
         commit_range="HEAD~20..HEAD"
-        log_info "No previous tag found, analyzing last 20 commits"
+        log_info "No previous tag found, analyzing last 20 commits" >&2
     fi
 
     # Get commit history
@@ -227,18 +235,27 @@ generate_release_notes() {
     commits=$(git -C "$PROJECT_ROOT" log "$commit_range" --pretty=format:"- %s (%h)" 2>/dev/null || echo "Initial release")
 
     # Use Claude to generate release notes
-    local prompt="Generate release notes for version $version of ClaudeSettings, a macOS app for managing Claude Code settings.
+    local prompt="You are a technical writer creating release notes for a software product.
+
+Generate professional release notes for version $version of ClaudeSettings, a macOS app for managing Claude Code settings.
+
+IMPORTANT: This is an independent open source project. It is NOT affiliated with or built by Anthropic.
 
 Here are the commits since the last release:
 $commits
 
-Please write clear, user-friendly release notes that:
-1. Group changes by category (Features, Improvements, Bug Fixes) if applicable
-2. Explain what each change means for users (not just the technical details)
-3. Keep it concise but informative
-4. Use markdown formatting
-
-Output ONLY the release notes content, no preamble or explanation."
+Requirements:
+- Group changes by category (Features, Improvements, Bug Fixes) if applicable
+- Explain what each change means for users (not just the technical details)
+- Keep it concise but informative
+- Use markdown formatting
+- Maintain a professional, neutral tone throughout
+- Do NOT include any commentary, opinions, jokes, or meta-text
+- Do NOT include any preamble like 'Here are the release notes'
+- Do NOT add any URLs or links
+- Do NOT add 'for more information' sections or footer content
+- Do NOT assume or mention who built the app
+- Output ONLY the release notes content itself"
 
     local release_notes
     release_notes=$(claude -p "$prompt" 2>/dev/null) || {
@@ -358,13 +375,16 @@ main() {
     # Bump version for next release
     bump_version "$version"
 
+    # Clean up build folder
+    log_info "Cleaning up build folder..."
+    rm -rf "$BUILD_DIR"
+
     echo ""
     echo "=========================================="
     echo "  Release Complete!"
     echo "=========================================="
     echo ""
     echo "Released: ClaudeSettings $version"
-    echo "DMG: $dmg_path"
     echo ""
     echo "Next steps:"
     echo "  - Review and push the version bump commit: git push"
