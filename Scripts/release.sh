@@ -91,6 +91,11 @@ check_prerequisites() {
         log_error "Claude CLI is not installed."
     fi
 
+    # Check for create-dmg
+    if ! command -v create-dmg &> /dev/null; then
+        log_error "create-dmg is not installed. Install with: brew install create-dmg"
+    fi
+
     # Check for notarytool (part of Xcode)
     if ! command -v xcrun &> /dev/null; then
         log_error "Xcode command line tools are not installed."
@@ -186,26 +191,23 @@ create_dmg() {
     # Use stderr for log messages so they don't get captured in output
     log_info "Creating DMG: $dmg_name..." >&2
 
-    # Create a temporary directory for DMG contents
-    local dmg_temp="$BUILD_DIR/dmg-temp"
-    rm -rf "$dmg_temp"
-    mkdir -p "$dmg_temp"
+    # Remove any existing DMG
+    rm -f "$dmg_path"
 
-    # Copy app to temp directory
-    cp -R "$app_path" "$dmg_temp/"
-
-    # Create symlink to Applications
-    ln -s /Applications "$dmg_temp/Applications"
-
-    # Create DMG (redirect hdiutil output to stderr)
-    hdiutil create -volname "$APP_NAME" \
-        -srcfolder "$dmg_temp" \
-        -ov -format UDZO \
-        "$dmg_path" >&2 \
+    # Create DMG using create-dmg tool (redirect output to stderr)
+    # This tool properly handles the Applications folder icon and layout
+    create-dmg \
+        --volname "$APP_NAME" \
+        --window-pos 200 120 \
+        --window-size 600 400 \
+        --icon-size 100 \
+        --icon "$APP_NAME.app" 150 190 \
+        --hide-extension "$APP_NAME.app" \
+        --app-drop-link 450 190 \
+        --no-internet-enable \
+        "$dmg_path" \
+        "$app_path" >&2 \
         || log_error "DMG creation failed"
-
-    # Clean up
-    rm -rf "$dmg_temp"
 
     log_success "DMG created: $dmg_path" >&2
     echo "$dmg_path"
