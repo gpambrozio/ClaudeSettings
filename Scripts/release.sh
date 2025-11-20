@@ -26,11 +26,24 @@ NC='\033[0m' # No Color
 
 # Parse arguments
 SKIP_NOTARIZE=false
-for arg in "$@"; do
-    case $arg in
+NOTARYTOOL_PROFILE="notarytool-profile"
+TEAM_ID="XG2WG7U93U"
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --skip-notarize)
             SKIP_NOTARIZE=true
             shift
+            ;;
+        --notarytool-profile)
+            NOTARYTOOL_PROFILE="$2"
+            shift 2
+            ;;
+        --team-id)
+            TEAM_ID="$2"
+            shift 2
+            ;;
+        *)
+            log_error "Unknown option: $1"
             ;;
     esac
 done
@@ -130,6 +143,7 @@ build_archive() {
         -scheme "$SCHEME" \
         -configuration Release \
         -archivePath "$ARCHIVE_PATH" \
+        DEVELOPMENT_TEAM="$TEAM_ID" \
         -quiet \
         || log_error "Archive build failed"
 
@@ -144,6 +158,7 @@ export_archive() {
         -archivePath "$ARCHIVE_PATH" \
         -exportOptionsPlist "$EXPORT_OPTIONS" \
         -exportPath "$EXPORT_PATH" \
+        DEVELOPMENT_TEAM="$TEAM_ID" \
         -quiet \
         || log_error "Archive export failed"
 
@@ -167,9 +182,9 @@ notarize_app() {
 
     # Submit for notarization
     xcrun notarytool submit "$zip_path" \
-        --keychain-profile "notarytool-profile" \
+        --keychain-profile "$NOTARYTOOL_PROFILE" \
         --wait \
-        || log_error "Notarization failed. Make sure you have set up notarytool credentials with: xcrun notarytool store-credentials notarytool-profile --apple-id YOUR_APPLE_ID --team-id XG2WG7U93U"
+        || log_error "Notarization failed. Make sure you have set up notarytool credentials with: xcrun notarytool store-credentials $NOTARYTOOL_PROFILE --apple-id YOUR_APPLE_ID --team-id $TEAM_ID"
 
     # Staple the notarization ticket
     xcrun stapler staple "$app_path" \
@@ -194,17 +209,27 @@ create_dmg() {
     # Remove any existing DMG
     rm -f "$dmg_path"
 
+    # Build create-dmg arguments
+    local dmg_args=(
+        --volname "$APP_NAME"
+        --window-pos 200 120
+        --window-size 600 400
+        --icon-size 100
+        --icon "$APP_NAME.app" 150 150
+        --hide-extension "$APP_NAME.app"
+        --app-drop-link 450 150
+        --no-internet-enable
+    )
+
+    # Add notarization only if not skipped
+    if [ "$SKIP_NOTARIZE" != true ]; then
+        dmg_args+=(--notarize "$NOTARYTOOL_PROFILE")
+    fi
+
     # Create DMG using create-dmg tool (redirect output to stderr)
     # This tool properly handles the Applications folder icon and layout
     create-dmg \
-        --volname "$APP_NAME" \
-        --window-pos 200 120 \
-        --window-size 600 400 \
-        --icon-size 100 \
-        --icon "$APP_NAME.app" 150 190 \
-        --hide-extension "$APP_NAME.app" \
-        --app-drop-link 450 190 \
-        --no-internet-enable \
+        "${dmg_args[@]}" \
         "$dmg_path" \
         "$app_path" >&2 \
         || log_error "DMG creation failed"
