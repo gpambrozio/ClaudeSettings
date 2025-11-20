@@ -26,11 +26,30 @@ NC='\033[0m' # No Color
 
 # Parse arguments
 SKIP_NOTARIZE=false
-for arg in "$@"; do
-    case $arg in
+LOCAL_SIGNING=false
+NOTARYTOOL_PROFILE="notarytool-profile"
+TEAM_ID="XG2WG7U93U"
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --skip-notarize)
             SKIP_NOTARIZE=true
             shift
+            ;;
+        --local-signing)
+            LOCAL_SIGNING=true
+            SKIP_NOTARIZE=true  # Automatically skip notarization for local builds
+            shift
+            ;;
+        --notarytool-profile)
+            NOTARYTOOL_PROFILE="$2"
+            shift 2
+            ;;
+        --team-id)
+            TEAM_ID="$2"
+            shift 2
+            ;;
+        *)
+            log_error "Unknown option: $1"
             ;;
     esac
 done
@@ -91,6 +110,11 @@ check_prerequisites() {
         log_error "Claude CLI is not installed."
     fi
 
+    # Check for create-dmg
+    if ! command -v create-dmg &> /dev/null; then
+        log_error "create-dmg is not installed. Install with: brew install create-dmg"
+    fi
+
     # Check for notarytool (part of Xcode)
     if ! command -v xcrun &> /dev/null; then
         log_error "Xcode command line tools are not installed."
@@ -117,15 +141,28 @@ build_archive() {
     rm -rf "$BUILD_DIR"
     mkdir -p "$BUILD_DIR"
 
+    # Build xcodebuild arguments
+    local build_args=(
+        archive
+        -workspace "$WORKSPACE"
+        -scheme "$SCHEME"
+        -configuration Release
+        -archivePath "$ARCHIVE_PATH"
+        -quiet
+    )
+
+    # Add signing configuration based on mode
+    if [ "$LOCAL_SIGNING" = true ]; then
+        # For local signing, use ad-hoc signing
+        build_args+=(CODE_SIGN_IDENTITY="-")
+        build_args+=(CODE_SIGN_STYLE="Manual")
+    else
+        # For distribution, use Developer ID with team
+        build_args+=(DEVELOPMENT_TEAM="$TEAM_ID")
+    fi
+
     # Build archive
-    # Note: Don't override CODE_SIGN_IDENTITY here - let automatic signing work
-    # The export phase will re-sign with Developer ID using export-options.plist
-    xcodebuild archive \
-        -workspace "$WORKSPACE" \
-        -scheme "$SCHEME" \
-        -configuration Release \
-        -archivePath "$ARCHIVE_PATH" \
-        -quiet \
+    xcodebuild "${build_args[@]}" \
         || log_error "Archive build failed"
 
     log_success "Archive built successfully"
@@ -133,16 +170,28 @@ build_archive() {
 
 # Export archive
 export_archive() {
-    log_info "Exporting archive with Developer ID signing..."
+    if [ "$LOCAL_SIGNING" = true ]; then
+        log_info "Exporting archive with local signing..."
 
-    xcodebuild -exportArchive \
-        -archivePath "$ARCHIVE_PATH" \
-        -exportOptionsPlist "$EXPORT_OPTIONS" \
-        -exportPath "$EXPORT_PATH" \
-        -quiet \
-        || log_error "Archive export failed"
+        # For local signing, just copy the app from the archive
+        mkdir -p "$EXPORT_PATH"
+        cp -R "$ARCHIVE_PATH/Products/Applications/$APP_NAME.app" "$EXPORT_PATH/" \
+            || log_error "Failed to copy app from archive"
 
-    log_success "Archive exported successfully"
+        log_success "Archive exported successfully (local signing)"
+    else
+        log_info "Exporting archive with Developer ID signing..."
+
+        xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -exportPath "$EXPORT_PATH" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            -quiet \
+            || log_error "Archive export failed"
+
+        log_success "Archive exported successfully"
+    fi
 }
 
 # Notarize the app
@@ -162,9 +211,9 @@ notarize_app() {
 
     # Submit for notarization
     xcrun notarytool submit "$zip_path" \
-        --keychain-profile "notarytool-profile" \
+        --keychain-profile "$NOTARYTOOL_PROFILE" \
         --wait \
-        || log_error "Notarization failed. Make sure you have set up notarytool credentials with: xcrun notarytool store-credentials notarytool-profile --apple-id YOUR_APPLE_ID --team-id XG2WG7U93U"
+        || log_error "Notarization failed. Make sure you have set up notarytool credentials with: xcrun notarytool store-credentials $NOTARYTOOL_PROFILE --apple-id YOUR_APPLE_ID --team-id $TEAM_ID"
 
     # Staple the notarization ticket
     xcrun stapler staple "$app_path" \
@@ -186,26 +235,33 @@ create_dmg() {
     # Use stderr for log messages so they don't get captured in output
     log_info "Creating DMG: $dmg_name..." >&2
 
-    # Create a temporary directory for DMG contents
-    local dmg_temp="$BUILD_DIR/dmg-temp"
-    rm -rf "$dmg_temp"
-    mkdir -p "$dmg_temp"
+    # Remove any existing DMG
+    rm -f "$dmg_path"
 
-    # Copy app to temp directory
-    cp -R "$app_path" "$dmg_temp/"
+    # Build create-dmg arguments
+    local dmg_args=(
+        --volname "$APP_NAME"
+        --window-pos 200 120
+        --window-size 600 400
+        --icon-size 100
+        --icon "$APP_NAME.app" 150 150
+        --hide-extension "$APP_NAME.app"
+        --app-drop-link 450 150
+        --no-internet-enable
+    )
 
-    # Create symlink to Applications
-    ln -s /Applications "$dmg_temp/Applications"
+    # Add notarization only if not skipped
+    if [ "$SKIP_NOTARIZE" != true ]; then
+        dmg_args+=(--notarize "$NOTARYTOOL_PROFILE")
+    fi
 
-    # Create DMG (redirect hdiutil output to stderr)
-    hdiutil create -volname "$APP_NAME" \
-        -srcfolder "$dmg_temp" \
-        -ov -format UDZO \
-        "$dmg_path" >&2 \
+    # Create DMG using create-dmg tool (redirect output to stderr)
+    # This tool properly handles the Applications folder icon and layout
+    create-dmg \
+        "${dmg_args[@]}" \
+        "$dmg_path" \
+        "$app_path" >&2 \
         || log_error "DMG creation failed"
-
-    # Clean up
-    rm -rf "$dmg_temp"
 
     log_success "DMG created: $dmg_path" >&2
     echo "$dmg_path"

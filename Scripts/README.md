@@ -17,19 +17,31 @@ gh auth login
 
 Ensure the Claude CLI is installed and available in your PATH.
 
-### 3. Developer ID Certificate
+### 3. create-dmg
+
+Install the create-dmg tool for creating DMG packages:
+
+```bash
+brew install create-dmg
+```
+
+### 4. Developer ID Certificate
 
 You need a valid "Developer ID Application" certificate in your Keychain. This is required for distributing macOS apps outside the App Store.
 
-### 4. Notarytool Credentials
+### 5. Notarytool Credentials
 
 Set up notarytool to authenticate with Apple's notary service:
 
 ```bash
 xcrun notarytool store-credentials notarytool-profile \
     --apple-id YOUR_APPLE_ID \
-    --team-id XG2WG7U93U
+    --team-id YOUR_TEAM_ID
 ```
+
+Replace:
+- `YOUR_APPLE_ID` with your Apple ID email
+- `YOUR_TEAM_ID` with your Apple Developer Team ID (found in your Apple Developer account)
 
 When prompted for a password, you'll need an **app-specific password**:
 
@@ -40,6 +52,8 @@ When prompted for a password, you'll need an **app-specific password**:
 5. Label it something like "notarytool"
 6. Copy the generated password (format: `xxxx-xxxx-xxxx-xxxx`)
 7. Paste it into the terminal prompt
+
+**Note:** You can use a different profile name if desired. Just pass `--notarytool-profile <name>` to the release script.
 
 ## Usage
 
@@ -60,15 +74,64 @@ This will:
 6. Create a GitHub release with the DMG
 7. Bump the version by 0.1 and commit (no push)
 
-### Testing (Skip Notarization)
+### Command Line Flags
 
-For testing the build process without waiting for notarization:
+The release script supports several flags to customize the build process:
+
+#### `--skip-notarize`
+
+Skip the notarization process entirely. Useful for testing builds without waiting for Apple's notary service.
 
 ```bash
 ./Scripts/release.sh --skip-notarize
 ```
 
-Note: Apps built with `--skip-notarize` will trigger Gatekeeper warnings when users try to open them.
+**Note:** Apps built with `--skip-notarize` will trigger Gatekeeper warnings when users try to open them.
+
+#### `--local-signing`
+
+Build with ad-hoc/local signing instead of Developer ID signing. This automatically skips notarization and produces a build suitable for local testing only.
+
+```bash
+./Scripts/release.sh --local-signing
+```
+
+**Use case:** Quick builds for local testing without needing valid Developer ID certificates.
+
+#### `--notarytool-profile <name>`
+
+Specify a custom notarytool keychain profile name. Defaults to `notarytool-profile` if not specified.
+
+```bash
+./Scripts/release.sh --notarytool-profile my-custom-profile
+```
+
+**Use case:** Multiple developers or different Apple IDs using different keychain profiles.
+
+#### `--team-id <id>`
+
+Specify a custom Apple Team ID. Defaults to `XG2WG7U93U` if not specified.
+
+```bash
+./Scripts/release.sh --team-id ABC123XYZ
+```
+
+**Use case:** Building with a different Apple Developer account or team.
+
+### Combining Flags
+
+Multiple flags can be combined:
+
+```bash
+# Custom team and profile
+./Scripts/release.sh --team-id ABC123XYZ --notarytool-profile my-profile
+
+# Local build for testing
+./Scripts/release.sh --local-signing
+
+# Skip notarization with custom team
+./Scripts/release.sh --skip-notarize --team-id ABC123XYZ
+```
 
 ## What the Script Does
 
