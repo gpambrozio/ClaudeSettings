@@ -26,12 +26,18 @@ NC='\033[0m' # No Color
 
 # Parse arguments
 SKIP_NOTARIZE=false
+LOCAL_SIGNING=false
 NOTARYTOOL_PROFILE="notarytool-profile"
 TEAM_ID="XG2WG7U93U"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --skip-notarize)
             SKIP_NOTARIZE=true
+            shift
+            ;;
+        --local-signing)
+            LOCAL_SIGNING=true
+            SKIP_NOTARIZE=true  # Automatically skip notarization for local builds
             shift
             ;;
         --notarytool-profile)
@@ -135,16 +141,28 @@ build_archive() {
     rm -rf "$BUILD_DIR"
     mkdir -p "$BUILD_DIR"
 
+    # Build xcodebuild arguments
+    local build_args=(
+        archive
+        -workspace "$WORKSPACE"
+        -scheme "$SCHEME"
+        -configuration Release
+        -archivePath "$ARCHIVE_PATH"
+        -quiet
+    )
+
+    # Add signing configuration based on mode
+    if [ "$LOCAL_SIGNING" = true ]; then
+        # For local signing, use ad-hoc signing
+        build_args+=(CODE_SIGN_IDENTITY="-")
+        build_args+=(CODE_SIGN_STYLE="Manual")
+    else
+        # For distribution, use Developer ID with team
+        build_args+=(DEVELOPMENT_TEAM="$TEAM_ID")
+    fi
+
     # Build archive
-    # Note: Don't override CODE_SIGN_IDENTITY here - let automatic signing work
-    # The export phase will re-sign with Developer ID using export-options.plist
-    xcodebuild archive \
-        -workspace "$WORKSPACE" \
-        -scheme "$SCHEME" \
-        -configuration Release \
-        -archivePath "$ARCHIVE_PATH" \
-        DEVELOPMENT_TEAM="$TEAM_ID" \
-        -quiet \
+    xcodebuild "${build_args[@]}" \
         || log_error "Archive build failed"
 
     log_success "Archive built successfully"
@@ -152,17 +170,28 @@ build_archive() {
 
 # Export archive
 export_archive() {
-    log_info "Exporting archive with Developer ID signing..."
+    if [ "$LOCAL_SIGNING" = true ]; then
+        log_info "Exporting archive with local signing..."
 
-    xcodebuild -exportArchive \
-        -archivePath "$ARCHIVE_PATH" \
-        -exportOptionsPlist "$EXPORT_OPTIONS" \
-        -exportPath "$EXPORT_PATH" \
-        DEVELOPMENT_TEAM="$TEAM_ID" \
-        -quiet \
-        || log_error "Archive export failed"
+        # For local signing, just copy the app from the archive
+        mkdir -p "$EXPORT_PATH"
+        cp -R "$ARCHIVE_PATH/Products/Applications/$APP_NAME.app" "$EXPORT_PATH/" \
+            || log_error "Failed to copy app from archive"
 
-    log_success "Archive exported successfully"
+        log_success "Archive exported successfully (local signing)"
+    else
+        log_info "Exporting archive with Developer ID signing..."
+
+        xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -exportPath "$EXPORT_PATH" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            -quiet \
+            || log_error "Archive export failed"
+
+        log_success "Archive exported successfully"
+    fi
 }
 
 # Notarize the app
