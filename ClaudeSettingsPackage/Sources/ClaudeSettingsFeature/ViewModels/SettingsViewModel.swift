@@ -8,13 +8,15 @@ public struct PendingEdit: Equatable, Identifiable {
     public var id: String { key } // Identifiable conformance
     public var value: SettingValue
     public var targetFileType: SettingsFileType
+    public var originalFileType: SettingsFileType // Track where the setting originally came from
     public var validationError: String? // Validation error for this edit
     public var rawEditingText: String? // Raw text being edited (for JSON complex types)
 
-    public init(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
+    public init(key: String, value: SettingValue, targetFileType: SettingsFileType, originalFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
         self.key = key
         self.value = value
         self.targetFileType = targetFileType
+        self.originalFileType = originalFileType
         self.validationError = validationError
         self.rawEditingText = rawEditingText
     }
@@ -576,8 +578,8 @@ final public class SettingsViewModel {
         }
 
         // Create temporary pending edit based on the active contribution (highest precedence)
-        let targetFileType = item.contributions.last?.source ?? item.source
-        return PendingEdit(key: item.key, value: item.value, targetFileType: targetFileType)
+        let originalFileType = item.contributions.last?.source ?? item.source
+        return PendingEdit(key: item.key, value: item.value, targetFileType: originalFileType, originalFileType: originalFileType)
     }
 
     /// Update a pending edit only if the value has actually changed from the original
@@ -588,13 +590,15 @@ final public class SettingsViewModel {
     ///   - validationError: Optional validation error to attach to this edit
     ///   - rawEditingText: Optional raw text being edited (for JSON complex types)
     public func updatePendingEditIfChanged(item: SettingItem, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
+        // Get the original file type (where the setting currently exists with highest precedence)
+        let originalFileType = item.contributions.last?.source ?? item.source
+
         // Get the original value for this target file type
         let originalValue = item.contributions.first(where: { $0.source == targetFileType })?.value ?? item.value
-        let originalTargetType = item.contributions.last?.source ?? item.source
 
         // Check if the value has actually changed
         let hasValueChanged = value != originalValue
-        let hasTargetChanged = targetFileType != originalTargetType
+        let hasTargetChanged = targetFileType != originalFileType
 
         if !hasValueChanged && !hasTargetChanged && validationError == nil {
             // Value is same as original and target hasn't changed - remove any pending edit
@@ -602,10 +606,13 @@ final public class SettingsViewModel {
             logger.debug("Removed pending edit for '\(item.key)' (value unchanged)")
         } else {
             // Value or target has changed - create/update pending edit
+            // Preserve the original file type from any existing pending edit, or use the current active source
+            let preservedOriginalFileType = pendingEdits[item.key]?.originalFileType ?? originalFileType
             updatePendingEdit(
                 key: item.key,
                 value: value,
                 targetFileType: targetFileType,
+                originalFileType: preservedOriginalFileType,
                 validationError: validationError,
                 rawEditingText: rawEditingText
             )
@@ -617,9 +624,10 @@ final public class SettingsViewModel {
     ///   - key: The setting key
     ///   - value: The new value
     ///   - targetFileType: The file to save to
+    ///   - originalFileType: The file where the setting originally came from
     ///   - validationError: Optional validation error to attach to this edit
     ///   - rawEditingText: Optional raw text being edited (for JSON complex types)
-    public func updatePendingEdit(key: String, value: SettingValue, targetFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
+    public func updatePendingEdit(key: String, value: SettingValue, targetFileType: SettingsFileType, originalFileType: SettingsFileType, validationError: String? = nil, rawEditingText: String? = nil) {
         // Validate the value before storing
         let finalValidationError = validationError ?? validateValue(value)
 
@@ -627,10 +635,11 @@ final public class SettingsViewModel {
             key: key,
             value: value,
             targetFileType: targetFileType,
+            originalFileType: originalFileType,
             validationError: finalValidationError,
             rawEditingText: rawEditingText
         )
-        logger.debug("Updated pending edit for '\(key)'\(finalValidationError.map { " with validation error: \($0)" } ?? "")")
+        logger.debug("Updated pending edit for '\(key)' (original: \(originalFileType.displayName), target: \(targetFileType.displayName))\(finalValidationError.map { " with validation error: \($0)" } ?? "")")
     }
 
     /// Validate a setting value
@@ -672,25 +681,59 @@ final public class SettingsViewModel {
         // Group edits by target file type for efficient batching
         var editsByFile: [SettingsFileType: [(String, SettingValue)]] = [:]
 
+        // Track settings that need to be deleted from their original file (because they moved)
+        var deletesByFile: [SettingsFileType: [String]] = [:]
+
         for edit in pendingEdits.values {
             if editsByFile[edit.targetFileType] == nil {
                 editsByFile[edit.targetFileType] = []
             }
             editsByFile[edit.targetFileType]?.append((edit.id, edit.value))
+
+            // If the target file is different from the original, we need to delete from original (move operation)
+            if edit.targetFileType != edit.originalFileType {
+                if deletesByFile[edit.originalFileType] == nil {
+                    deletesByFile[edit.originalFileType] = []
+                }
+                deletesByFile[edit.originalFileType]?.append(edit.key)
+                logger.debug("Will move '\(edit.key)' from \(edit.originalFileType.displayName) to \(edit.targetFileType.displayName)")
+            }
         }
 
         do {
-            // Create backups once per file before applying any edits
-            for fileType in editsByFile.keys {
+            // Create backups once per file before applying any edits (both adds and deletes)
+            let affectedFileTypes = Set(editsByFile.keys).union(deletesByFile.keys)
+            for fileType in affectedFileTypes {
                 if let file = settingsFiles.first(where: { $0.type == fileType }) {
                     _ = try await fileSystemManager.createBackup(of: file.path)
                     logger.debug("Created backup for \(fileType.displayName)")
                 }
             }
 
-            // Apply all edits to each file using the helper
+            // First, apply all edits to each target file
             for (fileType, edits) in editsByFile {
                 try await applyEditsToFile(fileType, edits: edits)
+            }
+
+            // Then, delete settings from their original files (for move operations)
+            for (fileType, keys) in deletesByFile {
+                guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
+                    logger.warning("Cannot delete from \(fileType.displayName) - file not found")
+                    continue
+                }
+
+                var file = settingsFiles[fileIndex]
+
+                // Remove each key from the file
+                var updatedContent = file.content
+                for key in keys {
+                    removeNestedValue(&updatedContent, for: key)
+                    logger.debug("Deleted '\(key)' from \(fileType.displayName)")
+                }
+
+                file.content = updatedContent
+                try await settingsParser.writeSettingsFile(&file)
+                settingsFiles[fileIndex] = file
             }
 
             // Recompute merged settings once after all files are updated
