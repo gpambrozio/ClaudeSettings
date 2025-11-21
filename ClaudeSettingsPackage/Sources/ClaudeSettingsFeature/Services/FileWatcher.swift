@@ -8,21 +8,28 @@ public actor FileWatcher {
     private var isWatching = false
     private let callback: @Sendable (URL) -> Void
     private var watchTask: Task<Void, Never>?
+    private var watchedFilePaths: Set<String> = []
 
     public init(callback: @escaping @Sendable (URL) -> Void) {
         self.callback = callback
     }
 
-    /// Start watching a directory for changes
-    public func startWatching(paths: [URL]) {
+    /// Start watching directories for changes to specific files
+    /// - Parameters:
+    ///   - directories: Directories to watch for file system events
+    ///   - filePaths: Specific file paths to monitor (events for other files will be ignored)
+    public func startWatching(directories: [URL], filePaths: [URL]) {
         guard !isWatching else {
             logger.warning("Already watching files")
             return
         }
 
-        logger.info("Starting file watcher for \(paths.count) paths")
+        // Store the file paths we care about for filtering
+        watchedFilePaths = Set(filePaths.map(\.path))
 
-        let pathsToWatch = paths.map(\.path) as NSArray
+        logger.info("Starting file watcher for \(directories.count) directories watching \(filePaths.count) files")
+
+        let pathsToWatch = directories.map(\.path) as NSArray
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(self).toOpaque(),
@@ -110,10 +117,14 @@ public actor FileWatcher {
             guard index < flagsArray.count else { continue }
             let flag = flagsArray[index]
 
-            // Check if this is a modification event
+            // Only process events for files we're watching
+            guard watchedFilePaths.contains(path) else { continue }
+
+            // Check if this is a modification, creation, or deletion event
             if
                 flag & UInt32(kFSEventStreamEventFlagItemModified) != 0 ||
-                flag & UInt32(kFSEventStreamEventFlagItemCreated) != 0 {
+                flag & UInt32(kFSEventStreamEventFlagItemCreated) != 0 ||
+                flag & UInt32(kFSEventStreamEventFlagItemRemoved) != 0 {
                 let url = URL(fileURLWithPath: path)
                 logger.debug("File changed: \(path)")
                 callback(url)

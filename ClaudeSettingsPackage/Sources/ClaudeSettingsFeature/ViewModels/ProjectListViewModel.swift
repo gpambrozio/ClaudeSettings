@@ -57,12 +57,6 @@ final public class ProjectListViewModel {
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
         let configPath = homeDirectory.appendingPathComponent(".claude.json")
 
-        // Only watch if the config file exists
-        guard await fileSystemManager.exists(at: configPath) else {
-            logger.debug("No .claude.json file to watch")
-            return
-        }
-
         logger.info("Setting up file watcher for .claude.json")
 
         // FileWatcher's callback is @Sendable but not MainActor-isolated
@@ -74,7 +68,9 @@ final public class ProjectListViewModel {
             }
         }
 
-        await fileWatcher?.startWatching(paths: [configPath])
+        // Watch the home directory for changes to .claude.json
+        // This way we can detect creation and deletion of the file
+        await fileWatcher?.startWatching(directories: [homeDirectory], filePaths: [configPath])
     }
 
     /// Stop file watching

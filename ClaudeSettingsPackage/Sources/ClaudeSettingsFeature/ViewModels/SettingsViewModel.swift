@@ -147,15 +147,34 @@ final public class SettingsViewModel {
         // Stop any existing watcher first
         await stopFileWatcher()
 
-        // Only watch files that actually exist
-        let pathsToWatch = settingsFiles.map(\.path)
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 
-        guard !pathsToWatch.isEmpty else {
-            logger.debug("No settings files to watch")
+        // Build list of all possible settings file paths (not just existing ones)
+        var filePaths: [URL] = []
+        var directories: Set<URL> = []
+
+        // Global settings files
+        for fileType: SettingsFileType in [.globalSettings, .globalLocal] {
+            let path = fileType.path(in: homeDirectory)
+            filePaths.append(path)
+            directories.insert(path.deletingLastPathComponent())
+        }
+
+        // Project settings files (if we have a project)
+        if let projectPath = project?.path {
+            for fileType: SettingsFileType in [.projectSettings, .projectLocal] {
+                let path = fileType.path(in: projectPath)
+                filePaths.append(path)
+                directories.insert(path.deletingLastPathComponent())
+            }
+        }
+
+        guard !directories.isEmpty else {
+            logger.debug("No directories to watch")
             return
         }
 
-        logger.info("Setting up file watcher for \(pathsToWatch.count) paths")
+        logger.info("Setting up file watcher for \(directories.count) directories watching \(filePaths.count) files")
 
         // FileWatcher's callback is @Sendable but not MainActor-isolated
         // We need to explicitly hop to MainActor since this ViewModel is MainActor-isolated
@@ -165,7 +184,7 @@ final public class SettingsViewModel {
             }
         }
 
-        await fileWatcher?.startWatching(paths: pathsToWatch)
+        await fileWatcher?.startWatching(directories: Array(directories), filePaths: filePaths)
     }
 
     /// Stop file watching (called when switching projects or cleaning up)
