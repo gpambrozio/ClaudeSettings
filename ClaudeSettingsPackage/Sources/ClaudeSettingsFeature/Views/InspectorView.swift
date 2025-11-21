@@ -176,8 +176,10 @@ public struct InspectorView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Get pending edit if it exists
             let pendingEdit = settingsViewModel?.getPendingEditOrCreate(for: item)
+            // Show editor for the original contribution (where the setting came from)
+            // This ensures the editor is visible even when the target file has no contribution yet
             let isEditingThisContribution = (settingsViewModel?.isEditingMode ?? false) &&
-                pendingEdit?.targetFileType == contribution.source
+                pendingEdit?.originalFileType == contribution.source
 
             // Header: either file type selector (when editing) or label
             if isEditingThisContribution {
@@ -805,6 +807,7 @@ private struct JSONTextEditorView: View {
                 key: item.key,
                 value: pendingEdit.value, // Keep old value
                 targetFileType: pendingEdit.targetFileType,
+                originalFileType: pendingEdit.originalFileType,
                 validationError: "Invalid JSON syntax",
                 rawEditingText: newText
             )
@@ -815,6 +818,7 @@ private struct JSONTextEditorView: View {
                 key: item.key,
                 value: pendingEdit.value, // Keep old value
                 targetFileType: pendingEdit.targetFileType,
+                originalFileType: pendingEdit.originalFileType,
                 validationError: "Value is required",
                 rawEditingText: newText
             )
@@ -890,6 +894,7 @@ private struct NumberTextFieldView: View {
                 key: item.key,
                 value: pendingEdit.value,
                 targetFileType: pendingEdit.targetFileType,
+                originalFileType: pendingEdit.originalFileType,
                 validationError: "Value is required",
                 rawEditingText: trimmedText
             )
@@ -916,6 +921,7 @@ private struct NumberTextFieldView: View {
                     key: item.key,
                     value: pendingEdit.value,
                     targetFileType: pendingEdit.targetFileType,
+                    originalFileType: pendingEdit.originalFileType,
                     validationError: "Must be a valid integer",
                     rawEditingText: trimmedText
                 )
@@ -939,6 +945,7 @@ private struct NumberTextFieldView: View {
                     key: item.key,
                     value: pendingEdit.value,
                     targetFileType: pendingEdit.targetFileType,
+                    originalFileType: pendingEdit.originalFileType,
                     validationError: "Must be a valid number",
                     rawEditingText: trimmedText
                 )
@@ -1068,7 +1075,8 @@ extension NSTextView {
     viewModel.pendingEdits["editor.formatOnSave"] = PendingEdit(
         key: "editor.formatOnSave",
         value: .bool(true),
-        targetFileType: .projectLocal
+        targetFileType: .projectLocal,
+        originalFileType: .globalSettings
     )
 
     return InspectorView(
