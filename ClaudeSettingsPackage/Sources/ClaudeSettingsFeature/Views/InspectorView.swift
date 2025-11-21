@@ -1075,7 +1075,8 @@ extension NSTextView {
     viewModel.pendingEdits["editor.formatOnSave"] = PendingEdit(
         key: "editor.formatOnSave",
         value: .bool(true),
-        targetFileType: .projectLocal
+        targetFileType: .projectLocal,
+        originalFileType: .globalSettings
     )
 
     return InspectorView(
