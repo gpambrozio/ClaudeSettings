@@ -246,7 +246,7 @@
             {
               "code": "{\n  \"skipWebFetchPreflight\": true\n}",
               "description": "Skip WebFetch blocklist check",
-              "id": "g4h5i6j7-k8l9-0123-defg-234567890123"
+              "id": "d58fa573-a4fa-454c-a8cc-a38bb4ab6622"
             }
           ]
         }
@@ -424,7 +424,7 @@
             {
               "code": "{\n  \"sandbox\": {\n    \"autoAllowBashIfSandboxed\": true\n  }\n}",
               "description": "Auto-allow sandboxed bash commands",
-              "id": "h5i6j7k8-l9m0-1234-efgh-345678901234"
+              "id": "53677f3b-1d54-4d62-8717-3de05c2cd754"
             }
           ]
         },
@@ -462,7 +462,7 @@
             {
               "code": "{\n  \"sandbox\": {\n    \"ignoreViolations\": {\n      \"npm\": [\"/Users/*/npm-cache\"],\n      \"*\": [\"/tmp/allowed\"]\n    }\n  }\n}",
               "description": "Ignore specific sandbox violations",
-              "id": "i6j7k8l9-m0n1-2345-fghi-456789012345"
+              "id": "e7c900b1-f23b-428b-85b0-7db474e4028f"
             }
           ]
         },
@@ -489,7 +489,7 @@
             {
               "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"allowLocalBinding\": true\n    }\n  }\n}",
               "description": "Allow localhost port binding",
-              "id": "j7k8l9m0-n1o2-3456-ghij-567890123456"
+              "id": "ee7fa086-01ce-4bc8-892f-0519d7908996"
             }
           ]
         },
@@ -503,7 +503,7 @@
             {
               "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"httpProxyPort\": 8080\n    }\n  }\n}",
               "description": "Set custom HTTP proxy port",
-              "id": "k8l9m0n1-o2p3-4567-hijk-678901234567"
+              "id": "96eb9b80-4e90-4f9d-9a18-d27e0a4b1a6c"
             }
           ]
         },
@@ -517,7 +517,7 @@
             {
               "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"socksProxyPort\": 1080\n    }\n  }\n}",
               "description": "Set custom SOCKS proxy port",
-              "id": "l9m0n1o2-p3q4-5678-ijkl-789012345678"
+              "id": "11cfbcd4-4a4c-4579-bd73-daf6022ad206"
             }
           ]
         },
@@ -530,7 +530,7 @@
             {
               "code": "{\n  \"sandbox\": {\n    \"enableWeakerNestedSandbox\": true\n  }\n}",
               "description": "Enable weaker nested sandbox",
-              "id": "m0n1o2p3-q4r5-6789-jklm-890123456789"
+              "id": "a5329e1a-28e3-4093-be7b-ca144ca2b49a"
             }
           ]
         }
@@ -649,7 +649,7 @@
             {
               "code": "{\n  \"skippedMarketplaces\": [\n    \"experimental-tools\",\n    \"beta-marketplace\"\n  ]\n}",
               "description": "Skip specific marketplaces",
-              "id": "n1o2p3q4-r5s6-7890-klmn-901234567890"
+              "id": "59762550-4bec-4e10-9c2c-67437b5fa529"
             }
           ]
         },
@@ -663,7 +663,7 @@
             {
               "code": "{\n  \"skippedPlugins\": [\n    \"deprecated-tool@old-marketplace\",\n    \"beta-feature@experimental\"\n  ]\n}",
               "description": "Skip specific plugins",
-              "id": "o2p3q4r5-s6t7-8901-lmno-012345678901"
+              "id": "9c42c5a7-c46d-4e98-a7df-4c9dd62956b6"
             }
           ]
         },
@@ -675,7 +675,7 @@
             {
               "code": "{\n  \"pluginConfigs\": {\n    \"my-plugin@marketplace\": {\n      \"mcpServers\": {\n        \"my-server\": {\n          \"apiKey\": \"xxx\",\n          \"timeout\": 30\n        }\n      }\n    }\n  }\n}",
               "description": "Configure plugin-specific MCP server settings",
-              "id": "p3q4r5s6-t7u8-9012-mnop-123456789012"
+              "id": "29695dd1-d8c7-4576-b26f-9bcec65d75c2"
             }
           ]
         }
