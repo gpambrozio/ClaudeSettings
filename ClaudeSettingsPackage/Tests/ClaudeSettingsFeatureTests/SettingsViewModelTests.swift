@@ -819,7 +819,320 @@ struct SettingsViewModelFileOperationsTests {
         #expect(!viewModel.settingItems.contains(where: { $0.key.starts(with: "hooks") }), "No hooks.* settings should remain")
     }
 
-    /// Test drag and drop to existing file merges settings instead of replacing
+    /// Test that PendingEdit tracks originalFileType correctly
+    @Test("PendingEdit tracks original file type")
+    @MainActor
+    func pendingEditTracksOriginalFileType() async throws {
+        // Given: A setting that exists in global settings
+        let globalFile = SettingsFile(
+            type: .globalSettings,
+            path: URL(fileURLWithPath: "/tmp/global.json"),
+            content: ["theme": .string("dark")]
+        )
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [globalFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile])
+
+        let item = viewModel.settingItems.first { $0.key == "theme" }!
+
+        // When: Creating a pending edit for this item
+        let pendingEdit = viewModel.getPendingEditOrCreate(for: item)
+
+        // Then: The originalFileType should match where it came from
+        #expect(pendingEdit.originalFileType == .globalSettings, "Should track original file type")
+        #expect(pendingEdit.targetFileType == .globalSettings, "Target should initially equal original")
+    }
+
+    /// Test that originalFileType is preserved when changing target file type
+    @Test("Original file type preserved when changing target")
+    @MainActor
+    func originalFileTypePreservedWhenChangingTarget() async throws {
+        // Given: A setting in global settings with a pending edit
+        let globalFile = SettingsFile(
+            type: .globalSettings,
+            path: URL(fileURLWithPath: "/tmp/global.json"),
+            content: ["theme": .string("dark")]
+        )
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [globalFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile])
+
+        let item = viewModel.settingItems.first { $0.key == "theme" }!
+
+        // When: User edits the value and changes target to project settings
+        viewModel.updatePendingEditIfChanged(
+            item: item,
+            value: .string("light"),
+            targetFileType: .projectSettings
+        )
+
+        // Then: originalFileType should still be global (where it came from)
+        let pendingEdit = viewModel.pendingEdits["theme"]
+        #expect(pendingEdit != nil, "Should have pending edit")
+        #expect(pendingEdit?.originalFileType == .globalSettings, "Original should be preserved")
+        #expect(pendingEdit?.targetFileType == .projectSettings, "Target should be updated")
+        #expect(pendingEdit?.value == .string("light"), "Value should be updated")
+    }
+
+    /// Test that originalFileType remains stable through multiple target changes
+    @Test("Original file type stable through multiple target changes")
+    @MainActor
+    func originalFileTypeStableThroughMultipleChanges() async throws {
+        // Given: A setting in global settings
+        let globalFile = SettingsFile(
+            type: .globalSettings,
+            path: URL(fileURLWithPath: "/tmp/global.json"),
+            content: ["maxTokens": .int(1_000)]
+        )
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [globalFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile])
+
+        let item = viewModel.settingItems.first { $0.key == "maxTokens" }!
+
+        // When: User changes target multiple times
+        viewModel.updatePendingEditIfChanged(
+            item: item,
+            value: .int(2_000),
+            targetFileType: .projectSettings
+        )
+
+        viewModel.updatePendingEditIfChanged(
+            item: item,
+            value: .int(3_000),
+            targetFileType: .projectLocal
+        )
+
+        // Then: originalFileType should still be global throughout
+        let pendingEdit = viewModel.pendingEdits["maxTokens"]
+        #expect(pendingEdit?.originalFileType == .globalSettings, "Original should remain global")
+        #expect(pendingEdit?.targetFileType == .projectLocal, "Target should be latest")
+        #expect(pendingEdit?.value == .int(3_000), "Value should be latest")
+    }
+
+    /// Test that saveAllEdits moves (not copies) settings when target differs from original
+    @Test("saveAllEdits moves settings when target file changes")
+    @MainActor
+    func saveAllEditsMovesSettingsWhenTargetChanges() async throws {
+        // Given: A setting exists in global settings, and we want to move it to project settings
+        let (globalURL, globalFile) = try await createTempSettingsFile(
+            content: [
+                "theme": .string("dark"),
+                "fontSize": .int(14),
+            ],
+            type: .globalSettings
+        )
+        let (projectURL, projectFile) = try await createTempSettingsFile(
+            content: [:],
+            type: .projectSettings
+        )
+        defer { cleanup(globalURL, projectURL) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [globalFile, projectFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile, projectFile])
+
+        // Create a pending edit that moves theme from global to project
+        viewModel.pendingEdits["theme"] = PendingEdit(
+            key: "theme",
+            value: .string("light"),
+            targetFileType: .projectSettings,
+            originalFileType: .globalSettings
+        )
+
+        // When: Saving all edits
+        try await viewModel.saveAllEdits()
+
+        // Then: Setting should be removed from global and added to project (move, not copy)
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedGlobal = try await parser.parseSettingsFile(at: globalURL, type: .globalSettings)
+        let updatedProject = try await parser.parseSettingsFile(at: projectURL, type: .projectSettings)
+
+        #expect(updatedGlobal.content["theme"] == nil, "theme should be deleted from original file (global)")
+        #expect(updatedGlobal.content["fontSize"] == .int(14), "fontSize should remain in global")
+        #expect(updatedProject.content["theme"] == .string("light"), "theme should be in target file (project)")
+
+        // Verify pending edits were cleared
+        #expect(viewModel.pendingEdits.isEmpty, "Pending edits should be cleared after save")
+    }
+
+    /// Test that saveAllEdits copies (not moves) when target equals original
+    @Test("saveAllEdits updates in place when target equals original")
+    @MainActor
+    func saveAllEditsUpdatesInPlaceWhenTargetEqualsOriginal() async throws {
+        // Given: A setting exists in global settings, and we're just changing its value
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "theme": .string("dark"),
+                "fontSize": .int(14),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // Create a pending edit that updates the value but keeps it in the same file
+        viewModel.pendingEdits["theme"] = PendingEdit(
+            key: "theme",
+            value: .string("light"),
+            targetFileType: .globalSettings,
+            originalFileType: .globalSettings
+        )
+
+        // When: Saving all edits
+        try await viewModel.saveAllEdits()
+
+        // Then: Setting should be updated in place (not deleted and re-added)
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        #expect(updatedFile.content["theme"] == .string("light"), "theme should be updated in place")
+        #expect(updatedFile.content["fontSize"] == .int(14), "fontSize should remain unchanged")
+    }
+
+    /// Test that saveAllEdits handles multiple moves correctly
+    @Test("saveAllEdits handles multiple moves in batch")
+    @MainActor
+    func saveAllEditsHandlesMultipleMoves() async throws {
+        // Given: Multiple settings in global, moving them to different targets
+        let (globalURL, globalFile) = try await createTempSettingsFile(
+            content: [
+                "setting1": .string("value1"),
+                "setting2": .string("value2"),
+                "setting3": .string("value3"),
+            ],
+            type: .globalSettings
+        )
+        let (projectURL, projectFile) = try await createTempSettingsFile(
+            content: [:],
+            type: .projectSettings
+        )
+        let (localURL, localFile) = try await createTempSettingsFile(
+            content: [:],
+            type: .projectLocal
+        )
+        defer { cleanup(globalURL, projectURL, localURL) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [globalFile, projectFile, localFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile, projectFile, localFile])
+
+        // Create pending edits that move settings to different files
+        viewModel.pendingEdits["setting1"] = PendingEdit(
+            key: "setting1",
+            value: .string("value1-modified"),
+            targetFileType: .projectSettings,
+            originalFileType: .globalSettings
+        )
+        viewModel.pendingEdits["setting2"] = PendingEdit(
+            key: "setting2",
+            value: .string("value2-modified"),
+            targetFileType: .projectLocal,
+            originalFileType: .globalSettings
+        )
+
+        // When: Saving all edits
+        try await viewModel.saveAllEdits()
+
+        // Then: Settings should be moved to their respective targets
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedGlobal = try await parser.parseSettingsFile(at: globalURL, type: .globalSettings)
+        let updatedProject = try await parser.parseSettingsFile(at: projectURL, type: .projectSettings)
+        let updatedLocal = try await parser.parseSettingsFile(at: localURL, type: .projectLocal)
+
+        #expect(updatedGlobal.content["setting1"] == nil, "setting1 should be deleted from global")
+        #expect(updatedGlobal.content["setting2"] == nil, "setting2 should be deleted from global")
+        #expect(updatedGlobal.content["setting3"] == .string("value3"), "setting3 should remain in global")
+
+        #expect(updatedProject.content["setting1"] == .string("value1-modified"), "setting1 should be in project")
+        #expect(updatedLocal.content["setting2"] == .string("value2-modified"), "setting2 should be in local")
+    }
+
+    /// Test that originalFileType tracks the highest precedence contribution
+    @Test("Original file type tracks highest precedence when multiple contributions exist")
+    @MainActor
+    func originalFileTypeTracksHighestPrecedenceContribution() async throws {
+        // Given: A setting that exists in both global and project settings (project overrides)
+        let globalFile = SettingsFile(
+            type: .globalSettings,
+            path: URL(fileURLWithPath: "/tmp/global.json"),
+            content: ["theme": .string("dark")]
+        )
+        let projectFile = SettingsFile(
+            type: .projectSettings,
+            path: URL(fileURLWithPath: "/tmp/project.json"),
+            content: ["theme": .string("light")]
+        )
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [globalFile, projectFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile, projectFile])
+
+        let item = viewModel.settingItems.first { $0.key == "theme" }!
+
+        // Verify we have multiple contributions
+        #expect(item.contributions.count == 2, "Should have two contributions")
+
+        // When: Creating a pending edit
+        let pendingEdit = viewModel.getPendingEditOrCreate(for: item)
+
+        // Then: originalFileType should be the highest precedence source (project)
+        #expect(pendingEdit.originalFileType == .projectSettings, "Original should be highest precedence")
+        #expect(pendingEdit.value == .string("light"), "Value should match highest precedence")
+    }
+
+    /// Test that moving a setting with multiple contributions only removes from highest precedence
+    @Test("Moving setting with multiple contributions only removes from active source")
+    @MainActor
+    func movingSettingWithMultipleContributionsOnlyRemovesFromActive() async throws {
+        // Given: A setting exists in both global and project (project overrides)
+        let (globalURL, globalFile) = try await createTempSettingsFile(
+            content: ["maxTokens": .int(1_000)],
+            type: .globalSettings
+        )
+        let (projectURL, projectFile) = try await createTempSettingsFile(
+            content: ["maxTokens": .int(2_000)],
+            type: .projectSettings
+        )
+        let (localURL, localFile) = try await createTempSettingsFile(
+            content: [:],
+            type: .projectLocal
+        )
+        defer { cleanup(globalURL, projectURL, localURL) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [globalFile, projectFile, localFile]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile, projectFile, localFile])
+
+        // Create a pending edit to move from project to local
+        viewModel.pendingEdits["maxTokens"] = PendingEdit(
+            key: "maxTokens",
+            value: .int(3_000),
+            targetFileType: .projectLocal,
+            originalFileType: .projectSettings
+        )
+
+        // When: Saving all edits
+        try await viewModel.saveAllEdits()
+
+        // Then: Should delete from project (original) but leave global untouched
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedGlobal = try await parser.parseSettingsFile(at: globalURL, type: .globalSettings)
+        let updatedProject = try await parser.parseSettingsFile(at: projectURL, type: .projectSettings)
+        let updatedLocal = try await parser.parseSettingsFile(at: localURL, type: .projectLocal)
+
+        #expect(updatedGlobal.content["maxTokens"] == .int(1_000), "Global should remain untouched")
+        #expect(updatedProject.content["maxTokens"] == nil, "Project should be deleted (was original)")
+        #expect(updatedLocal.content["maxTokens"] == .int(3_000), "Local should have new value")
+    }
+
+    /// Test that drag and drop to existing file merges settings instead of replacing
     @Test("Drag and drop merges with existing settings")
     func dragAndDropMergesSettings() async throws {
         // Given: A target project with existing settings
@@ -835,8 +1148,8 @@ struct SettingsViewModelFileOperationsTests {
             "existingSetting1": "value1",
             "existingSetting2": 42,
             "editor": [
-                "theme": "light"
-            ]
+                "theme": "light",
+            ],
         ]
         let existingData = try JSONSerialization.data(withJSONObject: existingContent, options: .prettyPrinted)
         try existingData.write(to: projectSettingsPath)
@@ -868,7 +1181,7 @@ struct SettingsViewModelFileOperationsTests {
                 key: "editor.fontSize",
                 value: .int(14),
                 sourceFileType: .globalSettings
-            )
+            ),
         ])
 
         // When: Dragging and dropping the settings to the project
