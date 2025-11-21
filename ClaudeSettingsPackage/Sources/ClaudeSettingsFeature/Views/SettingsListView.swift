@@ -8,6 +8,8 @@ public struct SettingsListView: View {
     @State private var expandedNodes: Set<String> = []
     @State private var showSaveError = false
     @State private var saveErrorMessage: String?
+    @State private var showUpcomingFeatureAlert = false
+    @State private var upcomingFeatureName = ""
 
     public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
         self.settingsViewModel = settingsViewModel
@@ -72,10 +74,12 @@ public struct SettingsListView: View {
 
                     Menu {
                         Button("Add Setting") {
-                            // TODO: Implement in Phase 1.5
+                            upcomingFeatureName = "Add Setting"
+                            showUpcomingFeatureAlert = true
                         }
                         Button("Import Settings") {
-                            // TODO: Implement in Phase 2
+                            upcomingFeatureName = "Import Settings"
+                            showUpcomingFeatureAlert = true
                         }
                     } label: {
                         Label("Actions", symbol: .ellipsisCircle)
@@ -89,6 +93,11 @@ public struct SettingsListView: View {
             if let saveErrorMessage {
                 Text(saveErrorMessage)
             }
+        }
+        .alert("Coming Soon", isPresented: $showUpcomingFeatureAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("\(upcomingFeatureName) is an upcoming feature that is not yet implemented. Stay tuned!")
         }
     }
 
