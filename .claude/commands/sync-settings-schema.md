@@ -20,7 +20,7 @@ Synchronize the settings documentation JSON file with the official Claude Code s
 3. **Add missing fields**:
    - Identify fields present in schema but missing from our documentation
    - Add them to the appropriate category with description and examples
-   - Generate UUIDs for example IDs
+   - Generate UUIDs for example IDs. Make sure they are valid UUIDs. Use a script to generate valid UUIDs.
    - Add missing fields in a way that reduces the diff to make it easier to review
 
 4. **Validate the result**:
