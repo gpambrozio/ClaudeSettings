@@ -49,7 +49,7 @@ final public class ProjectListViewModel {
         scanProjects()
     }
 
-    /// Set up file watcher to monitor ~/.claude.json for changes
+    /// Set up file watcher to monitor ~/.claude.json and all project settings files
     private func setupFileWatcher() async {
         // Stop any existing watcher first
         await stopFileWatcher()
@@ -57,20 +57,34 @@ final public class ProjectListViewModel {
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
         let configPath = homeDirectory.appendingPathComponent(".claude.json")
 
-        logger.info("Setting up file watcher for .claude.json")
+        // Build list of all directories and files to watch
+        var directories: Set<URL> = [homeDirectory]
+        var filePaths: [URL] = [configPath]
 
-        // FileWatcher's callback is @Sendable but not MainActor-isolated
-        // We need to explicitly hop to MainActor since this ViewModel is MainActor-isolated
-        fileWatcher = FileWatcher { [weak self] _ in
-            // Only watching one file (.claude.json), so URL parameter is always that file
-            Task { @MainActor in
-                await self?.handleConfigFileChange()
+        // Watch each project's .claude directory for settings file changes
+        for project in projects {
+            let projectClaudeDir = project.claudeDirectory
+            directories.insert(projectClaudeDir)
+
+            // Add all possible settings files for this project
+            for fileType: SettingsFileType in [.projectSettings, .projectLocal] {
+                let settingsPath = fileType.path(in: project.path)
+                filePaths.append(settingsPath)
             }
         }
 
-        // Watch the home directory for changes to .claude.json
-        // This way we can detect creation and deletion of the file
-        await fileWatcher?.startWatching(directories: [homeDirectory], filePaths: [configPath])
+        logger.info("Setting up file watcher for .claude.json and \(projects.count) projects")
+
+        // FileWatcher's callback is @Sendable but not MainActor-isolated
+        // We need to explicitly hop to MainActor since this ViewModel is MainActor-isolated
+        fileWatcher = FileWatcher { [weak self] changedURL in
+            Task { @MainActor in
+                await self?.handleFileChange(at: changedURL)
+            }
+        }
+
+        // Watch directories for any changes to tracked files
+        await fileWatcher?.startWatching(directories: Array(directories), filePaths: filePaths)
     }
 
     /// Stop file watching
@@ -80,11 +94,11 @@ final public class ProjectListViewModel {
         fileWatcher = nil
     }
 
-    /// Handle changes to .claude.json with debouncing
-    private func handleConfigFileChange() async {
-        // Debounce: wait 200ms before reloading
+    /// Handle changes to .claude.json or project settings files with debouncing
+    private func handleFileChange(at url: URL) async {
+        // Debounce: wait 200ms before reloading to handle rapid successive changes
         await debouncer.debounce(milliseconds: 200) {
-            self.logger.info(".claude.json changed externally, refreshing project list")
+            self.logger.info("Settings file changed at \(url.path), refreshing project list")
             self.refresh()
         }
     }
