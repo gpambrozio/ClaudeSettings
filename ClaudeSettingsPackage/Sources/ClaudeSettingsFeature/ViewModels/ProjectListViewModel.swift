@@ -48,6 +48,9 @@ final public class ProjectListViewModel {
                 projects = foundProjects.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
                 logger.info("Loaded \(projects.count) projects")
 
+                // Configure the centralized file monitor with all projects
+                await fileMonitor.configureProjects(foundProjects)
+
                 // Set up file watching for the Claude config file
                 await setupFileWatcher()
             } catch {

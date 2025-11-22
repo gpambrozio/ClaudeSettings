@@ -19,18 +19,77 @@ public actor SettingsFileMonitor {
 
     private let logger = Logger(label: "com.claudesettings.filemonitor")
 
-    /// Observer information
+    /// Observer information with pre-computed paths
     private struct Observer {
         let id: UUID
         let scope: SettingsScope
+        let watchedPaths: Set<URL> // Pre-computed paths for this scope
         let callback: @Sendable (URL) -> Void
     }
 
     private var observers: [UUID: Observer] = [:]
-    private var fileWatcher: FileWatcher?
+    private let fileWatcher: FileWatcherProtocol
     private var debouncers: [String: Debouncer] = [:]
+    private var streamListenerTask: Task<Void, Never>?
+    private var isConfigured = false
 
-    public init() { }
+    public init(fileWatcher: FileWatcherProtocol? = nil) {
+        self.fileWatcher = fileWatcher ?? FileWatcher()
+    }
+
+    /// Configure the monitor with all projects to watch
+    /// This should be called once at app startup with all discovered projects
+    /// - Parameter projects: All Claude projects to monitor
+    public func configureProjects(_ projects: [ClaudeProject]) async {
+        logger.info("Configuring file monitor with \(projects.count) projects")
+
+        // Calculate all unique paths to watch from all possible scopes
+        var allFilePaths = Set<URL>()
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+
+        // Always include global settings
+        for fileType: SettingsFileType in [.globalSettings, .globalLocal] {
+            allFilePaths.insert(fileType.path(in: homeDirectory))
+        }
+
+        // Include .claude.json for project discovery
+        allFilePaths.insert(homeDirectory.appendingPathComponent(".claude.json"))
+
+        // Include all project settings
+        for project in projects {
+            for fileType: SettingsFileType in [.projectSettings, .projectLocal] {
+                allFilePaths.insert(fileType.path(in: project.path))
+            }
+        }
+
+        // Collect unique directories
+        var directories = Set<URL>()
+        for filePath in allFilePaths {
+            directories.insert(filePath.deletingLastPathComponent())
+        }
+
+        logger.info("Configuring file watcher for \(directories.count) directories watching \(allFilePaths.count) files")
+
+        // Update the file watcher with all paths
+        await fileWatcher.updateWatchedPaths(directories: Array(directories), filePaths: Array(allFilePaths))
+
+        // Start listening to the file changes stream if not already started
+        if streamListenerTask == nil {
+            startListeningToFileChanges()
+        }
+
+        isConfigured = true
+    }
+
+    /// Start listening to file changes from the watcher
+    private func startListeningToFileChanges() {
+        streamListenerTask = Task {
+            for await changedURL in await fileWatcher.fileChanges {
+                await handleFileChange(at: changedURL)
+            }
+        }
+        logger.debug("Started listening to file changes stream")
+    }
 
     /// Register an observer to watch settings files
     /// - Parameters:
@@ -43,14 +102,21 @@ public actor SettingsFileMonitor {
         callback: @escaping @Sendable (URL) -> Void
     ) async -> UUID {
         let observerId = UUID()
-        let observer = Observer(id: observerId, scope: scope, callback: callback)
+        let watchedPaths = resolveFilePaths(for: scope)
+        let observer = Observer(
+            id: observerId,
+            scope: scope,
+            watchedPaths: watchedPaths,
+            callback: callback
+        )
         observers[observerId] = observer
 
-        let filePaths = resolveFilePaths(for: scope)
-        logger.info("Registered observer \(observerId) watching \(filePaths.count) files")
+        logger.info("Registered observer \(observerId) watching \(watchedPaths.count) files")
 
-        // Update the file watcher with the new aggregated paths
-        await updateFileWatcher()
+        // If not yet configured, start listening (will watch only what's needed)
+        if !isConfigured && streamListenerTask == nil {
+            startListeningToFileChanges()
+        }
 
         return observerId
     }
@@ -60,19 +126,21 @@ public actor SettingsFileMonitor {
     ///   - observerId: The observer ID returned from registerObserver
     ///   - scope: The new scope to watch
     public func updateObserver(_ observerId: UUID, scope: SettingsScope) async {
-        guard observers[observerId] != nil else {
+        guard let existingObserver = observers[observerId] else {
             logger.warning("Attempted to update unknown observer: \(observerId)")
             return
         }
 
-        let callback = observers[observerId]!.callback
-        observers[observerId] = Observer(id: observerId, scope: scope, callback: callback)
+        let watchedPaths = resolveFilePaths(for: scope)
+        observers[observerId] = Observer(
+            id: observerId,
+            scope: scope,
+            watchedPaths: watchedPaths,
+            callback: existingObserver.callback
+        )
 
-        let filePaths = resolveFilePaths(for: scope)
-        logger.info("Updated observer \(observerId) to watch \(filePaths.count) files")
-
-        // Update the file watcher with the new aggregated paths
-        await updateFileWatcher()
+        logger.info("Updated observer \(observerId) to watch \(watchedPaths.count) files")
+        // No need to update FileWatcher - it's already watching all necessary paths
     }
 
     /// Resolve file paths for a given scope
@@ -124,51 +192,7 @@ public actor SettingsFileMonitor {
         }
 
         logger.info("Unregistered observer \(observerId)")
-
-        // Update the file watcher (might stop if no more observers)
-        await updateFileWatcher()
-    }
-
-    /// Update the FileWatcher to watch all files from all observers
-    private func updateFileWatcher() async {
-        // Stop existing watcher
-        await fileWatcher?.stopWatching()
-        fileWatcher = nil
-
-        // If no observers, we're done
-        guard !observers.isEmpty else {
-            logger.debug("No observers, file watcher stopped")
-            return
-        }
-
-        // Aggregate all file paths from all observers
-        var allFilePaths = Set<URL>()
-        for observer in observers.values {
-            let filePaths = resolveFilePaths(for: observer.scope)
-            allFilePaths.formUnion(filePaths)
-        }
-
-        guard !allFilePaths.isEmpty else {
-            logger.debug("No files to watch")
-            return
-        }
-
-        // Collect unique directories
-        var directories = Set<URL>()
-        for filePath in allFilePaths {
-            directories.insert(filePath.deletingLastPathComponent())
-        }
-
-        logger.info("Setting up file watcher for \(directories.count) directories watching \(allFilePaths.count) files")
-
-        // Create new watcher
-        fileWatcher = FileWatcher { [weak self] changedURL in
-            Task {
-                await self?.handleFileChange(at: changedURL)
-            }
-        }
-
-        await fileWatcher?.startWatching(directories: Array(directories), filePaths: Array(allFilePaths))
+        // No need to update FileWatcher - it continues watching all configured paths
     }
 
     /// Handle file change events with debouncing
@@ -192,10 +216,9 @@ public actor SettingsFileMonitor {
     private func notifyObservers(of url: URL) async {
         logger.debug("Notifying observers of change: \(url.path)")
 
-        // Find all observers watching this file
+        // Find all observers watching this file using pre-computed paths
         for observer in observers.values {
-            let filePaths = resolveFilePaths(for: observer.scope)
-            if filePaths.contains(url) {
+            if observer.watchedPaths.contains(url) {
                 observer.callback(url)
             }
         }
@@ -204,9 +227,11 @@ public actor SettingsFileMonitor {
     /// Stop all file watching (cleanup)
     public func stopAll() async {
         logger.info("Stopping all file monitoring")
-        await fileWatcher?.stopWatching()
-        fileWatcher = nil
+        streamListenerTask?.cancel()
+        streamListenerTask = nil
+        await fileWatcher.stopWatching()
         observers.removeAll()
         debouncers.removeAll()
+        isConfigured = false
     }
 }
