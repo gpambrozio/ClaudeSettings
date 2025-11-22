@@ -18,7 +18,6 @@ public actor SettingsFileMonitor {
     public static let shared = SettingsFileMonitor()
 
     private let logger = Logger(label: "com.claudesettings.filemonitor")
-    private let fileSystemManager: FileSystemManager
 
     /// Observer information
     private struct Observer {
@@ -31,9 +30,7 @@ public actor SettingsFileMonitor {
     private var fileWatcher: FileWatcher?
     private var debouncers: [String: Debouncer] = [:]
 
-    public init(fileSystemManager: FileSystemManager = FileSystemManager()) {
-        self.fileSystemManager = fileSystemManager
-    }
+    public init() { }
 
     /// Register an observer to watch settings files
     /// - Parameters:
