@@ -209,7 +209,10 @@ final public class SettingsViewModel {
 
         // Find which settings file changed
         guard let changedFileIndex = settingsFiles.firstIndex(where: { $0.path == url }) else {
-            logger.warning("Changed file not found in loaded settings: \(url.path)")
+            // File not in our list - might be newly created
+            logger.info("File not in loaded settings (possibly newly created): \(url.path)")
+            // Do a full reload to pick up new files
+            await loadSettings()
             return
         }
 

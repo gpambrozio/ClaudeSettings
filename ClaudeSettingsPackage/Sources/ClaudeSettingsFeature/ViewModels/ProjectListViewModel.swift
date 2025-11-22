@@ -16,6 +16,7 @@ final public class ProjectListViewModel {
     private let projectScanner: ProjectScanner
     private var fileWatcher: FileWatcher?
     private let debouncer = Debouncer()
+    private var scanTask: Task<Void, Never>?
 
     public init(fileSystemManager: FileSystemManager = FileSystemManager()) {
         self.fileSystemManager = fileSystemManager
@@ -24,12 +25,22 @@ final public class ProjectListViewModel {
 
     /// Scan for all Claude projects
     public func scanProjects() {
+        // Cancel any existing scan task to prevent concurrent scans
+        scanTask?.cancel()
+
         isLoading = true
         errorMessage = nil
 
-        Task {
+        scanTask = Task {
             do {
                 let foundProjects = try await projectScanner.scanProjects()
+
+                // Check if task was cancelled
+                guard !Task.isCancelled else {
+                    logger.info("Project scan was cancelled")
+                    return
+                }
+
                 projects = foundProjects.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
                 logger.info("Loaded \(projects.count) projects")
 
