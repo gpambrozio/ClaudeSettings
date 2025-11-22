@@ -14,13 +14,17 @@ final public class ProjectListViewModel {
     public var errorMessage: String?
 
     private let projectScanner: ProjectScanner
-    private var fileWatcher: FileWatcher?
-    private let debouncer = Debouncer()
+    private let fileMonitor: SettingsFileMonitor
+    private var observerId: UUID?
     private var scanTask: Task<Void, Never>?
 
-    public init(fileSystemManager: FileSystemManager = FileSystemManager()) {
+    public init(
+        fileSystemManager: FileSystemManager = FileSystemManager(),
+        fileMonitor: SettingsFileMonitor = .shared
+    ) {
         self.fileSystemManager = fileSystemManager
         self.projectScanner = ProjectScanner(fileSystemManager: fileSystemManager)
+        self.fileMonitor = fileMonitor
     }
 
     /// Scan for all Claude projects
@@ -60,57 +64,53 @@ final public class ProjectListViewModel {
         scanProjects()
     }
 
-    /// Set up file watcher to monitor ~/.claude.json and all project settings files
+    /// Set up file monitoring for ~/.claude.json and all project settings files
     private func setupFileWatcher() async {
-        // Stop any existing watcher first
-        await stopFileWatcher()
-
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
         let configPath = homeDirectory.appendingPathComponent(".claude.json")
 
-        // Build list of all directories and files to watch
-        var directories: Set<URL> = [homeDirectory]
-        var filePaths: [URL] = [configPath]
+        // Build list of all files to watch
+        var filePaths = Set<URL>()
+        filePaths.insert(configPath)
 
-        // Watch each project's .claude directory for settings file changes
+        // Watch each project's settings files
         for project in projects {
-            let projectClaudeDir = project.claudeDirectory
-            directories.insert(projectClaudeDir)
-
             // Add all possible settings files for this project
             for fileType: SettingsFileType in [.projectSettings, .projectLocal] {
                 let settingsPath = fileType.path(in: project.path)
-                filePaths.append(settingsPath)
+                filePaths.insert(settingsPath)
             }
         }
 
-        logger.info("Setting up file watcher for .claude.json and \(projects.count) projects")
+        logger.info("Registering file monitoring for .claude.json and \(projects.count) projects")
 
-        // FileWatcher's callback is @Sendable but not MainActor-isolated
-        // We need to explicitly hop to MainActor since this ViewModel is MainActor-isolated
-        fileWatcher = FileWatcher { [weak self] changedURL in
-            Task { @MainActor in
-                await self?.handleFileChange(at: changedURL)
+        // Register with the centralized file monitor
+        // The callback will be called on a background thread, so we need to hop to MainActor
+        if let existingObserverId = observerId {
+            // Update existing observer
+            await fileMonitor.updateObserver(existingObserverId, watching: filePaths)
+        } else {
+            // Register new observer
+            observerId = await fileMonitor.registerObserver(watching: filePaths) { [weak self] changedURL in
+                Task { @MainActor in
+                    self?.handleFileChange(at: changedURL)
+                }
             }
         }
-
-        // Watch directories for any changes to tracked files
-        await fileWatcher?.startWatching(directories: Array(directories), filePaths: filePaths)
     }
 
     /// Stop file watching
     public func stopFileWatcher() async {
-        await debouncer.cancel()
-        await fileWatcher?.stopWatching()
-        fileWatcher = nil
+        if let observerId {
+            await fileMonitor.unregisterObserver(observerId)
+            self.observerId = nil
+        }
     }
 
-    /// Handle changes to .claude.json or project settings files with debouncing
-    private func handleFileChange(at url: URL) async {
-        // Debounce: wait 200ms before reloading to handle rapid successive changes
-        await debouncer.debounce(milliseconds: 200) {
-            self.logger.info("Settings file changed at \(url.path), refreshing project list")
-            self.refresh()
-        }
+    /// Handle changes to .claude.json or project settings files
+    /// Note: Debouncing is handled by SettingsFileMonitor
+    private func handleFileChange(at url: URL) {
+        logger.info("Settings file changed at \(url.path), refreshing project list")
+        refresh()
     }
 }
