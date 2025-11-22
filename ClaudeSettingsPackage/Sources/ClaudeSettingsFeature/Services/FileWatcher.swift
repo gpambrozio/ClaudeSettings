@@ -117,17 +117,36 @@ public actor FileWatcher {
             guard index < flagsArray.count else { continue }
             let flag = flagsArray[index]
 
-            // Only process events for files we're watching
-            guard watchedFilePaths.contains(path) else { continue }
+            // For deletion events, FSEvents might report the parent directory instead of the file
+            // So we need to check if the path matches exactly OR if it's a directory containing watched files
+            let isWatchedFile = watchedFilePaths.contains(path)
+            let isWatchedDirectory = watchedFilePaths.contains { watchedPath in
+                watchedPath.hasPrefix(path + "/")
+            }
+
+            guard isWatchedFile || isWatchedDirectory else {
+                continue
+            }
 
             // Check if this is a modification, creation, or deletion event
             if
                 flag & UInt32(kFSEventStreamEventFlagItemModified) != 0 ||
                 flag & UInt32(kFSEventStreamEventFlagItemCreated) != 0 ||
                 flag & UInt32(kFSEventStreamEventFlagItemRemoved) != 0 {
-                let url = URL(fileURLWithPath: path)
-                logger.debug("File changed: \(path)")
-                callback(url)
+
+                // If event is on a directory, notify about all watched files in that directory
+                if isWatchedDirectory && !isWatchedFile {
+                    logger.debug("Directory changed: \(path), checking watched files")
+                    for watchedPath in watchedFilePaths where watchedPath.hasPrefix(path + "/") {
+                        let url = URL(fileURLWithPath: watchedPath)
+                        logger.debug("File potentially changed: \(watchedPath)")
+                        callback(url)
+                    }
+                } else {
+                    let url = URL(fileURLWithPath: path)
+                    logger.debug("File changed: \(path)")
+                    callback(url)
+                }
             }
         }
     }
