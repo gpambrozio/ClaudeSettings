@@ -550,8 +550,11 @@ final public class SettingsViewModel {
 
         // Pause file watching to prevent conflicts with pending edits
         Task {
-            await fileWatcher?.stopWatching()
-            logger.info("Paused file watching for editing mode")
+            if let observerId = observerId {
+                await fileMonitor.unregisterObserver(observerId)
+                self.observerId = nil
+                logger.info("Paused file watching for editing mode")
+            }
         }
 
         logger.info("Entered editing mode")
