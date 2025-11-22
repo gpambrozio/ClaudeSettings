@@ -66,32 +66,19 @@ final public class ProjectListViewModel {
 
     /// Set up file monitoring for ~/.claude.json and all project settings files
     private func setupFileWatcher() async {
-        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-        let configPath = homeDirectory.appendingPathComponent(".claude.json")
-
-        // Build list of all files to watch
-        var filePaths = Set<URL>()
-        filePaths.insert(configPath)
-
-        // Watch each project's settings files
-        for project in projects {
-            // Add all possible settings files for this project
-            for fileType: SettingsFileType in [.projectSettings, .projectLocal] {
-                let settingsPath = fileType.path(in: project.path)
-                filePaths.insert(settingsPath)
-            }
-        }
-
         logger.info("Registering file monitoring for .claude.json and \(projects.count) projects")
+
+        // The monitor handles all path enumeration internally
+        let scope: SettingsScope = .projects(projects)
 
         // Register with the centralized file monitor
         // The callback will be called on a background thread, so we need to hop to MainActor
         if let existingObserverId = observerId {
             // Update existing observer
-            await fileMonitor.updateObserver(existingObserverId, watching: filePaths)
+            await fileMonitor.updateObserver(existingObserverId, scope: scope)
         } else {
             // Register new observer
-            observerId = await fileMonitor.registerObserver(watching: filePaths) { [weak self] changedURL in
+            observerId = await fileMonitor.registerObserver(scope: scope) { [weak self] changedURL in
                 Task { @MainActor in
                     self?.handleFileChange(at: changedURL)
                 }

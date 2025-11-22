@@ -1,6 +1,16 @@
 import Foundation
 import Logging
 
+/// What settings files to monitor
+public enum SettingsScope {
+    /// Global settings only (~/.claude/)
+    case global
+    /// Specific projects
+    case projects([ClaudeProject])
+    /// Global + specific projects
+    case globalAndProjects([ClaudeProject])
+}
+
 /// Centralized file monitoring service for settings files
 /// Manages a single FileWatcher instance and notifies registered observers of file changes
 public actor SettingsFileMonitor {
@@ -13,7 +23,7 @@ public actor SettingsFileMonitor {
     /// Observer information
     private struct Observer {
         let id: UUID
-        let filePaths: Set<URL>
+        let scope: SettingsScope
         let callback: @Sendable (URL) -> Void
     }
 
@@ -25,20 +35,21 @@ public actor SettingsFileMonitor {
         self.fileSystemManager = fileSystemManager
     }
 
-    /// Register an observer to watch specific files
+    /// Register an observer to watch settings files
     /// - Parameters:
-    ///   - filePaths: The file paths to watch
+    ///   - scope: What settings files to watch
     ///   - callback: Called when any of the watched files change
     /// - Returns: Observer ID to use for updates or unregistration
     @discardableResult
     public func registerObserver(
-        watching filePaths: Set<URL>,
+        scope: SettingsScope,
         callback: @escaping @Sendable (URL) -> Void
     ) async -> UUID {
         let observerId = UUID()
-        let observer = Observer(id: observerId, filePaths: filePaths, callback: callback)
+        let observer = Observer(id: observerId, scope: scope, callback: callback)
         observers[observerId] = observer
 
+        let filePaths = resolveFilePaths(for: scope)
         logger.info("Registered observer \(observerId) watching \(filePaths.count) files")
 
         // Update the file watcher with the new aggregated paths
@@ -47,23 +58,64 @@ public actor SettingsFileMonitor {
         return observerId
     }
 
-    /// Update the files an observer is watching
+    /// Update the scope an observer is watching
     /// - Parameters:
     ///   - observerId: The observer ID returned from registerObserver
-    ///   - filePaths: The new set of file paths to watch
-    public func updateObserver(_ observerId: UUID, watching filePaths: Set<URL>) async {
+    ///   - scope: The new scope to watch
+    public func updateObserver(_ observerId: UUID, scope: SettingsScope) async {
         guard observers[observerId] != nil else {
             logger.warning("Attempted to update unknown observer: \(observerId)")
             return
         }
 
         let callback = observers[observerId]!.callback
-        observers[observerId] = Observer(id: observerId, filePaths: filePaths, callback: callback)
+        observers[observerId] = Observer(id: observerId, scope: scope, callback: callback)
 
+        let filePaths = resolveFilePaths(for: scope)
         logger.info("Updated observer \(observerId) to watch \(filePaths.count) files")
 
         // Update the file watcher with the new aggregated paths
         await updateFileWatcher()
+    }
+
+    /// Resolve file paths for a given scope
+    private func resolveFilePaths(for scope: SettingsScope) -> Set<URL> {
+        var filePaths = Set<URL>()
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+
+        switch scope {
+        case .global:
+            // Global settings files
+            for fileType: SettingsFileType in [.globalSettings, .globalLocal] {
+                filePaths.insert(fileType.path(in: homeDirectory))
+            }
+
+        case .projects(let projects):
+            // .claude.json for project discovery
+            filePaths.insert(homeDirectory.appendingPathComponent(".claude.json"))
+
+            // Project settings files
+            for project in projects {
+                for fileType: SettingsFileType in [.projectSettings, .projectLocal] {
+                    filePaths.insert(fileType.path(in: project.path))
+                }
+            }
+
+        case .globalAndProjects(let projects):
+            // Global settings
+            for fileType: SettingsFileType in [.globalSettings, .globalLocal] {
+                filePaths.insert(fileType.path(in: homeDirectory))
+            }
+
+            // Project settings
+            for project in projects {
+                for fileType: SettingsFileType in [.projectSettings, .projectLocal] {
+                    filePaths.insert(fileType.path(in: project.path))
+                }
+            }
+        }
+
+        return filePaths
     }
 
     /// Unregister an observer
@@ -95,7 +147,8 @@ public actor SettingsFileMonitor {
         // Aggregate all file paths from all observers
         var allFilePaths = Set<URL>()
         for observer in observers.values {
-            allFilePaths.formUnion(observer.filePaths)
+            let filePaths = resolveFilePaths(for: observer.scope)
+            allFilePaths.formUnion(filePaths)
         }
 
         guard !allFilePaths.isEmpty else {
@@ -143,8 +196,11 @@ public actor SettingsFileMonitor {
         logger.debug("Notifying observers of change: \(url.path)")
 
         // Find all observers watching this file
-        for observer in observers.values where observer.filePaths.contains(url) {
-            observer.callback(url)
+        for observer in observers.values {
+            let filePaths = resolveFilePaths(for: observer.scope)
+            if filePaths.contains(url) {
+                observer.callback(url)
+            }
         }
     }
 

@@ -149,40 +149,24 @@ final public class SettingsViewModel {
 
     /// Set up file monitoring for settings files
     private func setupFileWatcher() async {
-        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-
-        // Build list of all possible settings file paths (not just existing ones)
-        var filePaths = Set<URL>()
-
-        // Global settings files
-        for fileType: SettingsFileType in [.globalSettings, .globalLocal] {
-            let path = fileType.path(in: homeDirectory)
-            filePaths.insert(path)
+        // Determine scope based on whether we have a project
+        let scope: SettingsScope
+        if let project {
+            scope = .globalAndProjects([project])
+            logger.info("Registering file monitoring for global and project settings")
+        } else {
+            scope = .global
+            logger.info("Registering file monitoring for global settings")
         }
-
-        // Project settings files (if we have a project)
-        if let projectPath = project?.path {
-            for fileType: SettingsFileType in [.projectSettings, .projectLocal] {
-                let path = fileType.path(in: projectPath)
-                filePaths.insert(path)
-            }
-        }
-
-        guard !filePaths.isEmpty else {
-            logger.debug("No files to watch")
-            return
-        }
-
-        logger.info("Registering file monitoring for \(filePaths.count) settings files")
 
         // Register with the centralized file monitor
         // The callback will be called on a background thread, so we need to hop to MainActor
         if let existingObserverId = observerId {
             // Update existing observer
-            await fileMonitor.updateObserver(existingObserverId, watching: filePaths)
+            await fileMonitor.updateObserver(existingObserverId, scope: scope)
         } else {
             // Register new observer
-            observerId = await fileMonitor.registerObserver(watching: filePaths) { [weak self] changedURL in
+            observerId = await fileMonitor.registerObserver(scope: scope) { [weak self] changedURL in
                 Task { @MainActor in
                     await self?.handleFileChange(at: changedURL)
                 }
