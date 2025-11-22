@@ -140,7 +140,6 @@ public actor SettingsFileMonitor {
         )
 
         logger.info("Updated observer \(observerId) to watch \(watchedPaths.count) files")
-        // No need to update FileWatcher - it's already watching all necessary paths
     }
 
     /// Resolve file paths for a given scope
@@ -192,7 +191,6 @@ public actor SettingsFileMonitor {
         }
 
         logger.info("Unregistered observer \(observerId)")
-        // No need to update FileWatcher - it continues watching all configured paths
     }
 
     /// Handle file change events with debouncing
@@ -204,7 +202,7 @@ public actor SettingsFileMonitor {
             debouncers[path] = Debouncer()
         }
 
-        guard let debouncer = debouncers[path] else { return }
+        let debouncer = debouncers[path, default: Debouncer()]
 
         // Debounce: wait 200ms before notifying observers
         await debouncer.debounce(milliseconds: 200) {
