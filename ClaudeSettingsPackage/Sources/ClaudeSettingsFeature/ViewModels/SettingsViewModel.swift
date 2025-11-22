@@ -49,14 +49,19 @@ final public class SettingsViewModel {
 
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
-    private var fileWatcher: FileWatcher?
-    private let debouncer = Debouncer()
+    private let fileMonitor: SettingsFileMonitor
+    private var observerId: UUID?
     private var consecutiveReloadFailures: [URL: Int] = [:]
 
-    public init(project: ClaudeProject? = nil, fileSystemManager: FileSystemManager = FileSystemManager()) {
+    public init(
+        project: ClaudeProject? = nil,
+        fileSystemManager: FileSystemManager = FileSystemManager(),
+        fileMonitor: SettingsFileMonitor = .shared
+    ) {
         self.project = project
         self.fileSystemManager = fileSystemManager
         self.settingsParser = SettingsParser(fileSystemManager: fileSystemManager)
+        self.fileMonitor = fileMonitor
     }
 
     /// Load all settings files for the current project
@@ -142,46 +147,46 @@ final public class SettingsViewModel {
         isLoading = false
     }
 
-    /// Set up file watcher to monitor settings files for changes
+    /// Set up file monitoring for settings files
     private func setupFileWatcher() async {
-        // Stop any existing watcher first
-        await stopFileWatcher()
-
-        // Only watch files that actually exist
-        let pathsToWatch = settingsFiles.map(\.path)
-
-        guard !pathsToWatch.isEmpty else {
-            logger.debug("No settings files to watch")
-            return
+        // Determine scope based on whether we have a project
+        let scope: SettingsScope
+        if let project {
+            scope = .globalAndProjects([project])
+            logger.info("Registering file monitoring for global and project settings")
+        } else {
+            scope = .global
+            logger.info("Registering file monitoring for global settings")
         }
 
-        logger.info("Setting up file watcher for \(pathsToWatch.count) paths")
-
-        // FileWatcher's callback is @Sendable but not MainActor-isolated
-        // We need to explicitly hop to MainActor since this ViewModel is MainActor-isolated
-        fileWatcher = FileWatcher { [weak self] changedURL in
-            Task { @MainActor in
-                await self?.handleFileChange(at: changedURL)
+        // Register with the centralized file monitor
+        // The callback will be called on a background thread, so we need to hop to MainActor
+        if let existingObserverId = observerId {
+            // Update existing observer
+            await fileMonitor.updateObserver(existingObserverId, scope: scope)
+        } else {
+            // Register new observer
+            observerId = await fileMonitor.registerObserver(scope: scope) { [weak self] changedURL in
+                Task { @MainActor in
+                    await self?.handleFileChange(at: changedURL)
+                }
             }
         }
-
-        await fileWatcher?.startWatching(paths: pathsToWatch)
     }
 
     /// Stop file watching (called when switching projects or cleaning up)
     public func stopFileWatcher() async {
-        await debouncer.cancel()
-        await fileWatcher?.stopWatching()
-        fileWatcher = nil
+        if let observerId {
+            await fileMonitor.unregisterObserver(observerId)
+            self.observerId = nil
+        }
         consecutiveReloadFailures.removeAll()
     }
 
-    /// Handle file system changes with debouncing to prevent excessive reloads
+    /// Handle file system changes
+    /// Note: Debouncing is handled by SettingsFileMonitor
     private func handleFileChange(at url: URL) async {
-        // Debounce: wait 200ms before reloading to handle rapid successive changes
-        await debouncer.debounce(milliseconds: 200) {
-            await self.reloadChangedFile(at: url)
-        }
+        await reloadChangedFile(at: url)
     }
 
     /// Reload a specific settings file that changed externally
@@ -190,7 +195,10 @@ final public class SettingsViewModel {
 
         // Find which settings file changed
         guard let changedFileIndex = settingsFiles.firstIndex(where: { $0.path == url }) else {
-            logger.warning("Changed file not found in loaded settings: \(url.path)")
+            // File not in our list - might be newly created
+            logger.info("File not in loaded settings (possibly newly created): \(url.path)")
+            // Do a full reload to pick up new files
+            await loadSettings()
             return
         }
 
@@ -542,8 +550,11 @@ final public class SettingsViewModel {
 
         // Pause file watching to prevent conflicts with pending edits
         Task {
-            await fileWatcher?.stopWatching()
-            logger.info("Paused file watching for editing mode")
+            if let observerId = observerId {
+                await fileMonitor.unregisterObserver(observerId)
+                self.observerId = nil
+                logger.info("Paused file watching for editing mode")
+            }
         }
 
         logger.info("Entered editing mode")
