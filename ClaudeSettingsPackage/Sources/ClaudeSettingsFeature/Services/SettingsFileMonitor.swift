@@ -155,7 +155,7 @@ public actor SettingsFileMonitor {
                 filePaths.insert(fileType.path(in: homeDirectory))
             }
 
-        case .projects(let projects):
+        case let .projects(projects):
             // .claude.json for project discovery
             filePaths.insert(homeDirectory.appendingPathComponent(".claude.json"))
 
@@ -166,7 +166,7 @@ public actor SettingsFileMonitor {
                 }
             }
 
-        case .globalAndProjects(let projects):
+        case let .globalAndProjects(projects):
             // Global settings
             for fileType: SettingsFileType in [.globalSettings, .globalLocal] {
                 filePaths.insert(fileType.path(in: homeDirectory))
@@ -217,10 +217,8 @@ public actor SettingsFileMonitor {
         logger.debug("Notifying observers of change: \(url.path)")
 
         // Find all observers watching this file using pre-computed paths
-        for observer in observers.values {
-            if observer.watchedPaths.contains(url) {
-                observer.callback(url)
-            }
+        for observer in observers.values where observer.watchedPaths.contains(url) {
+            observer.callback(url)
         }
     }
 
