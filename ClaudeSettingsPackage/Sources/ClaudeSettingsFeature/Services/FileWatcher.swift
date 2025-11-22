@@ -15,11 +15,9 @@ public actor FileWatcher: FileWatcherProtocol {
 
     public init() {
         // Create the AsyncStream and store the continuation for yielding values
-        var cont: AsyncStream<URL>.Continuation!
-        self.fileChanges = AsyncStream<URL> { continuation in
-            cont = continuation
-        }
-        self.continuation = cont
+        let (stream, continuation) = AsyncStream<URL>.makeStream()
+        self.fileChanges = stream
+        self.continuation = continuation
     }
 
     /// Update the paths being watched without recreating the underlying watcher
