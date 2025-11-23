@@ -2,30 +2,40 @@ import Foundation
 import Logging
 
 /// Watches for file system changes using FSEvents
-public actor FileWatcher {
+public actor FileWatcher: FileWatcherProtocol {
     private let logger = Logger(label: "com.claudesettings.filewatcher")
     private var eventStream: FSEventStreamRef?
     private var isWatching = false
-    private let callback: @Sendable (URL) -> Void
     private var watchTask: Task<Void, Never>?
     private var watchedFilePaths: Set<String> = []
 
-    public init(callback: @escaping @Sendable (URL) -> Void) {
-        self.callback = callback
+    // AsyncStream for publishing file change events
+    public let fileChanges: AsyncStream<URL>
+    private let continuation: AsyncStream<URL>.Continuation
+
+    public init() {
+        // Create the AsyncStream and store the continuation for yielding values
+        let (stream, continuation) = AsyncStream<URL>.makeStream()
+        self.fileChanges = stream
+        self.continuation = continuation
     }
 
-    /// Start watching directories for changes to specific files
+    /// Update the paths being watched without recreating the underlying watcher
     /// - Parameters:
     ///   - directories: Directories to watch for file system events
     ///   - filePaths: Specific file paths to monitor (events for other files will be ignored)
-    public func startWatching(directories: [URL], filePaths: [URL]) {
-        guard !isWatching else {
-            logger.warning("Already watching files")
+    public func updateWatchedPaths(directories: [URL], filePaths: [URL]) async {
+        // Store the file paths we care about for filtering
+        let updated = Set(filePaths.map(\.path))
+        guard updated != watchedFilePaths else {
             return
         }
+        watchedFilePaths = updated
 
-        // Store the file paths we care about for filtering
-        watchedFilePaths = Set(filePaths.map(\.path))
+        // If already watching, stop the current watcher before starting a new one
+        if isWatching {
+            await stopWatching()
+        }
 
         logger.info("Starting file watcher for \(directories.count) directories watching \(filePaths.count) files")
 
@@ -63,8 +73,8 @@ public actor FileWatcher {
             &context,
             pathsToWatch,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            1, // Latency in seconds
-            UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+            0.3, // Latency in seconds (reduced for more responsive detection)
+            UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
         )
 
         guard let stream = eventStream else {
@@ -95,7 +105,7 @@ public actor FileWatcher {
     }
 
     /// Stop watching for file changes
-    public func stopWatching() {
+    public func stopWatching() async {
         guard isWatching, let stream = eventStream else {
             return
         }
@@ -106,6 +116,9 @@ public actor FileWatcher {
         eventStream = nil
         isWatching = false
         watchTask?.cancel()
+        // Wait for it to finish cancelling as cancellation call `stopWatching` again
+        // and it needs to happen before we proceed with a possible `updateWatchedPaths`
+        _ = await watchTask?.result
         watchTask = nil
 
         logger.info("File watcher stopped")
@@ -133,19 +146,18 @@ public actor FileWatcher {
                 flag & UInt32(kFSEventStreamEventFlagItemModified) != 0 ||
                 flag & UInt32(kFSEventStreamEventFlagItemCreated) != 0 ||
                 flag & UInt32(kFSEventStreamEventFlagItemRemoved) != 0 {
-
                 // If event is on a directory, notify about all watched files in that directory
                 if isWatchedDirectory && !isWatchedFile {
                     logger.debug("Directory changed: \(path), checking watched files")
                     for watchedPath in watchedFilePaths where watchedPath.hasPrefix(path + "/") {
                         let url = URL(fileURLWithPath: watchedPath)
                         logger.debug("File potentially changed: \(watchedPath)")
-                        callback(url)
+                        continuation.yield(url)
                     }
                 } else {
                     let url = URL(fileURLWithPath: path)
                     logger.debug("File changed: \(path)")
-                    callback(url)
+                    continuation.yield(url)
                 }
             }
         }
@@ -156,5 +168,6 @@ public actor FileWatcher {
         // The watchTask cancellation handler will trigger stopWatching() to clean up the FSEventStream
         // Callers should explicitly call stopWatching() before releasing if immediate cleanup is needed
         watchTask?.cancel()
+        continuation.finish()
     }
 }
