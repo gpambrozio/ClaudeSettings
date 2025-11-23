@@ -26,7 +26,11 @@ public actor FileWatcher: FileWatcherProtocol {
     ///   - filePaths: Specific file paths to monitor (events for other files will be ignored)
     public func updateWatchedPaths(directories: [URL], filePaths: [URL]) async {
         // Store the file paths we care about for filtering
-        watchedFilePaths = Set(filePaths.map(\.path))
+        let updated = Set(filePaths.map(\.path))
+        guard updated != watchedFilePaths else {
+            return
+        }
+        watchedFilePaths = updated
 
         // If already watching, stop the current watcher before starting a new one
         if isWatching {
