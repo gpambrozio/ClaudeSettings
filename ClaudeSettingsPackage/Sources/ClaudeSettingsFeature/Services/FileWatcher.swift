@@ -112,6 +112,9 @@ public actor FileWatcher: FileWatcherProtocol {
         eventStream = nil
         isWatching = false
         watchTask?.cancel()
+        // Wait for it to finish cancelling as cancellation call `stopWatching` again
+        // and it needs to happen before we proceed with a possible `updateWatchedPaths`
+        _ = await watchTask?.result
         watchTask = nil
 
         logger.info("File watcher stopped")
