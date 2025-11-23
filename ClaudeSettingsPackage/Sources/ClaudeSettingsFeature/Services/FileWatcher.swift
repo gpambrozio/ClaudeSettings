@@ -73,8 +73,8 @@ public actor FileWatcher: FileWatcherProtocol {
             &context,
             pathsToWatch,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            1, // Latency in seconds
-            UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+            0.3, // Latency in seconds (reduced for more responsive detection)
+            UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
         )
 
         guard let stream = eventStream else {
@@ -146,7 +146,6 @@ public actor FileWatcher: FileWatcherProtocol {
                 flag & UInt32(kFSEventStreamEventFlagItemModified) != 0 ||
                 flag & UInt32(kFSEventStreamEventFlagItemCreated) != 0 ||
                 flag & UInt32(kFSEventStreamEventFlagItemRemoved) != 0 {
-
                 // If event is on a directory, notify about all watched files in that directory
                 if isWatchedDirectory && !isWatchedFile {
                     logger.debug("Directory changed: \(path), checking watched files")
