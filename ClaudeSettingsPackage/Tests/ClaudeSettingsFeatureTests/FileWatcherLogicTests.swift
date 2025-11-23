@@ -5,54 +5,31 @@ import Testing
 /// Unit tests for FileWatcher logic (not relying on FSEvents timing)
 @Suite("FileWatcher Logic Tests")
 struct FileWatcherLogicTests {
-    /// Test that FileWatcher can be started and stopped without crashing
-    @Test("FileWatcher starts and stops cleanly")
-    func fileWatcherStartsAndStops() async throws {
-        let callbackInvoked = false
-        let watcher = FileWatcher { _ in
-            // Callback
-        }
+    /// Test that updating paths multiple times is safe
+    @Test("Updating watched paths multiple times is safe")
+    func updatingWatchedPathsMultipleTimesIsSafe() async throws {
+        let watcher = FileWatcher()
 
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test.json")
 
-        // Should not crash when starting
-        await watcher.startWatching(directories: [tempDir], filePaths: [testFile])
+        // Update watching
+        await watcher.updateWatchedPaths(directories: [tempDir], filePaths: [testFile])
 
-        // Give it a moment
-        try await Task.sleep(for: .milliseconds(100))
-
-        // Should not crash when stopping
-        await watcher.stopWatching()
-
-        #expect(!callbackInvoked, "No files were modified, callback should not be invoked")
-    }
-
-    /// Test that starting an already-running watcher is safe
-    @Test("Starting an already-running watcher is safe")
-    func startingAlreadyRunningWatcherIsSafe() async throws {
-        let watcher = FileWatcher { _ in }
-
-        let tempDir = FileManager.default.temporaryDirectory
-        let testFile = tempDir.appendingPathComponent("test.json")
-
-        // Start watching
-        await watcher.startWatching(directories: [tempDir], filePaths: [testFile])
-
-        // Try to start again - should be safe
-        await watcher.startWatching(directories: [tempDir], filePaths: [testFile])
+        // Update again - should be safe (stops previous and starts new)
+        await watcher.updateWatchedPaths(directories: [tempDir], filePaths: [testFile])
 
         // Cleanup
         await watcher.stopWatching()
 
         // Test passes if we reach here without crashing
-        #expect(true, "Double-start should be safe")
+        #expect(true, "Updating watched paths multiple times should be safe")
     }
 
     /// Test that stopping a non-running watcher is safe
     @Test("Stopping a non-running watcher is safe")
     func stoppingNonRunningWatcherIsSafe() async throws {
-        let watcher = FileWatcher { _ in }
+        let watcher = FileWatcher()
 
         // Stop without starting - should be safe
         await watcher.stopWatching()
@@ -64,20 +41,17 @@ struct FileWatcherLogicTests {
         #expect(true, "Stopping non-running watcher should be safe")
     }
 
-    /// Test that FileWatcher properly filters file paths
-    /// This tests the filtering logic by verifying the API contract
+    /// Test that FileWatcher properly accepts directories and file paths
     @Test("FileWatcher API accepts directories and file paths")
     func fileWatcherAPIAcceptsDirectoriesAndFilePaths() async throws {
-        let watcher = FileWatcher { _ in
-            // Callback
-        }
+        let watcher = FileWatcher()
 
         let tempDir = FileManager.default.temporaryDirectory
         let settingsFile = tempDir.appendingPathComponent("settings.json")
         let localFile = tempDir.appendingPathComponent("settings.local.json")
 
         // Verify we can pass multiple directories and files
-        await watcher.startWatching(
+        await watcher.updateWatchedPaths(
             directories: [tempDir, tempDir.appendingPathComponent("subdir")],
             filePaths: [settingsFile, localFile]
         )
@@ -88,11 +62,10 @@ struct FileWatcherLogicTests {
         #expect(true, "API accepts multiple directories and file paths")
     }
 
-    /// Test that the fix allows watching for non-existent files
-    /// (Previously this was impossible - had to check file existence first)
+    /// Test that FileWatcher can watch for files that don't exist yet
     @Test("FileWatcher can watch for files that don't exist yet")
     func fileWatcherCanWatchNonExistentFiles() async throws {
-        let watcher = FileWatcher { _ in }
+        let watcher = FileWatcher()
 
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("watcher-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -100,9 +73,8 @@ struct FileWatcherLogicTests {
 
         let nonExistentFile = tempDir.appendingPathComponent("does-not-exist.json")
 
-        // Before the fix, this would have required checking file existence
-        // Now we watch the directory and will detect when the file is created
-        await watcher.startWatching(directories: [tempDir], filePaths: [nonExistentFile])
+        // Watch the directory and will detect when the file is created
+        await watcher.updateWatchedPaths(directories: [tempDir], filePaths: [nonExistentFile])
 
         // Should not crash even though file doesn't exist
         try await Task.sleep(for: .milliseconds(100))
@@ -112,13 +84,10 @@ struct FileWatcherLogicTests {
         #expect(!FileManager.default.fileExists(atPath: nonExistentFile.path), "File should not exist")
     }
 
-    /// Test that the fix allows detection of file deletion
-    /// (Previously the kFSEventStreamEventFlagItemRemoved flag was not checked)
+    /// Test that FileWatcher can monitor multiple directories
     @Test("FileWatcher uses directories instead of individual file paths")
     func fileWatcherUsesDirectories() async throws {
-        let watcher = FileWatcher { _ in
-            // Callback
-        }
+        let watcher = FileWatcher()
 
         let tempDir1 = FileManager.default.temporaryDirectory.appendingPathComponent("dir1")
         let tempDir2 = FileManager.default.temporaryDirectory.appendingPathComponent("dir2")
@@ -126,9 +95,8 @@ struct FileWatcherLogicTests {
         let file1 = tempDir1.appendingPathComponent("settings.json")
         let file2 = tempDir2.appendingPathComponent("settings.local.json")
 
-        // The fix allows watching multiple directories for specific files
-        // This is key to detecting file creation/deletion
-        await watcher.startWatching(
+        // Watch multiple directories for specific files
+        await watcher.updateWatchedPaths(
             directories: [tempDir1, tempDir2],
             filePaths: [file1, file2]
         )
@@ -139,22 +107,49 @@ struct FileWatcherLogicTests {
         #expect(true, "FileWatcher can monitor multiple directories for specific files")
     }
 
-    /// Verify the API change from paths to directories + filePaths
+    /// Verify the API change to AsyncStream-based approach
     @Test("FileWatcher API signature is correct")
     func fileWatcherAPISignatureIsCorrect() async throws {
-        let watcher = FileWatcher { _ in }
+        let watcher = FileWatcher()
 
-        // The old API was: startWatching(paths: [URL])
-        // The new API is: startWatching(directories: [URL], filePaths: [URL])
+        // The new API uses AsyncStream for file changes
+        _ = await watcher.fileChanges
 
         let dir = FileManager.default.temporaryDirectory
         let file = dir.appendingPathComponent("test.json")
 
         // This should compile and work
-        await watcher.startWatching(directories: [dir], filePaths: [file])
+        await watcher.updateWatchedPaths(directories: [dir], filePaths: [file])
 
         await watcher.stopWatching()
 
-        #expect(true, "API signature accepts directories and filePaths parameters")
+        #expect(true, "API signature has fileChanges AsyncStream and updateWatchedPaths method")
+    }
+
+    /// Test that fileChanges stream exists and is accessible
+    @Test("FileWatcher provides fileChanges AsyncStream")
+    func fileWatcherProvidesFileChangesStream() async throws {
+        let watcher = FileWatcher()
+
+        // Accessing the stream should not crash
+        let streamTask = Task {
+            var eventCount = 0
+            for await _ in await watcher.fileChanges {
+                eventCount += 1
+                if eventCount >= 1 {
+                    break
+                }
+            }
+            return eventCount
+        }
+
+        // Give it a moment then stop
+        try await Task.sleep(for: .milliseconds(100))
+        await watcher.stopWatching()
+
+        streamTask.cancel()
+
+        // Test passes if we can access the stream without crashing
+        #expect(true, "FileWatcher provides accessible fileChanges AsyncStream")
     }
 }
