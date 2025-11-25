@@ -33,6 +33,12 @@ public struct SettingsListView: View {
                 } description: {
                     Text("No settings files found for this configuration")
                 }
+            } else if settingsViewModel.filteredHierarchicalSettings.isEmpty {
+                ContentUnavailableView {
+                    Label("No Project Settings", symbol: .eyeSlash)
+                } description: {
+                    Text("All settings are from global configuration. Toggle \"Hide Global\" to show them.")
+                }
             } else {
                 settingsContent
             }
@@ -66,6 +72,18 @@ public struct SettingsListView: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
+                    // Hide Global toggle (only for project views)
+                    if settingsViewModel.isProjectView {
+                        Toggle(isOn: Binding(
+                            get: { settingsViewModel.hideGlobalSettings },
+                            set: { settingsViewModel.hideGlobalSettings = $0 }
+                        )) {
+                            Label("Hide Global", symbol: settingsViewModel.hideGlobalSettings ? .eyeSlash : .eye)
+                        }
+                        .toggleStyle(.button)
+                        .help("Hide settings from global configuration")
+                    }
+
                     // Normal mode: Show Edit and Actions menu
                     Button("Edit") {
                         settingsViewModel.startEditing()
@@ -143,7 +161,7 @@ public struct SettingsListView: View {
 
             // Settings Section (Hierarchical)
             Section {
-                ForEach(settingsViewModel.hierarchicalSettings) { node in
+                ForEach(settingsViewModel.filteredHierarchicalSettings) { node in
                     HierarchicalSettingNodeView(
                         node: node,
                         selectedKey: $selectedKey,
@@ -156,13 +174,39 @@ public struct SettingsListView: View {
                 HStack {
                     Text("Settings")
                     Spacer()
-                    Text("\(settingsViewModel.settingItems.count) settings")
+                    Text(settingsCountLabel)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         }
         .searchable(text: .constant(""), prompt: "Search settings...")
+    }
+
+    /// Label showing the count of settings, accounting for filtering
+    private var settingsCountLabel: String {
+        let total = settingsViewModel.settingItems.count
+        let filtered = countFilteredSettings()
+
+        if settingsViewModel.hideGlobalSettings && settingsViewModel.isProjectView && filtered < total {
+            return "\(filtered) of \(total) settings"
+        } else {
+            return "\(total) settings"
+        }
+    }
+
+    /// Count the number of settings currently shown after filtering
+    private func countFilteredSettings() -> Int {
+        func countLeaves(_ nodes: [HierarchicalSettingNode]) -> Int {
+            nodes.reduce(0) { count, node in
+                if node.isParent {
+                    return count + countLeaves(node.children)
+                } else {
+                    return count + 1
+                }
+            }
+        }
+        return countLeaves(settingsViewModel.filteredHierarchicalSettings)
     }
 }
 
