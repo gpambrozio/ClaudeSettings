@@ -50,7 +50,7 @@ public struct SettingsDocumentation: Codable, Sendable {
 }
 
 /// A category of related settings
-public struct SettingCategory: Codable, Sendable, Identifiable {
+public struct SettingCategory: Codable, Sendable, Identifiable, Hashable {
     public let id: String
     public let name: String
     public let description: String
@@ -67,7 +67,7 @@ public struct SettingCategory: Codable, Sendable, Identifiable {
 }
 
 /// Documentation for a single setting
-public struct SettingDocumentation: Codable, Sendable, Identifiable {
+public struct SettingDocumentation: Codable, Sendable, Identifiable, Hashable {
     public let key: String
     public let type: String
     public let defaultValue: String?
@@ -113,7 +113,7 @@ public struct SettingDocumentation: Codable, Sendable, Identifiable {
 }
 
 /// An example of how to use a setting
-public struct SettingExample: Codable, Sendable, Identifiable {
+public struct SettingExample: Codable, Sendable, Identifiable, Hashable {
     public let id: UUID
     public let code: String
     public let description: String

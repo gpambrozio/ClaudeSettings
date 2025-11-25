@@ -155,7 +155,7 @@ struct AddSettingSheet: View {
 
                 if selectedSetting?.key == setting.key {
                     Symbols.checkmarkCircle.image
-                        .foregroundStyle(.accent)
+                        .foregroundStyle(.tint)
                 }
             }
             .padding(.vertical, 4)
@@ -362,7 +362,8 @@ struct AddSettingSheet: View {
                     validateDouble(newValue)
                 }
 
-        case "array", "object":
+        case "array",
+             "object":
             VStack(alignment: .leading, spacing: 4) {
                 TextEditor(text: $jsonValue)
                     .font(.system(.body, design: .monospaced))
@@ -541,7 +542,8 @@ struct AddSettingSheet: View {
         switch type {
         case "string": return .blue
         case "boolean": return .green
-        case "integer", "number": return .orange
+        case "integer",
+             "number": return .orange
         case "array": return .purple
         case "object": return .pink
         default: return .gray
