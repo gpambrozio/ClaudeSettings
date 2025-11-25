@@ -298,10 +298,14 @@ struct AddSettingSheet: View {
                 .padding()
             }
         } else {
-            ContentUnavailableView {
-                Label("No Setting Selected", symbol: .listBullet)
-            } description: {
-                Text("Select a setting from the list to configure it")
+            VStack {
+                Spacer()
+                ContentUnavailableView {
+                    Label("No Setting Selected", symbol: .listBullet)
+                } description: {
+                    Text("Select a setting from the list to configure it")
+                }
+                Spacer()
             }
         }
     }
