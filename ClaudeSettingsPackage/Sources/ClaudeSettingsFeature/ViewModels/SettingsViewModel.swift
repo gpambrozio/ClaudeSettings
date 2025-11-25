@@ -47,6 +47,13 @@ final public class SettingsViewModel {
     /// Dictionary of pending edits, keyed by setting key
     public var pendingEdits: [String: PendingEdit] = [:]
 
+    /// Whether to hide settings that only exist in global configuration files
+    /// Persisted to UserDefaults so the preference survives app launches
+    public var hideGlobalSettings: Bool {
+        get { UserDefaults.standard.bool(forKey: "hideGlobalSettings") }
+        set { UserDefaults.standard.set(newValue, forKey: "hideGlobalSettings") }
+    }
+
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
     private let fileMonitor: SettingsFileMonitor
@@ -62,6 +69,52 @@ final public class SettingsViewModel {
         self.fileSystemManager = fileSystemManager
         self.settingsParser = SettingsParser(fileSystemManager: fileSystemManager)
         self.fileMonitor = fileMonitor
+    }
+
+    /// Whether this view model is for a project (vs global configuration)
+    public var isProjectView: Bool {
+        project != nil
+    }
+
+    /// Hierarchical settings filtered based on hideGlobalSettings preference
+    ///
+    /// When `hideGlobalSettings` is true and viewing a project, this filters out
+    /// settings that only have contributions from global configuration files.
+    /// Settings that have at least one project-level contribution are kept.
+    public var filteredHierarchicalSettings: [HierarchicalSettingNode] {
+        guard hideGlobalSettings && isProjectView else {
+            return hierarchicalSettings
+        }
+
+        // Filter to only include settings that have project-level contributions
+        let projectSettingKeys = Set(settingItems.filter { item in
+            item.contributions.contains { !$0.source.isGlobal }
+        }.map(\.key))
+
+        return filterHierarchicalNodes(hierarchicalSettings, keepingKeys: projectSettingKeys)
+    }
+
+    /// Recursively filter hierarchical nodes, keeping only those with matching keys
+    private func filterHierarchicalNodes(_ nodes: [HierarchicalSettingNode], keepingKeys keys: Set<String>) -> [HierarchicalSettingNode] {
+        nodes.compactMap { node in
+            if node.isParent {
+                // For parent nodes, recursively filter children
+                let filteredChildren = filterHierarchicalNodes(node.children, keepingKeys: keys)
+                if filteredChildren.isEmpty {
+                    return nil // Remove parent if all children were filtered out
+                }
+                return HierarchicalSettingNode(
+                    id: node.id,
+                    key: node.key,
+                    displayName: node.displayName,
+                    nodeType: .parent(childCount: filteredChildren.count),
+                    children: filteredChildren
+                )
+            } else {
+                // For leaf nodes, check if the key should be kept
+                return keys.contains(node.key) ? node : nil
+            }
+        }
     }
 
     /// Load all settings files for the current project
