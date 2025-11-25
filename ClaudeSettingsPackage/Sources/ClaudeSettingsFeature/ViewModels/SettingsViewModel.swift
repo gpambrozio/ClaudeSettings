@@ -49,9 +49,10 @@ final public class SettingsViewModel {
 
     /// Whether to hide settings that only exist in global configuration files
     /// Persisted to UserDefaults so the preference survives app launches
-    public var hideGlobalSettings: Bool {
-        get { UserDefaults.standard.bool(forKey: "hideGlobalSettings") }
-        set { UserDefaults.standard.set(newValue, forKey: "hideGlobalSettings") }
+    public var hideGlobalSettings: Bool = UserDefaults.standard.bool(forKey: "hideGlobalSettings") {
+        didSet {
+            UserDefaults.standard.set(hideGlobalSettings, forKey: "hideGlobalSettings")
+        }
     }
 
     private let settingsParser: SettingsParser

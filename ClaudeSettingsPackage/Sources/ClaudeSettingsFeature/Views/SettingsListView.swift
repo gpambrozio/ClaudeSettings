@@ -172,7 +172,6 @@ public struct SettingsListView: View {
                             set: { settingsViewModel.hideGlobalSettings = $0 }
                         ))
                         .toggleStyle(SwitchToggleStyle())
-                        .labelsHidden()
                         .help("Hide settings from global configuration")
                     }
                 }
