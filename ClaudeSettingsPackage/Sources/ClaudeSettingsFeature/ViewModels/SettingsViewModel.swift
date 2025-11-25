@@ -48,7 +48,11 @@ final public class SettingsViewModel {
     public var pendingEdits: [String: PendingEdit] = [:]
 
     /// Whether to hide settings that only exist in global configuration files
-    public var hideGlobalSettings = false
+    /// Persisted to UserDefaults so the preference survives app launches
+    public var hideGlobalSettings: Bool {
+        get { UserDefaults.standard.bool(forKey: "hideGlobalSettings") }
+        set { UserDefaults.standard.set(newValue, forKey: "hideGlobalSettings") }
+    }
 
     private let settingsParser: SettingsParser
     private let project: ClaudeProject?
