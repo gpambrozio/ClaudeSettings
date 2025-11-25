@@ -10,6 +10,7 @@ public struct SettingsListView: View {
     @State private var saveErrorMessage: String?
     @State private var showUpcomingFeatureAlert = false
     @State private var upcomingFeatureName = ""
+    @State private var showAddSettingSheet = false
 
     public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
         self.settingsViewModel = settingsViewModel
@@ -80,8 +81,7 @@ public struct SettingsListView: View {
 
                     Menu {
                         Button("Add Setting") {
-                            upcomingFeatureName = "Add Setting"
-                            showUpcomingFeatureAlert = true
+                            showAddSettingSheet = true
                         }
                         Button("Import Settings") {
                             upcomingFeatureName = "Import Settings"
@@ -104,6 +104,13 @@ public struct SettingsListView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("\(upcomingFeatureName) is an upcoming feature that is not yet implemented. Stay tuned!")
+        }
+        .sheet(isPresented: $showAddSettingSheet) {
+            AddSettingSheet(
+                viewModel: settingsViewModel,
+                documentationLoader: documentationLoader,
+                onDismiss: { showAddSettingSheet = false }
+            )
         }
     }
 
