@@ -72,18 +72,6 @@ public struct SettingsListView: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    // Hide Global toggle (only for project views)
-                    if settingsViewModel.isProjectView {
-                        Toggle(isOn: Binding(
-                            get: { settingsViewModel.hideGlobalSettings },
-                            set: { settingsViewModel.hideGlobalSettings = $0 }
-                        )) {
-                            Label("Hide Global", symbol: settingsViewModel.hideGlobalSettings ? .eyeSlash : .eye)
-                        }
-                        .toggleStyle(.button)
-                        .help("Hide settings from global configuration")
-                    }
-
                     // Normal mode: Show Edit and Actions menu
                     Button("Edit") {
                         settingsViewModel.startEditing()
@@ -177,6 +165,16 @@ public struct SettingsListView: View {
                     Text(settingsCountLabel)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    if settingsViewModel.isProjectView {
+                        Toggle("Hide Global", isOn: Binding(
+                            get: { settingsViewModel.hideGlobalSettings },
+                            set: { settingsViewModel.hideGlobalSettings = $0 }
+                        ))
+                        .toggleStyle(SwitchToggleStyle())
+                        .labelsHidden()
+                        .help("Hide settings from global configuration")
+                    }
                 }
             }
         }

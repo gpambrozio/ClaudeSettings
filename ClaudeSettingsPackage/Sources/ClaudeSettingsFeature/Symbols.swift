@@ -13,7 +13,6 @@ public enum Symbols: String {
     case docOnDoc = "doc.on.doc"
     case docText = "doc.text"
     case ellipsisCircle = "ellipsis.circle"
-    case eye
     case eyeSlash = "eye.slash"
     case exclamationmark2 = "exclamationmark.2"
     case exclamationmarkCircle = "exclamationmark.circle"
