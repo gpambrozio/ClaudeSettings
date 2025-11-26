@@ -42,11 +42,11 @@ struct AddSettingSheet: View {
                 HSplitView {
                     // Left: Category and setting selection
                     settingSelectionPane(documentation: documentation)
-                        .frame(minWidth: 250, idealWidth: 300)
+                        .frame(minWidth: 250, idealWidth: 300, maxWidth: 400)
 
                     // Right: Configuration pane
                     configurationPane
-                        .frame(minWidth: 300, idealWidth: 400)
+                        .frame(minWidth: 300)
                 }
             } else {
                 ContentUnavailableView {
@@ -80,7 +80,8 @@ struct AddSettingSheet: View {
             .padding()
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 700, height: 500)
+        .frame(minWidth: 600, idealWidth: 700, maxWidth: .infinity, minHeight: 400, idealHeight: 500, maxHeight: .infinity)
+        .resizableSheet()
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -307,6 +308,7 @@ struct AddSettingSheet: View {
                 }
                 Spacer()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -555,14 +557,48 @@ struct AddSettingSheet: View {
     }
 }
 
+// MARK: - Resizable Sheet Helper
+
+/// Makes a sheet's underlying NSWindow resizable
+private struct ResizableSheetModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background(WindowAccessor())
+    }
+}
+
+/// NSViewRepresentable that accesses and configures the hosting window
+private struct WindowAccessor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                window.styleMask.insert(.resizable)
+                // Allow the window to be moved by dragging the background
+                window.isMovableByWindowBackground = true
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) { }
+}
+
+private extension View {
+    /// Makes this view's sheet resizable and movable
+    func resizableSheet() -> some View {
+        modifier(ResizableSheetModifier())
+    }
+}
+
 // MARK: - Preview
 
 #Preview("Add Setting Sheet") {
-    let viewModel = SettingsViewModel(project: nil)
+    @Previewable let viewModel = SettingsViewModel(project: nil)
 
     return AddSettingSheet(
         viewModel: viewModel,
         documentationLoader: DocumentationLoader.shared,
         onDismiss: { }
     )
+    .frame(width: 1500, height: 1000)
 }
