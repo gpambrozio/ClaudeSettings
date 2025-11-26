@@ -23,6 +23,10 @@ struct AddSettingSheet: View {
     @State private var doubleValue = ""
     @State private var jsonValue = ""
 
+    // Persist size between presentations
+    @AppStorage("AddSettingSheetWidth") private var sheetWidth: Double = 700
+    @AppStorage("AddSettingSheetHeight") private var sheetHeight: Double = 600
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -80,8 +84,17 @@ struct AddSettingSheet: View {
             .padding()
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(minWidth: 600, idealWidth: 700, maxWidth: .infinity, minHeight: 400, idealHeight: 500, maxHeight: .infinity)
-        .resizableSheet()
+        .frame(width: sheetWidth, height: sheetHeight)
+        .background(WindowAccessor { window in
+            window.styleMask.insert(.resizable)
+        })
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notification in
+            guard let window = notification.object as? NSWindow,
+                  window.isSheet else { return }
+
+            sheetWidth = window.frame.width
+            sheetHeight = window.frame.height
+        }
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -557,36 +570,26 @@ struct AddSettingSheet: View {
     }
 }
 
-// MARK: - Resizable Sheet Helper
+// Helper to access the NSWindow
+struct WindowAccessor: NSViewRepresentable {
+    let callback: (NSWindow) -> Void
 
-/// Makes a sheet's underlying NSWindow resizable
-private struct ResizableSheetModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content.background(WindowAccessor())
-    }
-}
-
-/// NSViewRepresentable that accesses and configures the hosting window
-private struct WindowAccessor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
             if let window = view.window {
-                window.styleMask.insert(.resizable)
-                // Allow the window to be moved by dragging the background
-                window.isMovableByWindowBackground = true
+                callback(window)
             }
         }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) { }
-}
-
-private extension View {
-    /// Makes this view's sheet resizable and movable
-    func resizableSheet() -> some View {
-        modifier(ResizableSheetModifier())
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            if let window = nsView.window {
+                callback(window)
+            }
+        }
     }
 }
 
