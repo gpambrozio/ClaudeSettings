@@ -23,10 +23,6 @@ struct AddSettingSheet: View {
     @State private var doubleValue = ""
     @State private var jsonValue = ""
 
-    // Persist size between presentations
-    @AppStorage("AddSettingSheetWidth") private var sheetWidth: Double = 700
-    @AppStorage("AddSettingSheetHeight") private var sheetHeight: Double = 600
-
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -84,17 +80,7 @@ struct AddSettingSheet: View {
             .padding()
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: sheetWidth, height: sheetHeight)
-        .background(WindowAccessor { window in
-            window.styleMask.insert(.resizable)
-        })
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notification in
-            guard let window = notification.object as? NSWindow,
-                  window.isSheet else { return }
-
-            sheetWidth = window.frame.width
-            sheetHeight = window.frame.height
-        }
+        .resizable(key: "AddSettingSheet", defaultWidth: 700, defaultHeight: 600)
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -570,29 +556,6 @@ struct AddSettingSheet: View {
     }
 }
 
-// Helper to access the NSWindow
-struct WindowAccessor: NSViewRepresentable {
-    let callback: (NSWindow) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            if let window = view.window {
-                callback(window)
-            }
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            if let window = nsView.window {
-                callback(window)
-            }
-        }
-    }
-}
-
 // MARK: - Preview
 
 #Preview("Add Setting Sheet") {
@@ -603,5 +566,5 @@ struct WindowAccessor: NSViewRepresentable {
         documentationLoader: DocumentationLoader.shared,
         onDismiss: { }
     )
-    .frame(width: 1500, height: 1000)
+    .frame(width: 1_500, height: 1_000)
 }
