@@ -1,194 +1,248 @@
 import SwiftUI
 
-/// Displays documentation information for a settings item
+/// Displays documentation information for a setting
 struct DocumentationSectionView: View {
-    let settingItem: SettingItem
-    @ObservedObject var documentationLoader: DocumentationLoader
+    let documentation: SettingDocumentation
+    let isDeprecated: Bool
+    let showHeader: Bool
+    let maxExamples: Int?
+
+    /// Initialize with a SettingDocumentation directly
+    init(
+        documentation: SettingDocumentation,
+        isDeprecated: Bool = false,
+        showHeader: Bool = true,
+        maxExamples: Int? = nil
+    ) {
+        self.documentation = documentation
+        self.isDeprecated = isDeprecated
+        self.showHeader = showHeader
+        self.maxExamples = maxExamples
+    }
+
+    /// Convenience initializer for use with SettingItem and DocumentationLoader
+    init(
+        settingItem: SettingItem,
+        documentationLoader: DocumentationLoader,
+        showHeader: Bool = true,
+        maxExamples: Int? = nil
+    ) {
+        // Try to get documentation, fall back to a minimal version if not found
+        if let doc = documentationLoader.documentationWithFallback(for: settingItem.key) {
+            self.documentation = doc
+        } else {
+            // Create minimal documentation from the setting item
+            self.documentation = SettingDocumentation(
+                key: settingItem.key,
+                type: settingItem.value.typeName,
+                defaultValue: nil,
+                description: "No documentation available for this setting.",
+                deprecated: nil,
+                enumValues: nil,
+                format: nil,
+                itemType: nil,
+                platformNote: nil,
+                relatedEnvVars: nil,
+                hookTypes: nil,
+                patterns: nil,
+                examples: []
+            )
+        }
+        self.isDeprecated = documentationLoader.isDeprecated(settingItem.key)
+        self.showHeader = showHeader
+        self.maxExamples = maxExamples
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Section header
-            Text("Documentation")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            // Deprecation warning
-            if documentationLoader.isDeprecated(settingItem.key) {
-                HStack(spacing: 6) {
-                    Symbols.exclamationmarkTriangle.image
-                        .foregroundStyle(.red)
-                    Text("DEPRECATED")
-                        .font(.headline)
-                        .foregroundStyle(.red)
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(6)
+            if showHeader {
+                SectionHeader(text: "Documentation")
             }
 
-            if documentationLoader.isLoading {
-                loadingState
-            } else if let settingDoc = documentationLoader.documentationWithFallback(for: settingItem.key) {
-                comprehensiveDocumentation(settingDoc)
+            if isDeprecated {
+                DeprecationWarning()
             }
+
+            documentationContent
         }
     }
 
-    // MARK: - Comprehensive Documentation
+    // MARK: - Documentation Content
 
     @ViewBuilder
-    private func comprehensiveDocumentation(_ settingDoc: SettingDocumentation) -> some View {
+    private var documentationContent: some View {
         // Type and default value
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Type:")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(settingDoc.typeDescription)
-                    .font(.callout.monospaced())
+            MetadataRow(label: "Type", value: documentation.typeDescription)
+
+            if let defaultValue = documentation.defaultValue {
+                MetadataRow(label: "Default", value: defaultValue)
             }
 
-            if let defaultValue = settingDoc.defaultValue {
-                HStack {
-                    Text("Default:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(defaultValue)
-                        .font(.callout.monospaced())
-                }
-            }
-
-            if let platformNote = settingDoc.platformNote {
-                HStack {
-                    Symbols.exclamationmarkCircle.image
-                        .font(.caption2)
-                    Text(platformNote)
-                        .font(.caption)
-                }
-                .foregroundStyle(.orange)
+            if let platformNote = documentation.platformNote {
+                PlatformNoteView(note: platformNote)
             }
         }
 
         // Description
-        Text(settingDoc.description)
+        Text(documentation.description)
             .font(.body)
             .foregroundStyle(.primary)
 
+        // Hook types (specific to hooks setting)
+        if let hookTypes = documentation.hookTypes, !hookTypes.isEmpty {
+            BulletedListView(
+                title: "Available hook types:",
+                items: hookTypes,
+                monospaced: true
+            )
+        }
+
         // Related environment variables
-        if let envVars = settingDoc.relatedEnvVars, !envVars.isEmpty {
-            environmentVariablesSection(envVars)
+        if let envVars = documentation.relatedEnvVars, !envVars.isEmpty {
+            BulletedListView(
+                title: "Related environment variables:",
+                items: envVars,
+                monospaced: true
+            )
         }
 
         // Patterns (for permissions)
-        if let patterns = settingDoc.patterns, !patterns.isEmpty {
-            patternsSection(patterns)
+        if let patterns = documentation.patterns, !patterns.isEmpty {
+            BulletedListView(
+                title: "Pattern syntax:",
+                items: patterns,
+                monospaced: false
+            )
         }
 
         // Examples
-        if !settingDoc.examples.isEmpty {
-            examplesSection(settingDoc.examples)
+        if !documentation.examples.isEmpty {
+            examplesSection
         }
     }
 
-    // MARK: - Documentation Subsections
+    // MARK: - Examples Section
 
     @ViewBuilder
-    private func environmentVariablesSection(_ envVars: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Related environment variables:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(envVars, id: \.self) { envVar in
-                Text("• \(envVar)")
-                    .font(.callout.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func patternsSection(_ patterns: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Pattern syntax:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(patterns, id: \.self) { pattern in
-                Text("• \(pattern)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func examplesSection(_ examples: [SettingExample]) -> some View {
+    private var examplesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Examples:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            SectionHeader(text: "Examples")
 
-            ForEach(examples) { example in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(example.description)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+            let examplesToShow = maxExamples.map { Array(documentation.examples.prefix($0)) }
+                ?? Array(documentation.examples)
 
-                    Text(example.code)
-                        .font(.callout.monospaced())
-                        .padding(8)
-                        .background(Color.primary.opacity(0.05))
-                        .cornerRadius(4)
-                        .textSelection(.enabled)
-                }
+            ForEach(examplesToShow) { example in
+                ExampleCodeBlock(example: example)
             }
         }
-    }
-
-    // MARK: - Loading State
-
-    @ViewBuilder
-    private var loadingState: some View {
-        HStack {
-            ProgressView()
-                .controlSize(.small)
-            Text("Loading documentation...")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 // MARK: - Previews
 
 #Preview("Documentation - Comprehensive") {
-    let loader = DocumentationLoader.shared
-    let settingItem = SettingItem(
-        key: "permissions.allow",
-        value: .array([.string("Bash(git:*)")]),
-        source: .globalSettings,
-        contributions: [SourceContribution(source: .globalSettings, value: .array([.string("Bash(git:*)")]))]
+    DocumentationSectionView(
+        documentation: SettingDocumentation(
+            key: "permissions.allow",
+            type: "array",
+            defaultValue: "[]",
+            description: "Specifies which tools Claude can use without asking for confirmation.",
+            deprecated: nil,
+            enumValues: nil,
+            format: nil,
+            itemType: "string",
+            platformNote: "Some tools may not be available on all platforms",
+            relatedEnvVars: ["CLAUDE_ALLOWED_TOOLS"],
+            hookTypes: nil,
+            patterns: ["Tool(pattern:*)", "Tool(*)", "Tool"],
+            examples: [
+                SettingExample(
+                    id: UUID(),
+                    code: "\"permissions\": { \"allow\": [\"Bash(git:*)\"] }",
+                    description: "Allow all git commands"
+                ),
+                SettingExample(
+                    id: UUID(),
+                    code: "\"permissions\": { \"allow\": [\"Read\", \"Write\"] }",
+                    description: "Allow file operations"
+                ),
+            ]
+        )
     )
-
-    return DocumentationSectionView(settingItem: settingItem, documentationLoader: loader)
-        .padding()
-        .frame(width: 300)
+    .padding()
+    .frame(width: 350)
 }
 
-#Preview("Documentation - Basic Fallback") {
-    let loader = DocumentationLoader.shared
-    let settingItem = SettingItem(
-        key: "unknown.setting",
-        value: .bool(true),
-        source: .globalSettings,
-        contributions: [SourceContribution(source: .globalSettings, value: .bool(true))]
+#Preview("Documentation - Deprecated") {
+    DocumentationSectionView(
+        documentation: SettingDocumentation(
+            key: "oldSetting",
+            type: "boolean",
+            defaultValue: "false",
+            description: "This setting is deprecated and will be removed.",
+            deprecated: true,
+            enumValues: nil,
+            format: nil,
+            itemType: nil,
+            platformNote: nil,
+            relatedEnvVars: nil,
+            hookTypes: nil,
+            patterns: nil,
+            examples: []
+        ),
+        isDeprecated: true
     )
+    .padding()
+    .frame(width: 350)
+}
 
-    return DocumentationSectionView(settingItem: settingItem, documentationLoader: loader)
-        .padding()
-        .frame(width: 300)
+#Preview("Documentation - Limited Examples") {
+    DocumentationSectionView(
+        documentation: SettingDocumentation(
+            key: "theme",
+            type: "string",
+            defaultValue: "auto",
+            description: "Controls the color theme of the interface.",
+            deprecated: nil,
+            enumValues: ["dark", "light", "auto"],
+            format: nil,
+            itemType: nil,
+            platformNote: nil,
+            relatedEnvVars: nil,
+            hookTypes: nil,
+            patterns: nil,
+            examples: [
+                SettingExample(id: UUID(), code: "\"theme\": \"dark\"", description: "Dark mode"),
+                SettingExample(id: UUID(), code: "\"theme\": \"light\"", description: "Light mode"),
+                SettingExample(id: UUID(), code: "\"theme\": \"auto\"", description: "System default"),
+            ]
+        ),
+        maxExamples: 2
+    )
+    .padding()
+    .frame(width: 350)
+}
+
+#Preview("Documentation - No Header") {
+    DocumentationSectionView(
+        documentation: SettingDocumentation(
+            key: "setting",
+            type: "string",
+            defaultValue: nil,
+            description: "A simple setting without much documentation.",
+            deprecated: nil,
+            enumValues: nil,
+            format: nil,
+            itemType: nil,
+            platformNote: nil,
+            relatedEnvVars: nil,
+            hookTypes: nil,
+            patterns: nil,
+            examples: []
+        ),
+        showHeader: false
+    )
+    .padding()
+    .frame(width: 350)
 }

@@ -98,10 +98,7 @@ struct AddSettingSheet: View {
     @ViewBuilder
     private func settingSelectionPane(documentation: SettingsDocumentation) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Select Setting")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+            SectionHeader(text: "Select Setting")
                 .padding(.horizontal)
                 .padding(.top, 12)
                 .padding(.bottom, 8)
@@ -183,40 +180,23 @@ struct AddSettingSheet: View {
         if let setting = selectedSetting {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Setting info
+                    // Setting key and type badge
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Setting")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                        SectionHeader(text: "Setting")
 
                         HStack {
                             Text(setting.key)
                                 .font(.system(.title3, design: .monospaced))
 
-                            let typeColor = schemaTypeColor(setting.type)
-                            Text(setting.typeDescription)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(typeColor.opacity(0.2))
-                                .foregroundStyle(typeColor)
-                                .cornerRadius(6)
+                            TypeBadge(schemaType: setting.type, description: setting.typeDescription)
                         }
-
-                        Text(setting.description)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
                     }
 
                     Divider()
 
                     // File type selector
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Destination File")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                        SectionHeader(text: "Destination File")
 
                         Picker("", selection: $selectedFileType) {
                             ForEach(SettingsActionHelpers.availableFileTypes(for: viewModel), id: \.self) { fileType in
@@ -237,62 +217,27 @@ struct AddSettingSheet: View {
 
                     // Value editor
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Value")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                        SectionHeader(text: "Value")
 
                         valueEditor(for: setting)
 
                         if let validationError {
-                            HStack(spacing: 4) {
-                                Symbols.exclamationmarkTriangle.image
-                                    .font(.caption2)
-                                Text(validationError)
-                                    .font(.caption)
-                            }
-                            .foregroundStyle(.red)
+                            ValidationErrorView(message: validationError)
                         }
 
-                        // Show default value if available
                         if let defaultValue = setting.defaultValue {
-                            HStack {
-                                Text("Default:")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(defaultValue)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
+                            MetadataRow(label: "Default", value: defaultValue)
                         }
                     }
 
-                    // Examples section
-                    if !setting.examples.isEmpty {
-                        Divider()
+                    Divider()
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Examples")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            ForEach(setting.examples.prefix(2)) { example in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(example.description)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                    Text(example.code)
-                                        .font(.caption.monospaced())
-                                        .padding(8)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color.primary.opacity(0.05))
-                                        .cornerRadius(4)
-                                }
-                            }
-                        }
-                    }
+                    // Documentation section - reuses DocumentationSectionView
+                    DocumentationSectionView(
+                        documentation: setting,
+                        showHeader: true,
+                        maxExamples: 2
+                    )
 
                     Spacer()
                 }

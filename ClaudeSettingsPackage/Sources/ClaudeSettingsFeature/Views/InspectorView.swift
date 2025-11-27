@@ -39,23 +39,14 @@ public struct InspectorView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Key section
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Key")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
+                    SectionHeader(text: "Key")
 
                     HStack {
                         Text(item.key)
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
 
-                        Text(item.value.typeDisplayName)
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(item.value.typeDisplayColor.opacity(0.2))
-                            .foregroundStyle(item.value.typeDisplayColor)
-                            .cornerRadius(6)
+                        TypeBadge(value: item.value)
 
                         if documentationLoader.isDeprecated(item.key) {
                             Symbols.exclamationmarkTriangle.image
@@ -98,10 +89,7 @@ public struct InspectorView: View {
                 // Actions section
                 if let viewModel = settingsViewModel {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Actions")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                        SectionHeader(text: "Actions")
 
                         HStack(spacing: 20) {
                             Button(action: {
@@ -269,140 +257,24 @@ public struct InspectorView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Key section for parent node
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Key")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
+                    SectionHeader(text: "Key")
 
                     HStack {
                         Text(key)
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
 
-                        Text(documentation.typeDescription)
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.pink.opacity(0.2))
-                            .foregroundStyle(.pink)
-                            .cornerRadius(6)
+                        TypeBadge(schemaType: documentation.type, description: documentation.typeDescription)
                     }
                 }
 
                 Divider()
 
-                // Documentation section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Documentation")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-
-                    // Type and default value
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Type:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(documentation.typeDescription)
-                                .font(.callout.monospaced())
-                        }
-
-                        if let defaultValue = documentation.defaultValue {
-                            HStack {
-                                Text("Default:")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(defaultValue)
-                                    .font(.callout.monospaced())
-                            }
-                        }
-
-                        if let platformNote = documentation.platformNote {
-                            HStack {
-                                Symbols.exclamationmarkCircle.image
-                                    .font(.caption2)
-                                Text(platformNote)
-                                    .font(.caption)
-                            }
-                            .foregroundStyle(.orange)
-                        }
-                    }
-
-                    // Description
-                    Text(documentation.description)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-
-                    // Hook types (specific to hooks setting)
-                    if let hookTypes = documentation.hookTypes, !hookTypes.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Available hook types:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            ForEach(hookTypes, id: \.self) { hookType in
-                                Text("• \(hookType)")
-                                    .font(.callout.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    // Related environment variables
-                    if let envVars = documentation.relatedEnvVars, !envVars.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Related environment variables:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            ForEach(envVars, id: \.self) { envVar in
-                                Text("• \(envVar)")
-                                    .font(.callout.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    // Patterns (for permissions)
-                    if let patterns = documentation.patterns, !patterns.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Pattern syntax:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            ForEach(patterns, id: \.self) { pattern in
-                                Text("• \(pattern)")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    // Examples
-                    if !documentation.examples.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Examples:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            ForEach(documentation.examples) { example in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(example.description)
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-
-                                    Text(example.code)
-                                        .font(.callout.monospaced())
-                                        .padding(8)
-                                        .background(Color.primary.opacity(0.05))
-                                        .cornerRadius(4)
-                                        .textSelection(.enabled)
-                                }
-                            }
-                        }
-                    }
-                }
+                // Documentation section - reuses DocumentationSectionView
+                DocumentationSectionView(
+                    documentation: documentation,
+                    isDeprecated: documentation.deprecated == true
+                )
 
                 // Actions section
                 if let viewModel = settingsViewModel {
@@ -412,10 +284,7 @@ public struct InspectorView: View {
                         Divider()
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Actions")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
+                            SectionHeader(text: "Actions")
 
                             HStack(spacing: 20) {
                                 Button(action: {
@@ -469,10 +338,7 @@ public struct InspectorView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Key section for parent node
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Key")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
+                    SectionHeader(text: "Key")
 
                     Text(key)
                         .font(.system(.body, design: .monospaced))
@@ -482,10 +348,7 @@ public struct InspectorView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Parent Setting")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
+                    SectionHeader(text: "Parent Setting")
 
                     Text("This is a parent setting that contains \(childCount(for: key, in: viewModel)) child settings.")
                         .font(.body)
@@ -503,10 +366,7 @@ public struct InspectorView: View {
                     Divider()
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Actions")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                        SectionHeader(text: "Actions")
 
                         HStack(spacing: 20) {
                             Button(action: {
@@ -756,13 +616,7 @@ private struct JSONTextEditorView: View {
                 }
 
             if let validationError = localValidationError {
-                HStack(spacing: 4) {
-                    Symbols.exclamationmarkTriangle.image
-                        .font(.caption2)
-                    Text(validationError)
-                        .font(.caption)
-                }
-                .foregroundStyle(.red)
+                ValidationErrorView(message: validationError)
             }
         }
     }
@@ -840,13 +694,7 @@ private struct NumberTextFieldView: View {
                 }
 
             if let validationError = localValidationError {
-                HStack(spacing: 4) {
-                    Symbols.exclamationmarkTriangle.image
-                        .font(.caption2)
-                    Text(validationError)
-                        .font(.caption)
-                }
-                .foregroundStyle(.red)
+                ValidationErrorView(message: validationError)
             }
         }
     }
