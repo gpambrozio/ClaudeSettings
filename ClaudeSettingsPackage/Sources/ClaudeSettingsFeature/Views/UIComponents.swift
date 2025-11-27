@@ -168,6 +168,88 @@ struct DeprecationWarning: View {
     }
 }
 
+// MARK: - Value Editors
+
+/// Toggle editor for boolean values with optional true/false label
+struct BooleanToggleEditor: View {
+    @Binding var value: Bool
+    var showLabel = true
+
+    var body: some View {
+        Toggle(isOn: $value) {
+            if showLabel {
+                Text(value ? "true" : "false")
+                    .font(.system(.body, design: .monospaced))
+            } else {
+                EmptyView()
+            }
+        }
+        .toggleStyle(.switch)
+    }
+}
+
+/// Text field editor for string values
+struct StringTextFieldEditor: View {
+    let placeholder: String
+    @Binding var text: String
+    var hasError = false
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.roundedBorder)
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(hasError ? Color.red.opacity(0.5) : Color.clear, lineWidth: 1)
+            )
+    }
+}
+
+/// Picker editor for enum/selection values
+struct EnumPickerEditor: View {
+    let values: [String]
+    @Binding var selection: String
+
+    var body: some View {
+        Picker("", selection: $selection) {
+            ForEach(values, id: \.self) { value in
+                Text(value).tag(value)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+    }
+}
+
+/// Text field editor for number values (integer or double)
+struct NumberTextFieldEditor: View {
+    let placeholder: String
+    @Binding var text: String
+    var hasError = false
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.roundedBorder)
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(hasError ? Color.red.opacity(0.5) : Color.clear, lineWidth: 1)
+            )
+    }
+}
+
+/// Text editor for JSON values (arrays and objects)
+struct JSONTextEditor: View {
+    @Binding var text: String
+    var hasError = false
+    var minHeight: CGFloat = 100
+
+    var body: some View {
+        TextEditor(text: $text)
+            .font(.system(.body, design: .monospaced))
+            .frame(minHeight: minHeight)
+            .border(hasError ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
+    }
+}
+
 // MARK: - Previews
 
 #Preview("Section Headers") {

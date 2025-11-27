@@ -483,48 +483,36 @@ public struct InspectorView: View {
         if let viewModel = settingsViewModel {
             switch value {
             case let .bool(boolValue):
-                Toggle(isOn: Binding(
-                    get: { if case let .bool(val) = pendingEdit.value { return val } else { return boolValue } },
-                    set: { viewModel.updatePendingEditIfChanged(item: item, value: .bool($0), targetFileType: pendingEdit.targetFileType) }
-                )) { EmptyView() }
-                    .toggleStyle(.switch)
+                BooleanToggleEditor(
+                    value: Binding(
+                        get: { if case let .bool(val) = pendingEdit.value { return val } else { return boolValue } },
+                        set: { viewModel.updatePendingEditIfChanged(item: item, value: .bool($0), targetFileType: pendingEdit.targetFileType) }
+                    ),
+                    showLabel: false
+                )
 
             case let .string(stringValue):
                 // Check if documentation has enum values
                 if
                     let doc = documentationLoader.documentationWithFallback(for: item.key),
                     let enumValues = doc.enumValues, !enumValues.isEmpty {
-                    // Use menu for enum values
-                    Menu {
-                        ForEach(enumValues, id: \.self) { enumValue in
-                            Button(enumValue) {
-                                viewModel.updatePendingEditIfChanged(item: item, value: .string(enumValue), targetFileType: pendingEdit.targetFileType)
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            if case let .string(currentValue) = pendingEdit.value {
-                                Text(currentValue)
-                                    .font(.system(.body, design: .monospaced))
-                            } else {
-                                Text(stringValue)
-                                    .font(.system(.body, design: .monospaced))
-                            }
-                            Symbols.chevronUpChevronDown.image
-                                .font(.caption2)
-                        }
-                        .padding(8)
-                        .background(Color.primary.opacity(0.05))
-                        .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
+                    // Use picker for enum values (standardized across the app)
+                    EnumPickerEditor(
+                        values: enumValues,
+                        selection: Binding(
+                            get: { if case let .string(val) = pendingEdit.value { return val } else { return stringValue } },
+                            set: { viewModel.updatePendingEditIfChanged(item: item, value: .string($0), targetFileType: pendingEdit.targetFileType) }
+                        )
+                    )
                 } else {
                     // Regular text field
-                    TextField("Value", text: Binding(
-                        get: { if case let .string(val) = pendingEdit.value { return val } else { return stringValue } },
-                        set: { viewModel.updatePendingEditIfChanged(item: item, value: .string($0), targetFileType: pendingEdit.targetFileType) }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+                    StringTextFieldEditor(
+                        placeholder: "Value",
+                        text: Binding(
+                            get: { if case let .string(val) = pendingEdit.value { return val } else { return stringValue } },
+                            set: { viewModel.updatePendingEditIfChanged(item: item, value: .string($0), targetFileType: pendingEdit.targetFileType) }
+                        )
+                    )
                 }
 
             case .int:
@@ -585,10 +573,7 @@ private struct JSONTextEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            TextEditor(text: $localText)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 100)
-                .border(localValidationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
+            JSONTextEditor(text: $localText, hasError: localValidationError != nil)
                 .onChange(of: localText) { _, newText in
                     // Only validate if this isn't an external update
                     guard !isUpdatingFromExternal else { return }
@@ -666,32 +651,31 @@ private struct NumberTextFieldView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            TextField(numberType == .integer ? "Enter integer" : "Enter number", text: $localText)
-                .textFieldStyle(.roundedBorder)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(localValidationError != nil ? Color.red.opacity(0.5) : Color.clear, lineWidth: 1)
-                )
-                .onChange(of: localText) { _, newText in
-                    guard !isUpdatingFromExternal else { return }
-                    validateAndUpdate(newText)
-                }
-                .onAppear {
-                    localText = pendingEdit.rawEditingText ?? pendingEdit.value.formatted()
-                    localValidationError = pendingEdit.validationError
-                }
-                .onChange(of: pendingEdit.rawEditingText) { _, newRawText in
-                    let newText = newRawText ?? pendingEdit.value.formatted()
-                    guard newText != localText else { return }
+            NumberTextFieldEditor(
+                placeholder: numberType == .integer ? "Enter integer" : "Enter number",
+                text: $localText,
+                hasError: localValidationError != nil
+            )
+            .onChange(of: localText) { _, newText in
+                guard !isUpdatingFromExternal else { return }
+                validateAndUpdate(newText)
+            }
+            .onAppear {
+                localText = pendingEdit.rawEditingText ?? pendingEdit.value.formatted()
+                localValidationError = pendingEdit.validationError
+            }
+            .onChange(of: pendingEdit.rawEditingText) { _, newRawText in
+                let newText = newRawText ?? pendingEdit.value.formatted()
+                guard newText != localText else { return }
 
-                    isUpdatingFromExternal = true
-                    localText = newText
-                    isUpdatingFromExternal = false
-                }
-                .onChange(of: pendingEdit.validationError) { oldValue, newError in
-                    guard oldValue != newError else { return }
-                    localValidationError = newError
-                }
+                isUpdatingFromExternal = true
+                localText = newText
+                isUpdatingFromExternal = false
+            }
+            .onChange(of: pendingEdit.validationError) { oldValue, newError in
+                guard oldValue != newError else { return }
+                localValidationError = newError
+            }
 
             if let validationError = localValidationError {
                 ValidationErrorView(message: validationError)

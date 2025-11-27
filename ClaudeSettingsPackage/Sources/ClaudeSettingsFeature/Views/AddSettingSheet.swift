@@ -263,75 +263,72 @@ struct AddSettingSheet: View {
     private func valueEditor(for setting: SettingDocumentation) -> some View {
         switch setting.type {
         case "boolean":
-            Toggle(isOn: $boolValue) {
-                Text(boolValue ? "true" : "false")
-                    .font(.system(.body, design: .monospaced))
-            }
-            .toggleStyle(.switch)
-            .onChange(of: boolValue) { _, newValue in
-                currentValue = .bool(newValue)
-                validationError = nil
-            }
+            BooleanToggleEditor(value: $boolValue)
+                .onChange(of: boolValue) { _, newValue in
+                    currentValue = .bool(newValue)
+                    validationError = nil
+                }
 
         case "string":
             if let enumValues = setting.enumValues, !enumValues.isEmpty {
-                Picker("", selection: $stringValue) {
-                    ForEach(enumValues, id: \.self) { value in
-                        Text(value).tag(value)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .onChange(of: stringValue) { _, newValue in
-                    currentValue = .string(newValue)
-                    validationError = nil
-                }
-            } else {
-                TextField("Enter value", text: $stringValue)
-                    .textFieldStyle(.roundedBorder)
+                EnumPickerEditor(values: enumValues, selection: $stringValue)
                     .onChange(of: stringValue) { _, newValue in
-                        if newValue.isEmpty {
-                            validationError = "Value is required"
-                        } else {
-                            currentValue = .string(newValue)
-                            validationError = nil
-                        }
+                        currentValue = .string(newValue)
+                        validationError = nil
                     }
+            } else {
+                StringTextFieldEditor(
+                    placeholder: "Enter value",
+                    text: $stringValue,
+                    hasError: validationError != nil
+                )
+                .onChange(of: stringValue) { _, newValue in
+                    if newValue.isEmpty {
+                        validationError = "Value is required"
+                    } else {
+                        currentValue = .string(newValue)
+                        validationError = nil
+                    }
+                }
             }
 
         case "integer":
-            TextField("Enter integer", text: $intValue)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: intValue) { _, newValue in
-                    validateInteger(newValue)
-                }
+            NumberTextFieldEditor(
+                placeholder: "Enter integer",
+                text: $intValue,
+                hasError: validationError != nil
+            )
+            .onChange(of: intValue) { _, newValue in
+                validateInteger(newValue)
+            }
 
         case "number":
-            TextField("Enter number", text: $doubleValue)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: doubleValue) { _, newValue in
-                    validateDouble(newValue)
-                }
+            NumberTextFieldEditor(
+                placeholder: "Enter number",
+                text: $doubleValue,
+                hasError: validationError != nil
+            )
+            .onChange(of: doubleValue) { _, newValue in
+                validateDouble(newValue)
+            }
 
         case "array",
              "object":
-            VStack(alignment: .leading, spacing: 4) {
-                TextEditor(text: $jsonValue)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 100)
-                    .border(validationError != nil ? Color.red.opacity(0.5) : Color.secondary.opacity(0.3))
-                    .onChange(of: jsonValue) { _, newValue in
-                        validateJSON(newValue, expectedType: setting.type)
-                    }
-            }
+            JSONTextEditor(text: $jsonValue, hasError: validationError != nil)
+                .onChange(of: jsonValue) { _, newValue in
+                    validateJSON(newValue, expectedType: setting.type)
+                }
 
         default:
-            TextField("Enter value", text: $stringValue)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: stringValue) { _, newValue in
-                    currentValue = .string(newValue)
-                    validationError = newValue.isEmpty ? "Value is required" : nil
-                }
+            StringTextFieldEditor(
+                placeholder: "Enter value",
+                text: $stringValue,
+                hasError: validationError != nil
+            )
+            .onChange(of: stringValue) { _, newValue in
+                currentValue = .string(newValue)
+                validationError = newValue.isEmpty ? "Value is required" : nil
+            }
         }
     }
 
