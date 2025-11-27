@@ -493,32 +493,13 @@ struct SettingItemRow: View {
 
     @ViewBuilder
     private var valueTypeIndicator: some View {
-        let typeInfo = valueTypeInfo
-        Text(typeInfo.0)
+        Text(item.value.typeDisplayName.lowercased())
             .font(.caption2)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(typeInfo.1.opacity(0.2))
-            .foregroundStyle(typeInfo.1)
+            .background(item.value.typeDisplayColor.opacity(0.2))
+            .foregroundStyle(item.value.typeDisplayColor)
             .cornerRadius(4)
-    }
-
-    private var valueTypeInfo: (String, Color) {
-        switch item.value {
-        case .string:
-            return ("string", .blue)
-        case .bool:
-            return ("bool", .green)
-        case .int,
-             .double:
-            return ("number", .orange)
-        case .array:
-            return ("array", .purple)
-        case .object:
-            return ("object", .pink)
-        case .null:
-            return ("null", .gray)
-        }
     }
 }
 

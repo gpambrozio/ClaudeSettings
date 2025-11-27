@@ -49,13 +49,12 @@ public struct InspectorView: View {
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
 
-                        let typeInfo = getTypeInfo(item.value)
-                        Text(typeInfo.0)
+                        Text(item.value.typeDisplayName)
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(typeInfo.1.opacity(0.2))
-                            .foregroundStyle(typeInfo.1)
+                            .background(item.value.typeDisplayColor.opacity(0.2))
+                            .foregroundStyle(item.value.typeDisplayColor)
                             .cornerRadius(6)
 
                         if documentationLoader.isDeprecated(item.key) {
@@ -611,24 +610,6 @@ public struct InspectorView: View {
         value.formatted()
     }
 
-    private func getTypeInfo(_ value: SettingValue) -> (String, Color) {
-        switch value {
-        case .string:
-            return ("String", .blue)
-        case .bool:
-            return ("Boolean", .green)
-        case .int,
-             .double:
-            return ("Number", .orange)
-        case .array:
-            return ("Array", .purple)
-        case .object:
-            return ("Object", .pink)
-        case .null:
-            return ("Null", .gray)
-        }
-    }
-
     private func copyToClipboard(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -787,42 +768,27 @@ private struct JSONTextEditorView: View {
     }
 
     private func validateAndUpdate(_ newText: String) {
-        // Try to parse as JSON
-        if
-            let data = newText.data(using: .utf8),
-            let jsonObject = try? JSONSerialization.jsonObject(with: data) {
-            // Valid JSON - check if it differs from original before creating edit
-            let newValue = SettingValue(any: jsonObject)
+        let result = validateJSONInput(newText)
+
+        if let value = result.value {
             viewModel.updatePendingEditIfChanged(
                 item: item,
-                value: newValue,
+                value: value,
                 targetFileType: pendingEdit.targetFileType,
                 validationError: nil,
                 rawEditingText: newText
             )
             localValidationError = nil
-        } else if !newText.isEmpty {
-            // Invalid JSON - always create pending edit with error
-            viewModel.updatePendingEdit(
-                key: item.key,
-                value: pendingEdit.value, // Keep old value
-                targetFileType: pendingEdit.targetFileType,
-                originalFileType: pendingEdit.originalFileType,
-                validationError: "Invalid JSON syntax",
-                rawEditingText: newText
-            )
-            localValidationError = "Invalid JSON syntax"
         } else {
-            // Empty text - always create pending edit with error
             viewModel.updatePendingEdit(
                 key: item.key,
                 value: pendingEdit.value, // Keep old value
                 targetFileType: pendingEdit.targetFileType,
                 originalFileType: pendingEdit.originalFileType,
-                validationError: "Value is required",
+                validationError: result.error,
                 rawEditingText: newText
             )
-            localValidationError = "Value is required"
+            localValidationError = result.error
         }
     }
 }
@@ -888,68 +854,52 @@ private struct NumberTextFieldView: View {
     private func validateAndUpdate(_ newText: String) {
         let trimmedText = newText.trimmingCharacters(in: .whitespaces)
 
-        // Check for empty input
-        guard !trimmedText.isEmpty else {
-            viewModel.updatePendingEdit(
-                key: item.key,
-                value: pendingEdit.value,
-                targetFileType: pendingEdit.targetFileType,
-                originalFileType: pendingEdit.originalFileType,
-                validationError: "Value is required",
-                rawEditingText: trimmedText
-            )
-            localValidationError = "Value is required"
-            return
-        }
-
-        // Validate based on number type
+        // Validate based on number type using shared validation functions
         switch numberType {
         case .integer:
-            if let intValue = Int(trimmedText) {
-                // Valid integer
+            let result = validateIntegerInput(trimmedText)
+            if let value = result.value {
                 viewModel.updatePendingEditIfChanged(
                     item: item,
-                    value: .int(intValue),
+                    value: .int(value),
                     targetFileType: pendingEdit.targetFileType,
                     validationError: nil,
                     rawEditingText: trimmedText
                 )
                 localValidationError = nil
             } else {
-                // Invalid integer
                 viewModel.updatePendingEdit(
                     key: item.key,
                     value: pendingEdit.value,
                     targetFileType: pendingEdit.targetFileType,
                     originalFileType: pendingEdit.originalFileType,
-                    validationError: "Must be a valid integer",
+                    validationError: result.error,
                     rawEditingText: trimmedText
                 )
-                localValidationError = "Must be a valid integer"
+                localValidationError = result.error
             }
 
         case .double:
-            if let doubleValue = Double(trimmedText) {
-                // Valid double
+            let result = validateDoubleInput(trimmedText)
+            if let value = result.value {
                 viewModel.updatePendingEditIfChanged(
                     item: item,
-                    value: .double(doubleValue),
+                    value: .double(value),
                     targetFileType: pendingEdit.targetFileType,
                     validationError: nil,
                     rawEditingText: trimmedText
                 )
                 localValidationError = nil
             } else {
-                // Invalid double
                 viewModel.updatePendingEdit(
                     key: item.key,
                     value: pendingEdit.value,
                     targetFileType: pendingEdit.targetFileType,
                     originalFileType: pendingEdit.originalFileType,
-                    validationError: "Must be a valid number",
+                    validationError: result.error,
                     rawEditingText: trimmedText
                 )
-                localValidationError = "Must be a valid number"
+                localValidationError = result.error
             }
         }
     }

@@ -194,12 +194,13 @@ struct AddSettingSheet: View {
                             Text(setting.key)
                                 .font(.system(.title3, design: .monospaced))
 
+                            let typeColor = schemaTypeColor(setting.type)
                             Text(setting.typeDescription)
                                 .font(.caption)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(typeColor(for: setting.type).opacity(0.2))
-                                .foregroundStyle(typeColor(for: setting.type))
+                                .background(typeColor.opacity(0.2))
+                                .foregroundStyle(typeColor)
                                 .cornerRadius(6)
                         }
 
@@ -392,63 +393,32 @@ struct AddSettingSheet: View {
     // MARK: - Validation
 
     private func validateInteger(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty {
-            validationError = "Value is required"
-            return
-        }
-
-        if let value = Int(trimmed) {
+        let result = validateIntegerInput(text)
+        if let value = result.value {
             currentValue = .int(value)
             validationError = nil
         } else {
-            validationError = "Must be a valid integer"
+            validationError = result.error
         }
     }
 
     private func validateDouble(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty {
-            validationError = "Value is required"
-            return
-        }
-
-        if let value = Double(trimmed) {
+        let result = validateDoubleInput(text)
+        if let value = result.value {
             currentValue = .double(value)
             validationError = nil
         } else {
-            validationError = "Must be a valid number"
+            validationError = result.error
         }
     }
 
     private func validateJSON(_ text: String, expectedType: String) {
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            validationError = "Value is required"
-            return
-        }
-
-        guard let data = text.data(using: .utf8) else {
-            validationError = "Invalid text encoding"
-            return
-        }
-
-        do {
-            let jsonObject = try JSONSerialization.jsonObject(with: data)
-
-            // Verify the type matches
-            if expectedType == "array" && !(jsonObject is [Any]) {
-                validationError = "Must be a JSON array"
-                return
-            }
-            if expectedType == "object" && !(jsonObject is [String: Any]) {
-                validationError = "Must be a JSON object"
-                return
-            }
-
-            currentValue = SettingValue(any: jsonObject)
+        let result = validateJSONInput(text, expectedType: expectedType)
+        if let value = result.value {
+            currentValue = value
             validationError = nil
-        } catch {
-            validationError = "Invalid JSON syntax"
+        } else {
+            validationError = result.error
         }
     }
 
@@ -538,20 +508,6 @@ struct AddSettingSheet: View {
                 showError = true
                 isSaving = false
             }
-        }
-    }
-
-    // MARK: - Helpers
-
-    private func typeColor(for type: String) -> Color {
-        switch type {
-        case "string": return .blue
-        case "boolean": return .green
-        case "integer",
-             "number": return .orange
-        case "array": return .purple
-        case "object": return .pink
-        default: return .gray
         }
     }
 }
