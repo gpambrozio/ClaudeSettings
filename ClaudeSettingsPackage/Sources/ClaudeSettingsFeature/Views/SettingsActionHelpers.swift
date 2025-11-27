@@ -228,8 +228,8 @@ enum SettingsActionHelpers {
         types.append(.globalSettings)
         types.append(.globalLocal)
 
-        // Project files (only if there's a project)
-        if viewModel.settingItems.contains(where: { !$0.source.isGlobal }) {
+        // Project files (only if viewing a project)
+        if viewModel.isProjectView {
             types.append(.projectSettings)
             types.append(.projectLocal)
         }

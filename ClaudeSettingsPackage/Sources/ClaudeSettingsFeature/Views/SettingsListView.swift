@@ -10,6 +10,7 @@ public struct SettingsListView: View {
     @State private var saveErrorMessage: String?
     @State private var showUpcomingFeatureAlert = false
     @State private var upcomingFeatureName = ""
+    @State private var showAddSettingSheet = false
 
     public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
         self.settingsViewModel = settingsViewModel
@@ -80,8 +81,7 @@ public struct SettingsListView: View {
 
                     Menu {
                         Button("Add Setting") {
-                            upcomingFeatureName = "Add Setting"
-                            showUpcomingFeatureAlert = true
+                            showAddSettingSheet = true
                         }
                         Button("Import Settings") {
                             upcomingFeatureName = "Import Settings"
@@ -104,6 +104,13 @@ public struct SettingsListView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("\(upcomingFeatureName) is an upcoming feature that is not yet implemented. Stay tuned!")
+        }
+        .sheet(isPresented: $showAddSettingSheet) {
+            AddSettingSheet(
+                viewModel: settingsViewModel,
+                documentationLoader: documentationLoader,
+                onDismiss: { showAddSettingSheet = false }
+            )
         }
     }
 
@@ -486,32 +493,13 @@ struct SettingItemRow: View {
 
     @ViewBuilder
     private var valueTypeIndicator: some View {
-        let typeInfo = valueTypeInfo
-        Text(typeInfo.0)
+        Text(item.value.typeDisplayName.lowercased())
             .font(.caption2)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(typeInfo.1.opacity(0.2))
-            .foregroundStyle(typeInfo.1)
+            .background(item.value.typeDisplayColor.opacity(0.2))
+            .foregroundStyle(item.value.typeDisplayColor)
             .cornerRadius(4)
-    }
-
-    private var valueTypeInfo: (String, Color) {
-        switch item.value {
-        case .string:
-            return ("string", .blue)
-        case .bool:
-            return ("bool", .green)
-        case .int,
-             .double:
-            return ("number", .orange)
-        case .array:
-            return ("array", .purple)
-        case .object:
-            return ("object", .pink)
-        case .null:
-            return ("null", .gray)
-        }
     }
 }
 
