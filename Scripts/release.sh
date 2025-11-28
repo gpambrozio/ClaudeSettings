@@ -17,6 +17,12 @@ ARCHIVE_PATH="$BUILD_DIR/ClaudeSettings.xcarchive"
 EXPORT_PATH="$BUILD_DIR/export"
 APP_NAME="ClaudeSettings"
 
+# Sparkle configuration
+APPCAST_DIR="$PROJECT_ROOT/docs"
+APPCAST_FILE="$APPCAST_DIR/appcast.xml"
+GITHUB_REPO="gpambrozio/ClaudeSettings"
+DOWNLOAD_URL_PREFIX="https://github.com/$GITHUB_REPO/releases/download"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -113,6 +119,17 @@ check_prerequisites() {
     # Check for create-dmg
     if ! command -v create-dmg &> /dev/null; then
         log_error "create-dmg is not installed. Install with: brew install create-dmg"
+    fi
+
+    # Check for Sparkle tools (for auto-update signing)
+    if ! command -v sign_update &> /dev/null; then
+        log_warning "Sparkle sign_update not found. Auto-update signing will be skipped."
+        log_warning "Install with: brew install sparkle"
+    fi
+
+    if ! command -v generate_appcast &> /dev/null; then
+        log_warning "Sparkle generate_appcast not found. Appcast generation will be skipped."
+        log_warning "Install with: brew install sparkle"
     fi
 
     # Check for notarytool (part of Xcode)
@@ -267,6 +284,127 @@ create_dmg() {
     echo "$dmg_path"
 }
 
+# Sign DMG with Sparkle EdDSA signature
+sign_dmg_for_sparkle() {
+    local dmg_path=$1
+
+    if ! command -v sign_update &> /dev/null; then
+        log_warning "Skipping Sparkle signing (sign_update not installed)"
+        return
+    fi
+
+    log_info "Signing DMG with Sparkle EdDSA key..."
+
+    # sign_update outputs the signature to stdout
+    local signature
+    signature=$(sign_update "$dmg_path" 2>/dev/null) || {
+        log_warning "Sparkle signing failed. Make sure you have generated keys with: generate_keys"
+        return
+    }
+
+    log_success "DMG signed for Sparkle updates"
+    # Store signature for appcast generation
+    echo "$signature"
+}
+
+# Update appcast.xml with new release
+update_appcast() {
+    local version=$1
+    local dmg_path=$2
+    local signature=$3
+
+    if [ -z "$signature" ]; then
+        log_warning "No Sparkle signature provided, skipping appcast update"
+        return
+    fi
+
+    log_info "Updating appcast.xml..."
+
+    # Ensure docs directory exists
+    mkdir -p "$APPCAST_DIR"
+
+    # Get DMG file size
+    local dmg_size
+    dmg_size=$(stat -f%z "$dmg_path" 2>/dev/null || stat --printf="%s" "$dmg_path" 2>/dev/null)
+
+    local dmg_name
+    dmg_name=$(basename "$dmg_path")
+
+    local download_url="$DOWNLOAD_URL_PREFIX/v$version/$dmg_name"
+    local pub_date
+    pub_date=$(date -R 2>/dev/null || date "+%a, %d %b %Y %H:%M:%S %z")
+
+    # Create new item XML
+    local new_item="      <item>
+         <title>Version $version</title>
+         <sparkle:version>$version</sparkle:version>
+         <sparkle:shortVersionString>$version</sparkle:shortVersionString>
+         <pubDate>$pub_date</pubDate>
+         <enclosure url=\"$download_url\"
+                    sparkle:edSignature=\"$signature\"
+                    length=\"$dmg_size\"
+                    type=\"application/octet-stream\"/>
+      </item>"
+
+    if [ -f "$APPCAST_FILE" ]; then
+        # Insert new item after <channel> opening (before existing items)
+        # Use awk to insert after the line containing <channel>
+        awk -v item="$new_item" '
+            /<channel>/ {
+                print
+                found_channel = 1
+                next
+            }
+            found_channel && /<title>/ {
+                print
+                print item
+                found_channel = 0
+                next
+            }
+            { print }
+        ' "$APPCAST_FILE" > "$APPCAST_FILE.tmp" && mv "$APPCAST_FILE.tmp" "$APPCAST_FILE"
+    else
+        # Create new appcast file
+        cat > "$APPCAST_FILE" << EOF
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+   <channel>
+      <title>ClaudeSettings Updates</title>
+      <link>https://${GITHUB_REPO%%/*}.github.io/${GITHUB_REPO##*/}/appcast.xml</link>
+      <description>Most recent changes with links to updates.</description>
+      <language>en</language>
+$new_item
+   </channel>
+</rss>
+EOF
+    fi
+
+    log_success "Appcast updated: $APPCAST_FILE"
+}
+
+# Commit and push appcast changes
+commit_appcast() {
+    local version=$1
+
+    if [ ! -f "$APPCAST_FILE" ]; then
+        log_warning "No appcast file to commit"
+        return
+    fi
+
+    log_info "Committing appcast.xml..."
+
+    git -C "$PROJECT_ROOT" add "$APPCAST_FILE"
+
+    # Check if there are changes to commit
+    if git -C "$PROJECT_ROOT" diff --cached --quiet "$APPCAST_FILE"; then
+        log_info "No changes to appcast.xml"
+        return
+    fi
+
+    git -C "$PROJECT_ROOT" commit -m "Update appcast.xml for version $version"
+    log_success "Appcast changes committed"
+}
+
 # Generate release notes using Claude
 generate_release_notes() {
     local version=$1
@@ -407,6 +545,13 @@ main() {
     local dmg_path
     dmg_path=$(create_dmg "$version")
 
+    # Sign DMG for Sparkle auto-updates
+    local sparkle_signature
+    sparkle_signature=$(sign_dmg_for_sparkle "$dmg_path")
+
+    # Update appcast.xml
+    update_appcast "$version" "$dmg_path" "$sparkle_signature"
+
     # Generate release notes
     local release_notes
     release_notes=$(generate_release_notes "$version")
@@ -428,6 +573,9 @@ main() {
     # Create GitHub release
     create_github_release "$version" "$dmg_path" "$release_notes"
 
+    # Commit appcast changes (after release so the DMG URL is valid)
+    commit_appcast "$version"
+
     # Bump version for next release
     bump_version "$version"
 
@@ -443,7 +591,9 @@ main() {
     echo "Released: ClaudeSettings $version"
     echo ""
     echo "Next steps:"
-    echo "  - Review and push the version bump commit: git push"
+    echo "  - Review and push commits (version bump + appcast): git push"
+    echo "  - Ensure GitHub Pages is enabled for /docs folder"
+    echo "    (Settings > Pages > Source: Deploy from branch, /docs)"
     echo ""
 }
 
