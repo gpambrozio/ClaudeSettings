@@ -293,17 +293,28 @@ sign_dmg_for_sparkle() {
         return
     fi
 
-    log_info "Signing DMG with Sparkle EdDSA key..."
+    # Log to stderr so it doesn't get captured in command substitution
+    log_info "Signing DMG with Sparkle EdDSA key..." >&2
 
-    # sign_update outputs the signature to stdout
-    local signature
-    signature=$(sign_update "$dmg_path" 2>/dev/null) || {
+    # sign_update outputs: sparkle:edSignature="<sig>" length="<size>"
+    # We need to extract just the signature value
+    local raw_output
+    raw_output=$(sign_update "$dmg_path" 2>/dev/null) || {
         log_warning "Sparkle signing failed. Make sure you have generated keys with: generate_keys"
         return
     }
 
-    log_success "DMG signed for Sparkle updates"
-    # Store signature for appcast generation
+    # Extract the signature from the output (between first pair of quotes after edSignature=)
+    local signature
+    signature=$(echo "$raw_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+
+    if [ -z "$signature" ]; then
+        log_warning "Could not parse signature from sign_update output: $raw_output" >&2
+        return
+    fi
+
+    log_success "DMG signed for Sparkle updates" >&2
+    # Output only the signature (no log messages)
     echo "$signature"
 }
 
@@ -396,6 +407,20 @@ EOF
     fi
 
     rm -f "$item_file"
+
+    # Validate the generated XML
+    if command -v xmllint &> /dev/null; then
+        if xmllint --noout "$APPCAST_FILE" 2>&1; then
+            log_success "Appcast XML validated successfully"
+        else
+            log_error "Generated appcast.xml is not valid XML!"
+            cat "$APPCAST_FILE"
+            exit 1
+        fi
+    else
+        log_warning "xmllint not found, skipping XML validation"
+    fi
+
     log_success "Appcast updated: $APPCAST_FILE"
 }
 
