@@ -312,6 +312,7 @@ update_appcast() {
     local version=$1
     local dmg_path=$2
     local signature=$3
+    local release_notes=$4
 
     if [ -z "$signature" ]; then
         log_warning "No Sparkle signature provided, skipping appcast update"
@@ -334,12 +335,26 @@ update_appcast() {
     local pub_date
     pub_date=$(date -R 2>/dev/null || date "+%a, %d %b %Y %H:%M:%S %z")
 
-    # Create new item XML
+    # Convert markdown release notes to HTML for Sparkle
+    local html_notes=""
+    if [ -n "$release_notes" ]; then
+        # Convert markdown to basic HTML
+        html_notes=$(echo "$release_notes" | sed \
+            -e 's/^## \(.*\)$/<h2>\1<\/h2>/' \
+            -e 's/^### \(.*\)$/<h3>\1<\/h3>/' \
+            -e 's/^- \(.*\)$/<li>\1<\/li>/' \
+            -e 's/\*\*\([^*]*\)\*\*/<strong>\1<\/strong>/g' \
+            -e 's/\*\([^*]*\)\*/<em>\1<\/em>/g' \
+            | awk 'BEGIN{in_list=0} /<li>/{if(!in_list){print "<ul>";in_list=1}} !/<li>/&&in_list{print "</ul>";in_list=0} {print} END{if(in_list)print "</ul>"}')
+    fi
+
+    # Create new item XML with description
     local new_item="      <item>
          <title>Version $version</title>
          <sparkle:version>$version</sparkle:version>
          <sparkle:shortVersionString>$version</sparkle:shortVersionString>
          <pubDate>$pub_date</pubDate>
+         <description><![CDATA[$html_notes]]></description>
          <enclosure url=\"$download_url\"
                     sparkle:edSignature=\"$signature\"
                     length=\"$dmg_size\"
@@ -549,9 +564,6 @@ main() {
     local sparkle_signature
     sparkle_signature=$(sign_dmg_for_sparkle "$dmg_path")
 
-    # Update appcast.xml
-    update_appcast "$version" "$dmg_path" "$sparkle_signature"
-
     # Generate release notes
     local release_notes
     release_notes=$(generate_release_notes "$version")
@@ -569,6 +581,9 @@ main() {
         log_info "GitHub release cancelled. DMG is available at: $dmg_path"
         exit 0
     fi
+
+    # Update appcast.xml with release notes (after user confirms)
+    update_appcast "$version" "$dmg_path" "$sparkle_signature" "$release_notes"
 
     # Create GitHub release
     create_github_release "$version" "$dmg_path" "$release_notes"
