@@ -9,8 +9,8 @@
 PRODUCT_NAME = ClaudeSettings
 PRODUCT_DISPLAY_NAME = Claude Settings
 PRODUCT_BUNDLE_IDENTIFIER = br.eng.gustavo.ClaudeSettings
-MARKETING_VERSION = 1.2
-CURRENT_PROJECT_VERSION = 3
+MARKETING_VERSION = 1.3
+CURRENT_PROJECT_VERSION = 4
 
 // ==========================================
 // Platform Configuration
