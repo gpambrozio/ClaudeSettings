@@ -17,6 +17,12 @@ ARCHIVE_PATH="$BUILD_DIR/ClaudeSettings.xcarchive"
 EXPORT_PATH="$BUILD_DIR/export"
 APP_NAME="ClaudeSettings"
 
+# Sparkle configuration
+APPCAST_DIR="$PROJECT_ROOT/docs"
+APPCAST_FILE="$APPCAST_DIR/appcast.xml"
+GITHUB_REPO="gpambrozio/ClaudeSettings"
+DOWNLOAD_URL_PREFIX="https://github.com/$GITHUB_REPO/releases/download"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -113,6 +119,17 @@ check_prerequisites() {
     # Check for create-dmg
     if ! command -v create-dmg &> /dev/null; then
         log_error "create-dmg is not installed. Install with: brew install create-dmg"
+    fi
+
+    # Check for Sparkle tools (for auto-update signing)
+    if ! command -v sign_update &> /dev/null; then
+        log_warning "Sparkle sign_update not found. Auto-update signing will be skipped."
+        log_warning "Install with: brew install sparkle"
+    fi
+
+    if ! command -v generate_appcast &> /dev/null; then
+        log_warning "Sparkle generate_appcast not found. Appcast generation will be skipped."
+        log_warning "Install with: brew install sparkle"
     fi
 
     # Check for notarytool (part of Xcode)
@@ -267,6 +284,169 @@ create_dmg() {
     echo "$dmg_path"
 }
 
+# Sign DMG with Sparkle EdDSA signature
+sign_dmg_for_sparkle() {
+    local dmg_path=$1
+
+    if ! command -v sign_update &> /dev/null; then
+        log_warning "Skipping Sparkle signing (sign_update not installed)"
+        return
+    fi
+
+    # Log to stderr so it doesn't get captured in command substitution
+    log_info "Signing DMG with Sparkle EdDSA key..." >&2
+
+    # sign_update outputs: sparkle:edSignature="<sig>" length="<size>"
+    # We need to extract just the signature value
+    local raw_output
+    raw_output=$(sign_update "$dmg_path" 2>/dev/null) || {
+        log_warning "Sparkle signing failed. Make sure you have generated keys with: generate_keys"
+        return
+    }
+
+    # Extract the signature from the output (between first pair of quotes after edSignature=)
+    local signature
+    signature=$(echo "$raw_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+
+    if [ -z "$signature" ]; then
+        log_warning "Could not parse signature from sign_update output: $raw_output" >&2
+        return
+    fi
+
+    log_success "DMG signed for Sparkle updates" >&2
+    # Output only the signature (no log messages)
+    echo "$signature"
+}
+
+# Update appcast.xml with new release
+update_appcast() {
+    local version=$1
+    local dmg_path=$2
+    local signature=$3
+    local release_notes=$4
+
+    if [ -z "$signature" ]; then
+        log_warning "No Sparkle signature provided, skipping appcast update"
+        return
+    fi
+
+    log_info "Updating appcast.xml..."
+
+    # Ensure docs directory exists
+    mkdir -p "$APPCAST_DIR"
+
+    # Get DMG file size
+    local dmg_size
+    dmg_size=$(stat -f%z "$dmg_path" 2>/dev/null || stat --printf="%s" "$dmg_path" 2>/dev/null)
+
+    local dmg_name
+    dmg_name=$(basename "$dmg_path")
+
+    local download_url="$DOWNLOAD_URL_PREFIX/v$version/$dmg_name"
+    local pub_date
+    pub_date=$(date -R 2>/dev/null || date "+%a, %d %b %Y %H:%M:%S %z")
+
+    # Convert markdown release notes to HTML for Sparkle
+    local html_notes=""
+    if [ -n "$release_notes" ]; then
+        # Escape special XML characters first, then convert markdown to HTML
+        html_notes=$(echo "$release_notes" | \
+            sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' | \
+            sed -e 's/^## \(.*\)$/<h2>\1<\/h2>/' \
+                -e 's/^### \(.*\)$/<h3>\1<\/h3>/' \
+                -e 's/^- \(.*\)$/<li>\1<\/li>/' \
+                -e 's/\*\*\([^*]*\)\*\*/<strong>\1<\/strong>/g' | \
+            awk '
+                BEGIN { in_list=0 }
+                /<li>/ { if (!in_list) { print "<ul>"; in_list=1 } }
+                !/<li>/ && in_list { print "</ul>"; in_list=0 }
+                { print }
+                END { if (in_list) print "</ul>" }
+            ')
+    fi
+
+    # Write new item to temp file to avoid shell escaping issues
+    local item_file
+    item_file=$(mktemp)
+    cat > "$item_file" << ITEMEOF
+      <item>
+         <title>Version $version</title>
+         <sparkle:version>$version</sparkle:version>
+         <sparkle:shortVersionString>$version</sparkle:shortVersionString>
+         <pubDate>$pub_date</pubDate>
+         <description><![CDATA[
+$html_notes
+         ]]></description>
+         <enclosure url="$download_url"
+                    sparkle:edSignature="$signature"
+                    length="$dmg_size"
+                    type="application/octet-stream"/>
+      </item>
+ITEMEOF
+
+    if [ -f "$APPCAST_FILE" ]; then
+        # Insert new item after the channel's <language> line
+        awk '
+            /<language>/ { print; getline; while ((getline line < "'"$item_file"'") > 0) print line; }
+            { print }
+        ' "$APPCAST_FILE" > "$APPCAST_FILE.tmp" && mv "$APPCAST_FILE.tmp" "$APPCAST_FILE"
+    else
+        # Create new appcast file
+        cat > "$APPCAST_FILE" << EOF
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+   <channel>
+      <title>ClaudeSettings Updates</title>
+      <link>https://${GITHUB_REPO%%/*}.github.io/${GITHUB_REPO##*/}/appcast.xml</link>
+      <description>Most recent changes with links to updates.</description>
+      <language>en</language>
+$(cat "$item_file")
+   </channel>
+</rss>
+EOF
+    fi
+
+    rm -f "$item_file"
+
+    # Validate the generated XML
+    if command -v xmllint &> /dev/null; then
+        if xmllint --noout "$APPCAST_FILE" 2>&1; then
+            log_success "Appcast XML validated successfully"
+        else
+            log_error "Generated appcast.xml is not valid XML!"
+            cat "$APPCAST_FILE"
+            exit 1
+        fi
+    else
+        log_warning "xmllint not found, skipping XML validation"
+    fi
+
+    log_success "Appcast updated: $APPCAST_FILE"
+}
+
+# Commit and push appcast changes
+commit_appcast() {
+    local version=$1
+
+    if [ ! -f "$APPCAST_FILE" ]; then
+        log_warning "No appcast file to commit"
+        return
+    fi
+
+    log_info "Committing appcast.xml..."
+
+    git -C "$PROJECT_ROOT" add "$APPCAST_FILE"
+
+    # Check if there are changes to commit
+    if git -C "$PROJECT_ROOT" diff --cached --quiet "$APPCAST_FILE"; then
+        log_info "No changes to appcast.xml"
+        return
+    fi
+
+    git -C "$PROJECT_ROOT" commit -m "Update appcast.xml for version $version"
+    log_success "Appcast changes committed"
+}
+
 # Generate release notes using Claude
 generate_release_notes() {
     local version=$1
@@ -407,6 +587,10 @@ main() {
     local dmg_path
     dmg_path=$(create_dmg "$version")
 
+    # Sign DMG for Sparkle auto-updates
+    local sparkle_signature
+    sparkle_signature=$(sign_dmg_for_sparkle "$dmg_path")
+
     # Generate release notes
     local release_notes
     release_notes=$(generate_release_notes "$version")
@@ -425,8 +609,14 @@ main() {
         exit 0
     fi
 
+    # Update appcast.xml with release notes (after user confirms)
+    update_appcast "$version" "$dmg_path" "$sparkle_signature" "$release_notes"
+
     # Create GitHub release
     create_github_release "$version" "$dmg_path" "$release_notes"
+
+    # Commit appcast changes (after release so the DMG URL is valid)
+    commit_appcast "$version"
 
     # Bump version for next release
     bump_version "$version"
@@ -443,7 +633,9 @@ main() {
     echo "Released: ClaudeSettings $version"
     echo ""
     echo "Next steps:"
-    echo "  - Review and push the version bump commit: git push"
+    echo "  - Review and push commits (version bump + appcast): git push"
+    echo "  - Ensure GitHub Pages is enabled for /docs folder"
+    echo "    (Settings > Pages > Source: Deploy from branch, /docs)"
     echo ""
 }
 

@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>SUFeedURL</key>
+	<string>https://gpambrozio.github.io/ClaudeSettings/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>SgIzXu4JuQVHuQFIyVAPsy48BCLzF6nuCTRKUyPi+cc=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
