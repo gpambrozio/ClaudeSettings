@@ -338,44 +338,45 @@ update_appcast() {
     # Convert markdown release notes to HTML for Sparkle
     local html_notes=""
     if [ -n "$release_notes" ]; then
-        # Convert markdown to basic HTML
-        html_notes=$(echo "$release_notes" | sed \
-            -e 's/^## \(.*\)$/<h2>\1<\/h2>/' \
-            -e 's/^### \(.*\)$/<h3>\1<\/h3>/' \
-            -e 's/^- \(.*\)$/<li>\1<\/li>/' \
-            -e 's/\*\*\([^*]*\)\*\*/<strong>\1<\/strong>/g' \
-            -e 's/\*\([^*]*\)\*/<em>\1<\/em>/g' \
-            | awk 'BEGIN{in_list=0} /<li>/{if(!in_list){print "<ul>";in_list=1}} !/<li>/&&in_list{print "</ul>";in_list=0} {print} END{if(in_list)print "</ul>"}')
+        # Escape special XML characters first, then convert markdown to HTML
+        html_notes=$(echo "$release_notes" | \
+            sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' | \
+            sed -e 's/^## \(.*\)$/<h2>\1<\/h2>/' \
+                -e 's/^### \(.*\)$/<h3>\1<\/h3>/' \
+                -e 's/^- \(.*\)$/<li>\1<\/li>/' \
+                -e 's/\*\*\([^*]*\)\*\*/<strong>\1<\/strong>/g' | \
+            awk '
+                BEGIN { in_list=0 }
+                /<li>/ { if (!in_list) { print "<ul>"; in_list=1 } }
+                !/<li>/ && in_list { print "</ul>"; in_list=0 }
+                { print }
+                END { if (in_list) print "</ul>" }
+            ')
     fi
 
-    # Create new item XML with description
-    local new_item="      <item>
+    # Write new item to temp file to avoid shell escaping issues
+    local item_file
+    item_file=$(mktemp)
+    cat > "$item_file" << ITEMEOF
+      <item>
          <title>Version $version</title>
          <sparkle:version>$version</sparkle:version>
          <sparkle:shortVersionString>$version</sparkle:shortVersionString>
          <pubDate>$pub_date</pubDate>
-         <description><![CDATA[$html_notes]]></description>
-         <enclosure url=\"$download_url\"
-                    sparkle:edSignature=\"$signature\"
-                    length=\"$dmg_size\"
-                    type=\"application/octet-stream\"/>
-      </item>"
+         <description><![CDATA[
+$html_notes
+         ]]></description>
+         <enclosure url="$download_url"
+                    sparkle:edSignature="$signature"
+                    length="$dmg_size"
+                    type="application/octet-stream"/>
+      </item>
+ITEMEOF
 
     if [ -f "$APPCAST_FILE" ]; then
-        # Insert new item after <channel> opening (before existing items)
-        # Use awk to insert after the line containing <channel>
-        awk -v item="$new_item" '
-            /<channel>/ {
-                print
-                found_channel = 1
-                next
-            }
-            found_channel && /<title>/ {
-                print
-                print item
-                found_channel = 0
-                next
-            }
+        # Insert new item after the channel's <language> line
+        awk '
+            /<language>/ { print; getline; while ((getline line < "'"$item_file"'") > 0) print line; }
             { print }
         ' "$APPCAST_FILE" > "$APPCAST_FILE.tmp" && mv "$APPCAST_FILE.tmp" "$APPCAST_FILE"
     else
@@ -388,12 +389,13 @@ update_appcast() {
       <link>https://${GITHUB_REPO%%/*}.github.io/${GITHUB_REPO##*/}/appcast.xml</link>
       <description>Most recent changes with links to updates.</description>
       <language>en</language>
-$new_item
+$(cat "$item_file")
    </channel>
 </rss>
 EOF
     fi
 
+    rm -f "$item_file"
     log_success "Appcast updated: $APPCAST_FILE"
 }
 
