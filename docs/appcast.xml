@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+   <channel>
+      <title>ClaudeSettings Updates</title>
+      <link>https://gpambrozio.github.io/ClaudeSettings/appcast.xml</link>
+      <description>Most recent changes with links to updates.</description>
+      <language>en</language>
+      <item>
+         <title>Version 1.2</title>
+         <sparkle:version>1.2</sparkle:version>
+         <sparkle:shortVersionString>1.2</sparkle:shortVersionString>
+         <pubDate>Fri, 28 Nov 2025 11:19:16 -1000</pubDate>
+         <description><![CDATA[
+# ClaudeSettings 1.2 Release Notes
+
+<h2>Features</h2>
+
+<h3>Auto-Update Support</h3>
+ClaudeSettings now checks for and installs updates automatically using GitHub releases. You'll be notified when new versions are available and can update with a single click.
+
+<h3>Add New Settings</h3>
+You can now add new configuration properties directly within the app. The interface uses JSON schema validation to ensure your settings are correctly formatted.
+
+<h3>Hide Global Configuration Properties</h3>
+A new toggle allows you to hide global settings from view, making it easier to focus on project-specific configurations when needed.
+
+<h2>Improvements</h2>
+
+<h3>Improved Installation Package</h3>
+The release distribution now uses `create-dmg` for a more polished installation experience.
+
+<h2>Bug Fixes</h2>
+
+<h3>Fixed Hide Global Settings Toggle</h3>
+Resolved an issue where toggling the "Hide Global Settings" option wouldn't immediately update the view.
+         ]]></description>
+         <enclosure url="https://github.com/gpambrozio/ClaudeSettings/releases/download/v1.2/ClaudeSettings-1.2.dmg"
+                    sparkle:edSignature="KddSdyMn3bXyjk8Ux4MIWD9JA5Fog7W5dWctCpL2C4NN6jUeQ82OWKdSZj+JMVdB2ESPYpXb8v3ZfUd8sLhJDA=="
+                    length="2289654"
+                    type="application/octet-stream"/>
+      </item>
+   </channel>
+</rss>
