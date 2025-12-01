@@ -31,6 +31,12 @@ INFOPLIST_FILE = ClaudeSettings/Info.plist
 CODE_SIGN_ENTITLEMENTS = Config/ClaudeSettings.entitlements
 
 // ==========================================
+// Runtime Search Paths
+// ==========================================
+// Required for loading embedded frameworks like Sparkle
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+
+// ==========================================
 // Debug Symbols Configuration
 // ==========================================
 // Generate dSYM files for crash reporting and App Store symbolication
