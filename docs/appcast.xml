@@ -6,6 +6,30 @@
       <description>Most recent changes with links to updates.</description>
       <language>en</language>
       <item>
+         <title>Version 1.3</title>
+         <sparkle:version>1.3</sparkle:version>
+         <sparkle:shortVersionString>1.3</sparkle:shortVersionString>
+         <pubDate>Mon, 01 Dec 2025 09:42:02 -1000</pubDate>
+         <description><![CDATA[
+# ClaudeSettings 1.3 Release Notes
+
+<h2>Features</h2>
+
+<h3>Automatic Updates</h3>
+ClaudeSettings now includes built-in auto-update functionality. The app will automatically check for new versions and notify you when updates are available, making it easier to stay current with the latest features and improvements.
+
+<h2>Bug Fixes</h2>
+
+<ul>
+<li>Fixed an issue that could occur with release builds</li>
+</ul>
+         ]]></description>
+         <enclosure url="https://github.com/gpambrozio/ClaudeSettings/releases/download/v1.3/ClaudeSettings-1.3.dmg"
+                    sparkle:edSignature="gfdlm21G1vpNTA43T5Q3OmJSRfA1nQM73wceh/u9ODxIWLGzThI2tAqOmO9Qmqez2XsTfLDMTUKjsEA2EdfrAg=="
+                    length="2289743"
+                    type="application/octet-stream"/>
+      </item>
+      <item>
          <title>Version 1.2</title>
          <sparkle:version>1.2</sparkle:version>
          <sparkle:shortVersionString>1.2</sparkle:shortVersionString>
