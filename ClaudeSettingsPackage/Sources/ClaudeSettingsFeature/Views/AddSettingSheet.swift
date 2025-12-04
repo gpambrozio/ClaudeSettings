@@ -9,7 +9,7 @@ struct AddSettingSheet: View {
 
     @State private var selectedCategory: SettingCategory?
     @State private var selectedSetting: SettingDocumentation?
-    @State private var selectedFileType: SettingsFileType = .globalSettings
+    @State private var selectedFileType: SettingsFileType = .projectLocal
     @State private var currentValue: SettingValue = .null
     @State private var validationError: String?
     @State private var isSaving = false
@@ -161,15 +161,11 @@ struct AddSettingSheet: View {
         .buttonStyle(.plain)
     }
 
-    /// Filter settings to only show those not already present in any settings file
+    /// Filter settings to only show non-deprecated settings
     private func availableSettings(in category: SettingCategory) -> [SettingDocumentation] {
-        let existingKeys = Set(viewModel.settingItems.map(\.key))
-        return category.settings.filter { setting in
-            // Don't show deprecated settings
-            if setting.deprecated == true { return false }
-            // Don't show settings that already exist
-            if existingKeys.contains(setting.key) { return false }
-            return true
+        category.settings.filter { setting in
+            // Only filter out deprecated settings
+            setting.deprecated != true
         }
     }
 
