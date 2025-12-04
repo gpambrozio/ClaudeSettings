@@ -84,9 +84,46 @@ struct SettingsActionHelpersTests {
     }
 
     @MainActor
-    @Test("availableFileTypes includes project files when project settings exist")
+    @Test("availableFileTypes includes project files when viewing a project")
     func availableFileTypesWithProject() {
+        let project = ClaudeProject(
+            name: "Test Project",
+            path: URL(fileURLWithPath: "/test/project"),
+            claudeDirectory: URL(fileURLWithPath: "/test/project/.claude")
+        )
+        let viewModel = SettingsViewModel(project: project)
+
+        let available = SettingsActionHelpers.availableFileTypes(for: viewModel)
+
+        #expect(available.contains(.globalSettings))
+        #expect(available.contains(.globalLocal))
+        #expect(available.contains(.projectSettings))
+        #expect(available.contains(.projectLocal))
+    }
+
+    @MainActor
+    @Test("availableFileTypes includes project files even with no project settings")
+    func availableFileTypesWithProjectNoSettings() {
+        let project = ClaudeProject(
+            name: "Test Project",
+            path: URL(fileURLWithPath: "/test/project"),
+            claudeDirectory: URL(fileURLWithPath: "/test/project/.claude")
+        )
+        let viewModel = SettingsViewModel(project: project)
+        viewModel.settingItems = [] // No settings at all
+
+        let available = SettingsActionHelpers.availableFileTypes(for: viewModel)
+
+        // Project files should still be available for adding new settings
+        #expect(available.contains(.projectSettings))
+        #expect(available.contains(.projectLocal))
+    }
+
+    @MainActor
+    @Test("availableFileTypes excludes project files when project is nil despite project-sourced data")
+    func availableFileTypesNoProjectWithProjectData() {
         let viewModel = SettingsViewModel(project: nil)
+        // Even if we somehow have project-sourced settings, project files should not be available
         viewModel.settingItems = [
             SettingItem(
                 key: "test.setting",
@@ -100,8 +137,8 @@ struct SettingsActionHelpersTests {
 
         #expect(available.contains(.globalSettings))
         #expect(available.contains(.globalLocal))
-        #expect(available.contains(.projectSettings))
-        #expect(available.contains(.projectLocal))
+        #expect(!available.contains(.projectSettings))
+        #expect(!available.contains(.projectLocal))
     }
 
     @MainActor
