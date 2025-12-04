@@ -1205,10 +1205,37 @@ final public class SettingsViewModel {
 
     /// Set a nested value in a dictionary using dot notation
     /// - Throws: SettingsError.typeMismatch if an existing value is not an object when we need to traverse through it
+    /// - Note: For objects, new keys are merged into existing objects. For arrays, new items are appended.
     private func setNestedValue(_ dict: inout [String: SettingValue], for key: String, value: SettingValue) throws {
         let components = key.split(separator: ".")
         if components.count == 1 {
-            dict[String(components[0])] = value
+            let simpleKey = String(components[0])
+
+            // Check for merge scenarios when an existing value exists
+            if let existingValue = dict[simpleKey] {
+                switch (existingValue, value) {
+                case (.object(let existingDict), .object(let newDict)):
+                    // Merge dictionaries: new keys override existing keys
+                    var merged = existingDict
+                    for (newKey, newVal) in newDict {
+                        merged[newKey] = newVal
+                    }
+                    dict[simpleKey] = .object(merged)
+                    return
+
+                case (.array(let existingArray), .array(let newArray)):
+                    // Append new array items to existing array
+                    dict[simpleKey] = .array(existingArray + newArray)
+                    return
+
+                default:
+                    // For other types or type mismatches, replace
+                    break
+                }
+            }
+
+            // Default: simple assignment (new key or replacement of non-mergeable types)
+            dict[simpleKey] = value
         } else {
             let firstKey = String(components[0])
             let remainingKey = components.dropFirst().joined(separator: ".")
