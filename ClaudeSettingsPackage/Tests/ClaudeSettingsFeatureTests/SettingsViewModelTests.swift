@@ -1132,6 +1132,242 @@ struct SettingsViewModelFileOperationsTests {
         #expect(updatedLocal.content["maxTokens"] == .int(3_000), "Local should have new value")
     }
 
+    // MARK: - Dictionary Merge and Array Append Tests
+
+    /// Test that adding a new key to an existing dictionary merges instead of replacing
+    @Test("Adding to existing dictionary merges keys")
+    func addingToDictionaryMergesKeys() async throws {
+        // Given: A settings file with an existing dictionary (mcpServers with existing servers)
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "mcpServers": .object([
+                    "server1": .object(["command": .string("cmd1"), "args": .array([.string("arg1")])]),
+                    "server2": .object(["command": .string("cmd2")]),
+                ]),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Adding a new server to mcpServers (as a whole object with a new key)
+        let newServers: SettingValue = .object([
+            "server3": .object(["command": .string("cmd3"), "args": .array([.string("arg3")])]),
+        ])
+        try await viewModel.updateSetting(key: "mcpServers", value: newServers, in: .globalSettings)
+
+        // Then: The new server should be merged with existing servers (not replace them)
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        guard case let .object(mcpServers) = updatedFile.content["mcpServers"] else {
+            Issue.record("mcpServers should be an object")
+            return
+        }
+
+        // All three servers should exist
+        #expect(mcpServers["server1"] != nil, "server1 should still exist after merge")
+        #expect(mcpServers["server2"] != nil, "server2 should still exist after merge")
+        #expect(mcpServers["server3"] != nil, "server3 should be added by merge")
+
+        // Verify server1's content is preserved
+        if case let .object(server1) = mcpServers["server1"] {
+            #expect(server1["command"] == .string("cmd1"), "server1 command should be preserved")
+        } else {
+            Issue.record("server1 should be an object")
+        }
+    }
+
+    /// Test that adding to an existing dictionary can override specific keys
+    @Test("Adding to dictionary overrides conflicting keys")
+    func addingToDictionaryOverridesConflictingKeys() async throws {
+        // Given: A settings file with an existing dictionary
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "mcpServers": .object([
+                    "server1": .object(["command": .string("old-cmd")]),
+                    "server2": .object(["command": .string("cmd2")]),
+                ]),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Adding an object that has a conflicting key (server1) and a new key (server3)
+        let newServers: SettingValue = .object([
+            "server1": .object(["command": .string("new-cmd"), "extraArg": .bool(true)]),
+            "server3": .object(["command": .string("cmd3")]),
+        ])
+        try await viewModel.updateSetting(key: "mcpServers", value: newServers, in: .globalSettings)
+
+        // Then: server1 should be overridden, server2 preserved, server3 added
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        guard case let .object(mcpServers) = updatedFile.content["mcpServers"] else {
+            Issue.record("mcpServers should be an object")
+            return
+        }
+
+        #expect(mcpServers.count == 3, "Should have 3 servers total")
+
+        // server1 should be completely replaced with new value
+        if case let .object(server1) = mcpServers["server1"] {
+            #expect(server1["command"] == .string("new-cmd"), "server1 command should be updated")
+            #expect(server1["extraArg"] == .bool(true), "server1 should have new extraArg")
+        } else {
+            Issue.record("server1 should be an object")
+        }
+
+        // server2 should be preserved
+        #expect(mcpServers["server2"] != nil, "server2 should still exist")
+
+        // server3 should be added
+        #expect(mcpServers["server3"] != nil, "server3 should be added")
+    }
+
+    /// Test that adding to an existing array appends instead of replacing
+    @Test("Adding to existing array appends items")
+    func addingToArrayAppendsItems() async throws {
+        // Given: A settings file with an existing array
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "allowedTools": .array([.string("Read"), .string("Write")]),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Adding new items to the array
+        let newTools: SettingValue = .array([.string("Bash"), .string("Edit")])
+        try await viewModel.updateSetting(key: "allowedTools", value: newTools, in: .globalSettings)
+
+        // Then: The new items should be appended to the existing array
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        guard case let .array(allowedTools) = updatedFile.content["allowedTools"] else {
+            Issue.record("allowedTools should be an array")
+            return
+        }
+
+        // Should have all 4 items: original 2 + new 2
+        #expect(allowedTools.count == 4, "Should have 4 items total (2 original + 2 new)")
+        #expect(allowedTools[0] == .string("Read"), "First item should be preserved")
+        #expect(allowedTools[1] == .string("Write"), "Second item should be preserved")
+        #expect(allowedTools[2] == .string("Bash"), "Third item should be appended")
+        #expect(allowedTools[3] == .string("Edit"), "Fourth item should be appended")
+    }
+
+    /// Test that type mismatches result in replacement (not merge)
+    @Test("Type mismatch replaces instead of merging")
+    func typeMismatchReplaces() async throws {
+        // Given: A settings file where a key has a string value
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "setting": .string("old-value"),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Setting an object value where a string existed
+        let newValue: SettingValue = .object(["key": .string("value")])
+        try await viewModel.updateSetting(key: "setting", value: newValue, in: .globalSettings)
+
+        // Then: The value should be replaced (since types don't match)
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        guard case let .object(settingDict) = updatedFile.content["setting"] else {
+            Issue.record("setting should now be an object")
+            return
+        }
+
+        #expect(settingDict["key"] == .string("value"), "Should have the new object value")
+    }
+
+    /// Test that adding an empty dictionary preserves existing content
+    @Test("Adding empty dictionary preserves existing")
+    func addingEmptyDictionaryPreservesExisting() async throws {
+        // Given: A settings file with an existing dictionary
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "mcpServers": .object([
+                    "server1": .object(["command": .string("cmd1")]),
+                ]),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Adding an empty dictionary
+        try await viewModel.updateSetting(key: "mcpServers", value: .object([:]), in: .globalSettings)
+
+        // Then: The existing content should be preserved (empty merge = no change)
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        guard case let .object(mcpServers) = updatedFile.content["mcpServers"] else {
+            Issue.record("mcpServers should be an object")
+            return
+        }
+
+        #expect(mcpServers["server1"] != nil, "server1 should still exist")
+    }
+
+    /// Test that adding an empty array preserves existing content
+    @Test("Adding empty array preserves existing")
+    func addingEmptyArrayPreservesExisting() async throws {
+        // Given: A settings file with an existing array
+        let (url, file) = try await createTempSettingsFile(
+            content: [
+                "allowedTools": .array([.string("Read"), .string("Write")]),
+            ],
+            type: .globalSettings
+        )
+        defer { cleanup(url) }
+
+        let viewModel = SettingsViewModel()
+        viewModel.settingsFiles = [file]
+        viewModel.settingItems = viewModel.computeSettingItems(from: [file])
+
+        // When: Adding an empty array
+        try await viewModel.updateSetting(key: "allowedTools", value: .array([]), in: .globalSettings)
+
+        // Then: The existing content should be preserved
+        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+
+        guard case let .array(allowedTools) = updatedFile.content["allowedTools"] else {
+            Issue.record("allowedTools should be an array")
+            return
+        }
+
+        #expect(allowedTools.count == 2, "Should still have 2 items")
+        #expect(allowedTools[0] == .string("Read"), "First item should be preserved")
+        #expect(allowedTools[1] == .string("Write"), "Second item should be preserved")
+    }
+
     /// Test that drag and drop to existing file merges settings instead of replacing
     @Test("Drag and drop merges with existing settings")
     func dragAndDropMergesSettings() async throws {
