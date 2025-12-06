@@ -6,6 +6,39 @@
       <description>Most recent changes with links to updates.</description>
       <language>en</language>
       <item>
+         <title>Version 1.4</title>
+         <sparkle:version>1.4</sparkle:version>
+         <sparkle:shortVersionString>1.4</sparkle:shortVersionString>
+         <pubDate>Sat, 06 Dec 2025 12:12:17 -1000</pubDate>
+         <description><![CDATA[
+# ClaudeSettings 1.4 Release Notes
+
+<h2>Features</h2>
+
+<ul>
+<li><strong>Expanded Settings Interface</strong>: The "Add Setting" interface now displays all available Claude Code settings, making it easier to discover and configure options you may not have known existed.</li>
+</ul>
+
+<ul>
+<li><strong>Project-Local Default</strong>: New settings now default to project-local scope, keeping your global configuration clean and making per-project customization the natural choice.</li>
+</ul>
+
+<h2>Bug Fixes</h2>
+
+<ul>
+<li><strong>Fixed Dictionary Merge</strong>: Resolved an issue where dictionary-type settings weren't being merged correctly when adding new values.</li>
+</ul>
+
+<ul>
+<li><strong>Fixed Test Reliability</strong>: Corrected test assertions to properly reflect the expected behavior of file type availability based on the current view context.</li>
+</ul>
+         ]]></description>
+         <enclosure url="https://github.com/gpambrozio/ClaudeSettings/releases/download/v1.4/ClaudeSettings-1.4.dmg"
+                    sparkle:edSignature="0wEYyA6PrOJOp4N81uYgE6y8evYXpIXi5eKiqlr0BI0bWhTFYbtIUP2ZQE+kBAkay7NjhvfnZVM/l6d68To3BQ=="
+                    length="2290280"
+                    type="application/octet-stream"/>
+      </item>
+      <item>
          <title>Version 1.3</title>
          <sparkle:version>1.3</sparkle:version>
          <sparkle:shortVersionString>1.3</sparkle:shortVersionString>
