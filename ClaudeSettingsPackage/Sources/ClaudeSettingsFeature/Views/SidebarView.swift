@@ -20,40 +20,80 @@ public enum SidebarSelection: Hashable, Identifiable {
 public struct SidebarView: View {
     @Bindable var viewModel: ProjectListViewModel
     @Binding var selection: SidebarSelection?
+    let searchText: String
     @State private var droppedSetting: DraggableSetting?
     @State private var targetProject: ClaudeProject?
     @State private var showFileTypeDialog = false
     @State private var showErrorAlert = false
     @State private var errorMessage: String?
 
+    /// Whether we're actively searching (non-empty search text)
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Normalized search text for matching
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// Projects filtered by search text (shows projects with matching project-specific settings)
+    private var filteredProjects: [ClaudeProject] {
+        guard isSearching else {
+            return viewModel.projects
+        }
+
+        return viewModel.projects.filter { project in
+            projectHasMatchingSettings(project, searchText: normalizedSearchText)
+        }
+    }
+
+    /// Check if global settings should be shown based on search text
+    private var shouldShowGlobalSettings: Bool {
+        guard isSearching else {
+            return true
+        }
+        return globalSettingsMatchSearch(searchText: normalizedSearchText)
+    }
+
     public var body: some View {
         List(selection: $selection) {
-            // Global Settings Section
-            Section("Global Settings") {
-                NavigationLink(value: SidebarSelection.globalSettings) {
-                    Label {
-                        Text("Global Configuration")
-                    } icon: {
-                        Symbols.globe.image
-                            .foregroundStyle(.blue)
+            // Global Settings Section (hide if searching and no match)
+            if shouldShowGlobalSettings {
+                Section("Global Settings") {
+                    NavigationLink(value: SidebarSelection.globalSettings) {
+                        Label {
+                            Text("Global Configuration")
+                        } icon: {
+                            Symbols.globe.image
+                                .foregroundStyle(.blue)
+                        }
                     }
                 }
             }
 
             // Projects Section
             Section {
-                if viewModel.projects.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Projects", symbol: .folder)
-                    } description: {
-                        Text("No Claude projects found")
-                    } actions: {
-                        Button("Scan for Projects") {
-                            viewModel.scanProjects()
+                if filteredProjects.isEmpty {
+                    if isSearching {
+                        ContentUnavailableView {
+                            Label("No Matching Projects", symbol: .magnifyingglass)
+                        } description: {
+                            Text("No projects have settings matching \"\(searchText)\"")
+                        }
+                    } else if viewModel.projects.isEmpty {
+                        ContentUnavailableView {
+                            Label("No Projects", symbol: .folder)
+                        } description: {
+                            Text("No Claude projects found")
+                        } actions: {
+                            Button("Scan for Projects") {
+                                viewModel.scanProjects()
+                            }
                         }
                     }
                 } else {
-                    ForEach(viewModel.projects) { project in
+                    ForEach(filteredProjects) { project in
                         ProjectRow(
                             project: project,
                             selection: $selection,
@@ -65,7 +105,11 @@ public struct SidebarView: View {
                 }
             } header: {
                 HStack {
-                    Text("Projects (\(viewModel.projects.count))")
+                    if isSearching {
+                        Text("Projects (\(filteredProjects.count) of \(viewModel.projects.count))")
+                    } else {
+                        Text("Projects (\(viewModel.projects.count))")
+                    }
                     Spacer()
                     Button(action: { viewModel.refresh() }) {
                         Symbols.plusCircle.image
@@ -154,9 +198,61 @@ public struct SidebarView: View {
         }
     }
 
-    public init(viewModel: ProjectListViewModel, selection: Binding<SidebarSelection?>) {
+    /// Check if a project has project-specific settings (not global) matching the search text
+    private func projectHasMatchingSettings(_ project: ClaudeProject, searchText: String) -> Bool {
+        // Check project settings file (.claude/settings.json)
+        let projectSettingsPath = project.claudeDirectory.appendingPathComponent("settings.json")
+        if fileContainsSearchText(at: projectSettingsPath, searchText: searchText) {
+            return true
+        }
+
+        // Check local project settings file (.claude/settings.local.json)
+        let projectLocalPath = project.claudeDirectory.appendingPathComponent("settings.local.json")
+        if fileContainsSearchText(at: projectLocalPath, searchText: searchText) {
+            return true
+        }
+
+        return false
+    }
+
+    /// Check if global settings contain the search text
+    private func globalSettingsMatchSearch(searchText: String) -> Bool {
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+        let claudeDir = homeDirectory.appendingPathComponent(".claude")
+
+        // Check global settings file (~/.claude/settings.json)
+        let globalSettingsPath = claudeDir.appendingPathComponent("settings.json")
+        if fileContainsSearchText(at: globalSettingsPath, searchText: searchText) {
+            return true
+        }
+
+        // Check local global settings file (~/.claude/settings.local.json)
+        let globalLocalPath = claudeDir.appendingPathComponent("settings.local.json")
+        if fileContainsSearchText(at: globalLocalPath, searchText: searchText) {
+            return true
+        }
+
+        return false
+    }
+
+    /// Check if a file at the given path contains the search text (case-insensitive)
+    private func fileContainsSearchText(at url: URL, searchText: String) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return false
+        }
+
+        do {
+            let content = try String(contentsOf: url, encoding: .utf8).lowercased()
+            return content.contains(searchText)
+        } catch {
+            return false
+        }
+    }
+
+    public init(viewModel: ProjectListViewModel, selection: Binding<SidebarSelection?>, searchText: String = "") {
         self.viewModel = viewModel
         self._selection = selection
+        self.searchText = searchText
     }
 }
 

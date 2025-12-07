@@ -170,4 +170,26 @@ public enum SettingValue: Codable, Sendable, Hashable {
         case .null: "null"
         }
     }
+
+    /// Get a string representation suitable for searching
+    /// Includes all string content from arrays and objects recursively
+    public var searchableString: String {
+        switch self {
+        case let .string(value):
+            return value
+        case let .int(value):
+            return "\(value)"
+        case let .double(value):
+            return "\(value)"
+        case let .bool(value):
+            return value ? "true" : "false"
+        case let .array(values):
+            return values.map { $0.searchableString }.joined(separator: " ")
+        case let .object(dict):
+            let keyValues = dict.flatMap { [$0.key, $0.value.searchableString] }
+            return keyValues.joined(separator: " ")
+        case .null:
+            return "null"
+        }
+    }
 }

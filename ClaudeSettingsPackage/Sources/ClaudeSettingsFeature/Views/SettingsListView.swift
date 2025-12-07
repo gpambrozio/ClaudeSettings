@@ -4,6 +4,7 @@ import SwiftUI
 public struct SettingsListView: View {
     let settingsViewModel: SettingsViewModel
     @Binding var selectedKey: String?
+    @Binding var searchText: String
     @ObservedObject var documentationLoader: DocumentationLoader
     @State private var expandedNodes: Set<String> = []
     @State private var showSaveError = false
@@ -12,9 +13,10 @@ public struct SettingsListView: View {
     @State private var upcomingFeatureName = ""
     @State private var showAddSettingSheet = false
 
-    public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
+    public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>, searchText: Binding<String>, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
         self.settingsViewModel = settingsViewModel
         self._selectedKey = selectedKey
+        self._searchText = searchText
         self.documentationLoader = documentationLoader
     }
 
@@ -34,11 +36,19 @@ public struct SettingsListView: View {
                 } description: {
                     Text("No settings files found for this configuration")
                 }
-            } else if settingsViewModel.filteredHierarchicalSettings.isEmpty {
-                ContentUnavailableView {
-                    Label("No Project Settings", symbol: .eyeSlash)
-                } description: {
-                    Text("All settings are from global configuration. Toggle \"Hide Global\" to show them.")
+            } else if searchFilteredSettings.isEmpty {
+                if !searchText.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Results", symbol: .magnifyingglass)
+                    } description: {
+                        Text("No settings match \"\(searchText)\"")
+                    }
+                } else {
+                    ContentUnavailableView {
+                        Label("No Project Settings", symbol: .eyeSlash)
+                    } description: {
+                        Text("All settings are from global configuration. Toggle \"Hide Global\" to show them.")
+                    }
                 }
             } else {
                 settingsContent
@@ -156,7 +166,7 @@ public struct SettingsListView: View {
 
             // Settings Section (Hierarchical)
             Section {
-                ForEach(settingsViewModel.filteredHierarchicalSettings) { node in
+                ForEach(searchFilteredSettings) { node in
                     HierarchicalSettingNodeView(
                         node: node,
                         selectedKey: $selectedKey,
@@ -184,7 +194,68 @@ public struct SettingsListView: View {
                 }
             }
         }
-        .searchable(text: .constant(""), prompt: "Search settings...")
+        .searchable(text: $searchText, prompt: "Search settings...")
+    }
+
+    /// Settings filtered by search text
+    /// When searching, ignores hideGlobalSettings and shows all matching settings
+    private var searchFilteredSettings: [HierarchicalSettingNode] {
+        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // If no search text, use the normal filtered settings (respects hideGlobalSettings)
+        guard !trimmedSearch.isEmpty else {
+            return settingsViewModel.filteredHierarchicalSettings
+        }
+
+        // When searching, filter all hierarchical settings (ignores hideGlobalSettings toggle)
+        // to show both project and global settings that match
+        return filterNodesBySearchText(settingsViewModel.hierarchicalSettings, searchText: trimmedSearch)
+    }
+
+    /// Recursively filter hierarchical nodes by search text
+    private func filterNodesBySearchText(_ nodes: [HierarchicalSettingNode], searchText: String) -> [HierarchicalSettingNode] {
+        nodes.compactMap { node in
+            if node.isParent {
+                // For parent nodes, recursively filter children
+                let filteredChildren = filterNodesBySearchText(node.children, searchText: searchText)
+
+                // Keep parent if its key matches or any children match
+                if node.key.lowercased().contains(searchText) || !filteredChildren.isEmpty {
+                    return HierarchicalSettingNode(
+                        id: node.id,
+                        key: node.key,
+                        displayName: node.displayName,
+                        nodeType: .parent(childCount: filteredChildren.count),
+                        children: filteredChildren
+                    )
+                }
+                return nil
+            } else {
+                // For leaf nodes, check if key or value contains search text
+                if nodeMatchesSearch(node, searchText: searchText) {
+                    return node
+                }
+                return nil
+            }
+        }
+    }
+
+    /// Check if a node matches the search text (key or value)
+    private func nodeMatchesSearch(_ node: HierarchicalSettingNode, searchText: String) -> Bool {
+        // Check key
+        if node.key.lowercased().contains(searchText) {
+            return true
+        }
+
+        // Check value if it's a leaf node
+        if let item = node.settingItem {
+            let valueString = item.value.searchableString.lowercased()
+            if valueString.contains(searchText) {
+                return true
+            }
+        }
+
+        return false
     }
 
     /// Label showing the count of settings, accounting for filtering
@@ -192,7 +263,7 @@ public struct SettingsListView: View {
         let total = settingsViewModel.settingItems.count
         let filtered = countFilteredSettings()
 
-        if settingsViewModel.hideGlobalSettings && settingsViewModel.isProjectView && filtered < total {
+        if filtered < total {
             return "\(filtered) of \(total) settings"
         } else {
             return "\(total) settings"
@@ -210,7 +281,7 @@ public struct SettingsListView: View {
                 }
             }
         }
-        return countLeaves(settingsViewModel.filteredHierarchicalSettings)
+        return countLeaves(searchFilteredSettings)
     }
 }
 
@@ -507,6 +578,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - With Data") {
     @Previewable @State var selectedKey: String?
+    @Previewable @State var searchText: String = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = [
         SettingItem(
@@ -582,29 +654,31 @@ struct SettingItemRow: View {
     ]
 
     return NavigationStack {
-        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey)
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: $searchText)
     }
     .frame(width: 600, height: 800)
 }
 
 #Preview("Settings List - Empty") {
     @Previewable @State var selectedKey: String?
+    @Previewable @State var searchText: String = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = []
 
     return NavigationStack {
-        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey)
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: $searchText)
     }
     .frame(width: 600, height: 800)
 }
 
 #Preview("Settings List - Loading") {
     @Previewable @State var selectedKey: String?
+    @Previewable @State var searchText: String = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.isLoading = true
 
     return NavigationStack {
-        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey)
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: $searchText)
     }
     .frame(width: 600, height: 800)
 }
