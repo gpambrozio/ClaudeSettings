@@ -7,18 +7,24 @@ public struct ContentView: View {
     @State private var settingsViewModel: SettingsViewModel?
     @StateObject private var documentationLoader = DocumentationLoader.shared
     @State private var selectionChangeTask: Task<Void, Never>?
+    @State private var searchText = ""
+    @State private var debouncedSearchText = ""
+    @State private var searchDebounceTask: Task<Void, Never>?
 
     public var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
             // Sidebar: Global Settings + Projects
-            SidebarView(viewModel: projectListViewModel, selection: $sidebarSelection)
+            SidebarView(viewModel: projectListViewModel, selection: $sidebarSelection, searchText: debouncedSearchText)
         } content: {
             // Content Area: Settings List
-            if let viewModel = settingsViewModel {
-                SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedSettingKey)
-            } else {
-                emptyContentState
+            Group {
+                if let viewModel = settingsViewModel {
+                    SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedSettingKey, searchText: debouncedSearchText)
+                } else {
+                    emptyContentState
+                }
             }
+            .searchable(text: $searchText, prompt: "Search settings...")
         } detail: {
             // Inspector: Details & Actions
             InspectorView(
@@ -38,6 +44,23 @@ public struct ContentView: View {
             // onChange requires synchronous callback, so wrap async operation in Task
             selectionChangeTask = Task {
                 await handleSelectionChange(newSelection)
+            }
+        }
+        .onChange(of: searchText) { _, newValue in
+            // Cancel any pending debounce
+            searchDebounceTask?.cancel()
+
+            // Clear immediately when search is emptied
+            guard !newValue.isEmpty else {
+                debouncedSearchText = ""
+                return
+            }
+
+            // Debounce search updates to avoid excessive filtering during typing
+            searchDebounceTask = Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                debouncedSearchText = newValue
             }
         }
     }
