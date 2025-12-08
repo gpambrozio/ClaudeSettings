@@ -197,7 +197,7 @@ public struct SettingsListView: View {
     }
 
     /// Settings filtered by search text
-    /// When searching, ignores hideGlobalSettings and shows all matching settings
+    /// Respects hideGlobalSettings toggle while also filtering by search text
     private var searchFilteredSettings: [HierarchicalSettingNode] {
         let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
@@ -206,9 +206,8 @@ public struct SettingsListView: View {
             return settingsViewModel.filteredHierarchicalSettings
         }
 
-        // When searching, filter all hierarchical settings (ignores hideGlobalSettings toggle)
-        // to show both project and global settings that match
-        return filterNodesBySearchText(settingsViewModel.hierarchicalSettings, searchText: trimmedSearch)
+        // When searching, apply search filter on top of hideGlobalSettings filtering
+        return filterNodesBySearchText(settingsViewModel.filteredHierarchicalSettings, searchText: trimmedSearch)
     }
 
     /// Recursively filter hierarchical nodes by search text
