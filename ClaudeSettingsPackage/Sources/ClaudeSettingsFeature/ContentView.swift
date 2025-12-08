@@ -7,7 +7,7 @@ public struct ContentView: View {
     @State private var settingsViewModel: SettingsViewModel?
     @StateObject private var documentationLoader = DocumentationLoader.shared
     @State private var selectionChangeTask: Task<Void, Never>?
-    @State private var searchText: String = ""
+    @State private var searchText = ""
 
     public var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -15,11 +15,14 @@ public struct ContentView: View {
             SidebarView(viewModel: projectListViewModel, selection: $sidebarSelection, searchText: searchText)
         } content: {
             // Content Area: Settings List
-            if let viewModel = settingsViewModel {
-                SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedSettingKey, searchText: $searchText)
-            } else {
-                emptyContentState
+            Group {
+                if let viewModel = settingsViewModel {
+                    SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedSettingKey, searchText: $searchText)
+                } else {
+                    emptyContentState
+                }
             }
+            .searchable(text: $searchText, prompt: "Search settings...")
         } detail: {
             // Inspector: Details & Actions
             InspectorView(

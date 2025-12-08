@@ -194,7 +194,6 @@ public struct SettingsListView: View {
                 }
             }
         }
-        .searchable(text: $searchText, prompt: "Search settings...")
     }
 
     /// Settings filtered by search text
@@ -578,7 +577,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - With Data") {
     @Previewable @State var selectedKey: String?
-    @Previewable @State var searchText: String = ""
+    @Previewable @State var searchText = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = [
         SettingItem(
@@ -661,7 +660,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - Empty") {
     @Previewable @State var selectedKey: String?
-    @Previewable @State var searchText: String = ""
+    @Previewable @State var searchText = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = []
 
@@ -673,7 +672,7 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - Loading") {
     @Previewable @State var selectedKey: String?
-    @Previewable @State var searchText: String = ""
+    @Previewable @State var searchText = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.isLoading = true
 
