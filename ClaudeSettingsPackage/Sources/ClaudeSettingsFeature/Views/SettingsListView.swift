@@ -4,7 +4,7 @@ import SwiftUI
 public struct SettingsListView: View {
     let settingsViewModel: SettingsViewModel
     @Binding var selectedKey: String?
-    @Binding var searchText: String
+    let searchText: String
     @ObservedObject var documentationLoader: DocumentationLoader
     @State private var expandedNodes: Set<String> = []
     @State private var showSaveError = false
@@ -13,10 +13,10 @@ public struct SettingsListView: View {
     @State private var upcomingFeatureName = ""
     @State private var showAddSettingSheet = false
 
-    public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>, searchText: Binding<String>, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
+    public init(settingsViewModel: SettingsViewModel, selectedKey: Binding<String?>, searchText: String, documentationLoader: DocumentationLoader = DocumentationLoader.shared) {
         self.settingsViewModel = settingsViewModel
         self._selectedKey = selectedKey
-        self._searchText = searchText
+        self.searchText = searchText
         self.documentationLoader = documentationLoader
     }
 
@@ -576,7 +576,6 @@ struct SettingItemRow: View {
 
 #Preview("Settings List - With Data") {
     @Previewable @State var selectedKey: String?
-    @Previewable @State var searchText = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = [
         SettingItem(
@@ -652,31 +651,29 @@ struct SettingItemRow: View {
     ]
 
     return NavigationStack {
-        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: $searchText)
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: "")
     }
     .frame(width: 600, height: 800)
 }
 
 #Preview("Settings List - Empty") {
     @Previewable @State var selectedKey: String?
-    @Previewable @State var searchText = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.settingItems = []
 
     return NavigationStack {
-        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: $searchText)
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: "")
     }
     .frame(width: 600, height: 800)
 }
 
 #Preview("Settings List - Loading") {
     @Previewable @State var selectedKey: String?
-    @Previewable @State var searchText = ""
     @Previewable @State var viewModel = SettingsViewModel(project: nil)
     viewModel.isLoading = true
 
     return NavigationStack {
-        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: $searchText)
+        SettingsListView(settingsViewModel: viewModel, selectedKey: $selectedKey, searchText: "")
     }
     .frame(width: 600, height: 800)
 }
