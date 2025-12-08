@@ -621,6 +621,8 @@ main() {
     # Bump version for next release
     bump_version "$version"
 
+    git -C "$PROJECT_ROOT" push
+
     # Clean up build folder
     log_info "Cleaning up build folder..."
     rm -rf "$BUILD_DIR"
@@ -633,7 +635,6 @@ main() {
     echo "Released: ClaudeSettings $version"
     echo ""
     echo "Next steps:"
-    echo "  - Review and push commits (version bump + appcast): git push"
     echo "  - Ensure GitHub Pages is enabled for /docs folder"
     echo "    (Settings > Pages > Source: Deploy from branch, /docs)"
     echo ""
