@@ -16,20 +16,37 @@ public enum SidebarSelection: Hashable, Identifiable {
     }
 }
 
+/// Represents a pending drag-and-drop operation
+struct DropOperation {
+    let setting: DraggableSetting
+    let target: DropTarget
+
+    enum DropTarget {
+        case project(ClaudeProject)
+        case global
+
+        var displayName: String {
+            switch self {
+            case let .project(project):
+                return project.name
+            case .global:
+                return "Global Configuration"
+            }
+        }
+    }
+}
+
 /// Sidebar view showing global settings and project list
 public struct SidebarView: View {
     @Bindable var viewModel: ProjectListViewModel
     @Binding var selection: SidebarSelection?
     let searchText: String
-    @State private var droppedSetting: DraggableSetting?
-    @State private var targetProject: ClaudeProject?
+
+    // Unified drop state
+    @State private var pendingDrop: DropOperation?
     @State private var showFileTypeDialog = false
     @State private var showErrorAlert = false
     @State private var errorMessage: String?
-
-    // Global config drop state
-    @State private var droppedGlobalSetting: DraggableSetting?
-    @State private var showGlobalFileTypeDialog = false
 
     /// Whether we're actively searching (non-empty search text)
     private var isSearching: Bool {
@@ -66,8 +83,8 @@ public struct SidebarView: View {
             if shouldShowGlobalSettings {
                 Section("Global Settings") {
                     GlobalConfigRow(
-                        droppedSetting: $droppedGlobalSetting,
-                        showFileTypeDialog: $showGlobalFileTypeDialog
+                        pendingDrop: $pendingDrop,
+                        showFileTypeDialog: $showFileTypeDialog
                     )
                 }
             }
@@ -97,8 +114,7 @@ public struct SidebarView: View {
                         ProjectRow(
                             project: project,
                             selection: $selection,
-                            droppedSetting: $droppedSetting,
-                            targetProject: $targetProject,
+                            pendingDrop: $pendingDrop,
                             showFileTypeDialog: $showFileTypeDialog
                         )
                     }
@@ -133,20 +149,31 @@ public struct SidebarView: View {
                 viewModel.scanProjects()
             }
         }
-        .alert(alertTitle, isPresented: $showFileTypeDialog) {
-            Button("Project File (.claude/settings.json)") {
-                copySettingToProject(fileType: .projectSettings)
-            }
-            Button("Local File (.claude/settings.local.json)") {
-                copySettingToProject(fileType: .projectLocal)
+        .alert(dropAlertTitle, isPresented: $showFileTypeDialog) {
+            if let drop = pendingDrop {
+                switch drop.target {
+                case .project:
+                    Button("Project File (.claude/settings.json)") {
+                        performCopy(fileType: .projectSettings)
+                    }
+                    Button("Local File (.claude/settings.local.json)") {
+                        performCopy(fileType: .projectLocal)
+                    }
+                case .global:
+                    Button("Global File (~/.claude/settings.json)") {
+                        performCopy(fileType: .globalSettings)
+                    }
+                    Button("Local File (~/.claude/settings.local.json)") {
+                        performCopy(fileType: .globalLocal)
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {
-                droppedSetting = nil
-                targetProject = nil
+                pendingDrop = nil
             }
         } message: {
-            if let setting = droppedSetting, let project = targetProject {
-                Text(alertMessage(setting: setting, project: project))
+            if let drop = pendingDrop {
+                Text(dropAlertMessage(for: drop))
             }
         }
         .alert("Copy Failed", isPresented: $showErrorAlert) {
@@ -156,93 +183,57 @@ public struct SidebarView: View {
                 Text(errorMessage)
             }
         }
-        .alert(globalAlertTitle, isPresented: $showGlobalFileTypeDialog) {
-            Button("Global File (~/.claude/settings.json)") {
-                copySettingToGlobal(fileType: .globalSettings)
-            }
-            Button("Local File (~/.claude/settings.local.json)") {
-                copySettingToGlobal(fileType: .globalLocal)
-            }
-            Button("Cancel", role: .cancel) {
-                droppedGlobalSetting = nil
-            }
-        } message: {
-            if let setting = droppedGlobalSetting {
-                Text(globalAlertMessage(setting: setting))
-            }
+    }
+
+    // MARK: - Drop Alert Helpers
+
+    private var dropAlertTitle: String {
+        guard let drop = pendingDrop else { return "Copy Setting" }
+        let prefix = drop.setting.isCollection ? "Copy Settings to" : "Copy Setting to"
+        switch drop.target {
+        case .project:
+            return "\(prefix) Project"
+        case .global:
+            return "\(prefix) Global Configuration"
         }
     }
 
-    private var alertTitle: String {
-        guard let setting = droppedSetting else { return "Copy to Project" }
-        return setting.isCollection ? "Copy Settings to Project" : "Copy Setting to Project"
+    private func dropAlertMessage(for drop: DropOperation) -> String {
+        let settingDescription = drop.setting.isCollection
+            ? "\(drop.setting.settings.count) settings"
+            : "'\(drop.setting.key)'"
+
+        return "Choose which file to copy \(settingDescription) to in \(drop.target.displayName):"
     }
 
-    private func alertMessage(setting: DraggableSetting, project: ClaudeProject) -> String {
-        if setting.isCollection {
-            return "Where would you like to copy \(setting.settings.count) settings to '\(project.name)'?"
-        } else {
-            return "Where would you like to copy '\(setting.key)' to '\(project.name)'?"
-        }
-    }
+    // MARK: - Copy Action
 
-    private var globalAlertTitle: String {
-        guard let setting = droppedGlobalSetting else { return "Copy to Global Configuration" }
-        return setting.isCollection ? "Copy Settings to Global Configuration" : "Copy Setting to Global Configuration"
-    }
-
-    private func globalAlertMessage(setting: DraggableSetting) -> String {
-        if setting.isCollection {
-            return "Where would you like to copy \(setting.settings.count) settings to Global Configuration?"
-        } else {
-            return "Where would you like to copy '\(setting.key)' to Global Configuration?"
-        }
-    }
-
-    private func copySettingToGlobal(fileType: SettingsFileType) {
-        guard let setting = droppedGlobalSetting else {
-            return
-        }
+    /// Performs the copy operation for the pending drop
+    /// - Parameter fileType: The target file type selected by the user
+    private func performCopy(fileType: SettingsFileType) {
+        guard let drop = pendingDrop else { return }
 
         Task {
             do {
-                try await SettingsCopyHelper.copySettingToGlobal(
-                    setting: setting,
-                    fileType: fileType
-                )
-                droppedGlobalSetting = nil
-            } catch {
-                await MainActor.run {
-                    errorMessage = "Failed to copy setting(s): \(error.localizedDescription)"
-                    showErrorAlert = true
-                    droppedGlobalSetting = nil
+                switch drop.target {
+                case let .project(project):
+                    try await SettingsCopyHelper.copySetting(
+                        setting: drop.setting,
+                        to: project,
+                        fileType: fileType
+                    )
+                case .global:
+                    try await SettingsCopyHelper.copySettingToGlobal(
+                        setting: drop.setting,
+                        fileType: fileType
+                    )
                 }
-            }
-        }
-    }
-
-    private func copySettingToProject(fileType: SettingsFileType) {
-        guard
-            let setting = droppedSetting,
-            let project = targetProject else {
-            return
-        }
-
-        Task {
-            do {
-                try await SettingsCopyHelper.copySetting(
-                    setting: setting,
-                    to: project,
-                    fileType: fileType
-                )
-                droppedSetting = nil
-                targetProject = nil
+                pendingDrop = nil
             } catch {
                 await MainActor.run {
                     errorMessage = "Failed to copy setting(s): \(error.localizedDescription)"
                     showErrorAlert = true
-                    droppedSetting = nil
-                    targetProject = nil
+                    pendingDrop = nil
                 }
             }
         }
@@ -310,8 +301,7 @@ public struct SidebarView: View {
 struct ProjectRow: View {
     let project: ClaudeProject
     @Binding var selection: SidebarSelection?
-    @Binding var droppedSetting: DraggableSetting?
-    @Binding var targetProject: ClaudeProject?
+    @Binding var pendingDrop: DropOperation?
     @Binding var showFileTypeDialog: Bool
     @State private var isDropTargeted = false
 
@@ -349,8 +339,7 @@ struct ProjectRow: View {
         }
         .dropDestination(for: DraggableSetting.self) { items, _ in
             if let setting = items.first {
-                droppedSetting = setting
-                targetProject = project
+                pendingDrop = DropOperation(setting: setting, target: .project(project))
                 showFileTypeDialog = true
                 return true
             }
@@ -363,7 +352,7 @@ struct ProjectRow: View {
 
 /// Global configuration row with drag and drop support
 struct GlobalConfigRow: View {
-    @Binding var droppedSetting: DraggableSetting?
+    @Binding var pendingDrop: DropOperation?
     @Binding var showFileTypeDialog: Bool
     @State private var isDropTargeted = false
 
@@ -379,7 +368,7 @@ struct GlobalConfigRow: View {
         .background(isDropTargeted ? Color.accentColor.opacity(0.2) : Color.clear)
         .dropDestination(for: DraggableSetting.self) { items, _ in
             if let setting = items.first {
-                droppedSetting = setting
+                pendingDrop = DropOperation(setting: setting, target: .global)
                 showFileTypeDialog = true
                 return true
             }
