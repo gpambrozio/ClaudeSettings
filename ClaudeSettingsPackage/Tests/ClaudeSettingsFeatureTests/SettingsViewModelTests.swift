@@ -1447,4 +1447,33 @@ struct SettingsViewModelFileOperationsTests {
             Issue.record("editor should exist as object with both old and new settings")
         }
     }
+
+    /// Test that copySettingToGlobal correctly rejects invalid file types
+    @Test("copySettingToGlobal rejects project file types")
+    func copySettingToGlobalRejectsProjectFileTypes() async throws {
+        // Given: A draggable setting
+        let draggableSettings = DraggableSetting(settings: [
+            DraggableSetting.SettingEntry(
+                key: "testSetting",
+                value: .string("testValue"),
+                sourceFileType: .globalSettings
+            ),
+        ])
+
+        // When/Then: Attempting to copy to project file type should throw
+        await #expect(throws: SettingsError.self) {
+            try await SettingsCopyHelper.copySettingToGlobal(
+                setting: draggableSettings,
+                fileType: .projectSettings
+            )
+        }
+
+        // When/Then: Attempting to copy to project local file type should throw
+        await #expect(throws: SettingsError.self) {
+            try await SettingsCopyHelper.copySettingToGlobal(
+                setting: draggableSettings,
+                fileType: .projectLocal
+            )
+        }
+    }
 }
