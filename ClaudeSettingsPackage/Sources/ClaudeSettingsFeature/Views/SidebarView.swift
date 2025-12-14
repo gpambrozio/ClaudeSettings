@@ -27,6 +27,10 @@ public struct SidebarView: View {
     @State private var showErrorAlert = false
     @State private var errorMessage: String?
 
+    // Global config drop state
+    @State private var droppedGlobalSetting: DraggableSetting?
+    @State private var showGlobalFileTypeDialog = false
+
     /// Whether we're actively searching (non-empty search text)
     private var isSearching: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -61,14 +65,10 @@ public struct SidebarView: View {
             // Global Settings Section (hide if searching and no match)
             if shouldShowGlobalSettings {
                 Section("Global Settings") {
-                    NavigationLink(value: SidebarSelection.globalSettings) {
-                        Label {
-                            Text("Global Configuration")
-                        } icon: {
-                            Symbols.globe.image
-                                .foregroundStyle(.blue)
-                        }
-                    }
+                    GlobalConfigRow(
+                        droppedSetting: $droppedGlobalSetting,
+                        showFileTypeDialog: $showGlobalFileTypeDialog
+                    )
                 }
             }
 
@@ -156,6 +156,21 @@ public struct SidebarView: View {
                 Text(errorMessage)
             }
         }
+        .alert(globalAlertTitle, isPresented: $showGlobalFileTypeDialog) {
+            Button("Global File (~/.claude/settings.json)") {
+                copySettingToGlobal(fileType: .globalSettings)
+            }
+            Button("Local File (~/.claude/settings.local.json)") {
+                copySettingToGlobal(fileType: .globalLocal)
+            }
+            Button("Cancel", role: .cancel) {
+                droppedGlobalSetting = nil
+            }
+        } message: {
+            if let setting = droppedGlobalSetting {
+                Text(globalAlertMessage(setting: setting))
+            }
+        }
     }
 
     private var alertTitle: String {
@@ -168,6 +183,41 @@ public struct SidebarView: View {
             return "Where would you like to copy \(setting.settings.count) settings to '\(project.name)'?"
         } else {
             return "Where would you like to copy '\(setting.key)' to '\(project.name)'?"
+        }
+    }
+
+    private var globalAlertTitle: String {
+        guard let setting = droppedGlobalSetting else { return "Copy to Global Configuration" }
+        return setting.isCollection ? "Copy Settings to Global Configuration" : "Copy Setting to Global Configuration"
+    }
+
+    private func globalAlertMessage(setting: DraggableSetting) -> String {
+        if setting.isCollection {
+            return "Where would you like to copy \(setting.settings.count) settings to Global Configuration?"
+        } else {
+            return "Where would you like to copy '\(setting.key)' to Global Configuration?"
+        }
+    }
+
+    private func copySettingToGlobal(fileType: SettingsFileType) {
+        guard let setting = droppedGlobalSetting else {
+            return
+        }
+
+        Task {
+            do {
+                try await SettingsCopyHelper.copySettingToGlobal(
+                    setting: setting,
+                    fileType: fileType
+                )
+                droppedGlobalSetting = nil
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to copy setting(s): \(error.localizedDescription)"
+                    showErrorAlert = true
+                    droppedGlobalSetting = nil
+                }
+            }
         }
     }
 
@@ -301,6 +351,35 @@ struct ProjectRow: View {
             if let setting = items.first {
                 droppedSetting = setting
                 targetProject = project
+                showFileTypeDialog = true
+                return true
+            }
+            return false
+        } isTargeted: { isTargeted in
+            isDropTargeted = isTargeted
+        }
+    }
+}
+
+/// Global configuration row with drag and drop support
+struct GlobalConfigRow: View {
+    @Binding var droppedSetting: DraggableSetting?
+    @Binding var showFileTypeDialog: Bool
+    @State private var isDropTargeted = false
+
+    var body: some View {
+        NavigationLink(value: SidebarSelection.globalSettings) {
+            Label {
+                Text("Global Configuration")
+            } icon: {
+                Symbols.globe.image
+                    .foregroundStyle(.blue)
+            }
+        }
+        .background(isDropTargeted ? Color.accentColor.opacity(0.2) : Color.clear)
+        .dropDestination(for: DraggableSetting.self) { items, _ in
+            if let setting = items.first {
+                droppedSetting = setting
                 showFileTypeDialog = true
                 return true
             }

@@ -44,4 +44,42 @@ public enum SettingsCopyHelper {
 
         logger.info("Successfully copied \(settingLabel) to \(fileType.displayName)")
     }
+
+    /// Copy one or more settings to global configuration
+    /// - Parameters:
+    ///   - setting: The setting(s) to copy (can be single or collection)
+    ///   - fileType: The file type (globalSettings or globalLocal)
+    @MainActor
+    public static func copySettingToGlobal(
+        setting: DraggableSetting,
+        fileType: SettingsFileType
+    ) async throws {
+        // Verify this is a global file type
+        guard fileType == .globalSettings || fileType == .globalLocal else {
+            throw SettingsError.invalidFileType("Can only copy to global settings or global local files")
+        }
+
+        let settingCount = setting.settings.count
+        let settingLabel = settingCount == 1 ? "setting '\(setting.key)'" : "\(settingCount) settings"
+        logger.info("Copying \(settingLabel) to Global Configuration (\(fileType.displayName))")
+
+        // Create a SettingsViewModel for global settings (no project)
+        // This reuses all existing file handling, validation, backup, and rollback logic
+        let viewModel = SettingsViewModel()
+        await viewModel.loadSettings()
+
+        // Convert entries to (key, value) tuples for batch update
+        let updates = setting.settings.map { ($0.key, $0.value) }
+
+        // Use the unified batch update method which handles:
+        // - Creating a single backup before all updates
+        // - Creating the file if it doesn't exist
+        // - Creating .claude directory if needed
+        // - Proper nested value handling
+        // - File watching and validation
+        // - Rollback on failure
+        try await viewModel.batchUpdateSettings(updates, in: fileType)
+
+        logger.info("Successfully copied \(settingLabel) to \(fileType.displayName)")
+    }
 }
