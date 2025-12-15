@@ -64,8 +64,13 @@ public actor MockFileSystemManager: FileSystemManagerProtocol {
         for (url, data) in initialFiles {
             files[url.path] = data
             modificationDates[url.path] = Date()
-            // Ensure parent directories exist
-            ensureParentDirectoriesExist(for: url)
+            // Ensure parent directories exist (inlined to avoid actor isolation issues in init)
+            var currentURL = url.deletingLastPathComponent()
+            while currentURL.path != "/" && currentURL.path != "" {
+                directories.insert(currentURL.path)
+                currentURL = currentURL.deletingLastPathComponent()
+            }
+            directories.insert("/")
         }
     }
 
@@ -150,12 +155,10 @@ public actor MockFileSystemManager: FileSystemManagerProtocol {
         var contents: [URL] = []
 
         // Find direct children (files)
-        for filePath in files.keys {
-            if filePath.hasPrefix(prefix) {
-                let relativePath = String(filePath.dropFirst(prefix.count))
-                if !relativePath.contains("/") {
-                    contents.append(URL(fileURLWithPath: filePath))
-                }
+        for filePath in files.keys where filePath.hasPrefix(prefix) {
+            let relativePath = String(filePath.dropFirst(prefix.count))
+            if !relativePath.contains("/") {
+                contents.append(URL(fileURLWithPath: filePath))
             }
         }
 
@@ -270,10 +273,10 @@ public actor MockFileSystemManager: FileSystemManagerProtocol {
         return String(data: data, encoding: .utf8)
     }
 
-    /// Get file content as JSON (for verification)
-    public func getJSONContent(at url: URL) -> [String: Any]? {
-        guard let data = files[url.path] else { return nil }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    /// Get raw file data (for verification)
+    /// Returns Data which is Sendable and can safely cross actor boundaries
+    public func getFileData(at url: URL) -> Data? {
+        files[url.path]
     }
 
     /// Reset all tracking data

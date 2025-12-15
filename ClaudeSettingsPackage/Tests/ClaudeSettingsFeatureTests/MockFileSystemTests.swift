@@ -2,6 +2,14 @@ import Foundation
 import Testing
 @testable import ClaudeSettingsFeature
 
+// MARK: - Test Helpers
+
+/// Parse JSON data into a dictionary (avoids Sendable issues with actor boundaries)
+private func parseJSON(_ data: Data?) -> [String: Any]? {
+    guard let data else { return nil }
+    return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+}
+
 /// Tests demonstrating how to use MockFileSystemManager for comprehensive testing
 /// without touching real files
 @Suite("Mock File System Integration Tests")
@@ -15,9 +23,9 @@ struct MockFileSystemTests {
         let homeDirectory: URL
 
         init() {
-            homeDirectory = URL(fileURLWithPath: "/mock/home")
-            mockFileSystem = MockFileSystemManager()
-            pathProvider = MockPathProvider(homeDirectory: homeDirectory)
+            self.homeDirectory = URL(fileURLWithPath: "/mock/home")
+            self.mockFileSystem = MockFileSystemManager()
+            self.pathProvider = MockPathProvider(homeDirectory: homeDirectory)
         }
 
         var globalSettingsPath: URL {
@@ -173,7 +181,7 @@ struct MockFileSystemTests {
         #expect(exists)
 
         // Verify content
-        let jsonContent = await mockFS.getJSONContent(at: settingsPath)
+        let jsonContent = parseJSON(await mockFS.getFileData(at: settingsPath))
         #expect(jsonContent?["newSetting"] as? String == "value")
         #expect(jsonContent?["number"] as? Int == 42)
     }
@@ -263,7 +271,7 @@ struct MockFileSystemTests {
         try await viewModel.saveAllEdits()
 
         // Verify file was updated
-        let jsonContent = await env.mockFileSystem.getJSONContent(at: env.globalSettingsPath)
+        let jsonContent = parseJSON(await env.mockFileSystem.getFileData(at: env.globalSettingsPath))
         #expect(jsonContent?["theme"] as? String == "light")
     }
 
@@ -312,8 +320,8 @@ struct MockFileSystemTests {
         try await viewModel.saveAllEdits()
 
         // Verify setting was moved
-        let globalContent = await env.mockFileSystem.getJSONContent(at: env.globalSettingsPath)
-        let localContent = await env.mockFileSystem.getJSONContent(at: env.globalLocalPath)
+        let globalContent = parseJSON(await env.mockFileSystem.getFileData(at: env.globalSettingsPath))
+        let localContent = parseJSON(await env.mockFileSystem.getFileData(at: env.globalLocalPath))
 
         #expect(globalContent?["settingToMove"] == nil, "Setting should be removed from global")
         #expect(globalContent?["settingToKeep"] as? String == "stays", "Other settings should remain")
@@ -580,8 +588,8 @@ struct MockFileSystemTests {
         try await viewModel.saveAllEdits()
 
         // Verify final state
-        let globalContent = await env.mockFileSystem.getJSONContent(at: env.globalSettingsPath)
-        let localContent = await env.mockFileSystem.getJSONContent(at: env.globalLocalPath)
+        let globalContent = parseJSON(await env.mockFileSystem.getFileData(at: env.globalSettingsPath))
+        let localContent = parseJSON(await env.mockFileSystem.getFileData(at: env.globalLocalPath))
 
         // Global file
         #expect(globalContent?["globalSetting"] as? String == "originalValue", "Unchanged setting preserved")

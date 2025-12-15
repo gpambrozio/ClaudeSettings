@@ -12,11 +12,11 @@ struct TestEnvironment {
     let fileMonitor: SettingsFileMonitor
 
     init() {
-        homeDirectory = URL(fileURLWithPath: "/mock/home")
-        mockFileSystem = MockFileSystemManager()
-        pathProvider = MockPathProvider(homeDirectory: homeDirectory)
+        self.homeDirectory = URL(fileURLWithPath: "/mock/home")
+        self.mockFileSystem = MockFileSystemManager()
+        self.pathProvider = MockPathProvider(homeDirectory: homeDirectory)
         // Use a file monitor with no actual watcher for testing
-        fileMonitor = SettingsFileMonitor(fileWatcher: nil)
+        self.fileMonitor = SettingsFileMonitor(fileWatcher: nil)
     }
 
     var globalSettingsPath: URL {
@@ -524,13 +524,15 @@ struct SettingsViewModelFileOperationsTests {
         path: URL? = nil
     ) async throws -> SettingsFile {
         let url = path ?? env.globalSettingsPath
-        try await env.mockFileSystem.addJSONFile(at: url, content: convertToJSON(content))
+        // Serialize JSON to Data locally before crossing actor boundary (Data is Sendable)
+        let jsonData = try JSONSerialization.data(withJSONObject: Self.convertToJSON(content), options: .prettyPrinted)
+        await env.mockFileSystem.addFile(at: url, content: jsonData)
         let parser = env.createParser()
         return try await parser.parseSettingsFile(at: url, type: type)
     }
 
     /// Convert SettingValue dictionary to JSON-compatible dictionary
-    func convertToJSON(_ content: [String: SettingValue]) -> [String: Any] {
+    static func convertToJSON(_ content: [String: SettingValue]) -> [String: Any] {
         func convert(_ value: SettingValue) -> Any {
             switch value {
             case let .string(str): return str
@@ -1150,8 +1152,8 @@ struct SettingsViewModelFileOperationsTests {
             name: "TestProject",
             path: projectPath,
             claudeDirectory: projectPath.appendingPathComponent(".claude"),
-            hasSharedSettings: true,
-            hasLocalSettings: true
+            hasLocalSettings: true,
+            hasSharedSettings: true
         )
         let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [globalFile, projectFile, localFile]
@@ -1253,8 +1255,8 @@ struct SettingsViewModelFileOperationsTests {
             name: "TestProject",
             path: projectPath,
             claudeDirectory: projectPath.appendingPathComponent(".claude"),
-            hasSharedSettings: true,
-            hasLocalSettings: true
+            hasLocalSettings: true,
+            hasSharedSettings: true
         )
         let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [globalFile, projectFile, localFile]
