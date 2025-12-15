@@ -6,10 +6,6 @@ public actor FileSystemManager {
     private let fileManager = FileManager.default
     private let logger = Logger(label: "com.claudesettings.filesystem")
 
-    /// Default directory for storing backups
-    public static let defaultBackupDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/ClaudeSettings/Backups")
-
     public init() { }
 
     /// Read the contents of a file as Data
@@ -121,22 +117,6 @@ public actor FileSystemManager {
         }
     }
 
-    /// Create a backup of a file
-    /// - Parameters:
-    ///   - url: The file to backup
-    ///   - backupDirectory: The directory to store the backup in (defaults to the standard backup location)
-    /// - Returns: The URL of the created backup file
-    public func createBackup(of url: URL, to backupDirectory: URL = FileSystemManager.defaultBackupDirectory) throws -> URL {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let filename = url.lastPathComponent
-        let backupFilename = "\(timestamp)-\(filename)"
-        let backupURL = backupDirectory.appendingPathComponent(backupFilename)
-
-        try copy(from: url, to: backupURL)
-        logger.info("Created backup of \(url.path) at \(backupURL.path)")
-
-        return backupURL
-    }
 }
 
 /// Errors that can occur during file system operations

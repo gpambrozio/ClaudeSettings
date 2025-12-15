@@ -26,7 +26,8 @@ public struct PendingEdit: Equatable, Identifiable {
 @MainActor
 @Observable
 final public class SettingsViewModel {
-    private let fileSystemManager: FileSystemManager
+    private let fileSystemManager: any FileSystemManagerProtocol
+    private let pathProvider: PathProvider
     private let logger = Logger(label: "com.claudesettings.settings")
 
     public var settingsFiles: [SettingsFile] = []
@@ -55,7 +56,7 @@ final public class SettingsViewModel {
         }
     }
 
-    private let settingsParser: SettingsParser
+    private let settingsParser: any SettingsParserProtocol
     private let project: ClaudeProject?
     private let fileMonitor: SettingsFileMonitor
     private var observerId: UUID?
@@ -63,12 +64,29 @@ final public class SettingsViewModel {
 
     public init(
         project: ClaudeProject? = nil,
-        fileSystemManager: FileSystemManager = FileSystemManager(),
+        fileSystemManager: any FileSystemManagerProtocol = FileSystemManager(),
+        pathProvider: PathProvider = DefaultPathProvider(),
         fileMonitor: SettingsFileMonitor = .shared
     ) {
         self.project = project
         self.fileSystemManager = fileSystemManager
+        self.pathProvider = pathProvider
         self.settingsParser = SettingsParser(fileSystemManager: fileSystemManager)
+        self.fileMonitor = fileMonitor
+    }
+
+    /// Internal initializer for testing with a custom settings parser
+    init(
+        project: ClaudeProject?,
+        fileSystemManager: any FileSystemManagerProtocol,
+        pathProvider: PathProvider,
+        settingsParser: any SettingsParserProtocol,
+        fileMonitor: SettingsFileMonitor
+    ) {
+        self.project = project
+        self.fileSystemManager = fileSystemManager
+        self.pathProvider = pathProvider
+        self.settingsParser = settingsParser
         self.fileMonitor = fileMonitor
     }
 
@@ -130,10 +148,10 @@ final public class SettingsViewModel {
 
         do {
             var files: [SettingsFile] = []
-            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            let homeDirectory = pathProvider.homeDirectory
 
             // Load enterprise managed settings first (highest precedence, cannot be overridden)
-            for enterprisePath in SettingsFileType.enterpriseManagedPaths(homeDirectory: homeDirectory) where await fileSystemManager.exists(at: enterprisePath) {
+            for enterprisePath in pathProvider.enterpriseManagedPaths where await fileSystemManager.exists(at: enterprisePath) {
                 let file = try await settingsParser.parseSettingsFile(
                     at: enterprisePath,
                     type: .enterpriseManaged
@@ -770,7 +788,7 @@ final public class SettingsViewModel {
             let affectedFileTypes = Set(editsByFile.keys).union(deletesByFile.keys)
             for fileType in affectedFileTypes {
                 if let file = settingsFiles.first(where: { $0.type == fileType }) {
-                    _ = try await fileSystemManager.createBackup(of: file.path)
+                    _ = try await fileSystemManager.createBackup(of: file.path, to: pathProvider.backupDirectory)
                     logger.debug("Created backup for \(fileType.displayName)")
                 }
             }
@@ -855,7 +873,7 @@ final public class SettingsViewModel {
             logger.debug("Applied \(edits.count) edit(s) to \(fileType.displayName)")
         } else {
             // File doesn't exist, create it with all edits
-            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            let homeDirectory = pathProvider.homeDirectory
             let baseDirectory = fileType.isGlobal ? homeDirectory : (project?.path ?? homeDirectory)
             let filePath = fileType.path(in: baseDirectory)
 
@@ -891,7 +909,7 @@ final public class SettingsViewModel {
 
         // Create backup before modifying (only if file exists, unless skipped for batch operations)
         if !skipBackup, let file = settingsFiles.first(where: { $0.type == fileType }) {
-            _ = try await fileSystemManager.createBackup(of: file.path)
+            _ = try await fileSystemManager.createBackup(of: file.path, to: pathProvider.backupDirectory)
         }
 
         // Apply the edit using the helper
@@ -920,7 +938,7 @@ final public class SettingsViewModel {
 
         // Create a single backup before batch operation
         if let file = originalFile {
-            _ = try await fileSystemManager.createBackup(of: file.path)
+            _ = try await fileSystemManager.createBackup(of: file.path, to: pathProvider.backupDirectory)
         }
 
         do {
@@ -962,7 +980,7 @@ final public class SettingsViewModel {
 
         // Create a single backup before batch operation
         if let file = originalFile {
-            _ = try await fileSystemManager.createBackup(of: file.path)
+            _ = try await fileSystemManager.createBackup(of: file.path, to: pathProvider.backupDirectory)
         }
 
         do {
@@ -997,7 +1015,7 @@ final public class SettingsViewModel {
         logger.info("Deleting setting '\(key)' from \(fileType.displayName)")
 
         guard let fileIndex = settingsFiles.firstIndex(where: { $0.type == fileType }) else {
-            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            let homeDirectory = pathProvider.homeDirectory
             let baseDirectory = fileType.isGlobal ? homeDirectory : (project?.path ?? homeDirectory)
             let expectedPath = fileType.path(in: baseDirectory)
             throw SettingsError.fileNotFound(fileType, expectedPath: expectedPath)
@@ -1011,7 +1029,7 @@ final public class SettingsViewModel {
 
         // Create backup before modifying (unless skipped for batch operations)
         if !skipBackup {
-            _ = try await fileSystemManager.createBackup(of: file.path)
+            _ = try await fileSystemManager.createBackup(of: file.path, to: pathProvider.backupDirectory)
         }
 
         // Remove the nested value from the content dictionary

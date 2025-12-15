@@ -3,11 +3,16 @@ import Logging
 
 /// Parses and validates Claude Code settings files
 public actor SettingsParser {
-    private let fileSystemManager: FileSystemManager
+    private let fileSystemManager: any FileSystemManagerProtocol
     private let logger = Logger(label: "com.claudesettings.parser")
 
-    public init(fileSystemManager: FileSystemManager) {
+    public init(fileSystemManager: any FileSystemManagerProtocol) {
         self.fileSystemManager = fileSystemManager
+    }
+
+    /// Convenience initializer with default FileSystemManager
+    public init() {
+        self.fileSystemManager = FileSystemManager()
     }
 
     /// Parse a JSON settings file
