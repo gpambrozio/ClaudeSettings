@@ -3,19 +3,27 @@ import Logging
 
 /// Discovers Claude Code projects by scanning the ~/.claude/projects directory
 public actor ProjectScanner {
-    private let fileSystemManager: FileSystemManager
+    private let fileSystemManager: any FileSystemManagerProtocol
+    private let pathProvider: PathProvider
     private let logger = Logger(label: "com.claudesettings.scanner")
 
-    public init(fileSystemManager: FileSystemManager) {
+    public init(fileSystemManager: any FileSystemManagerProtocol, pathProvider: PathProvider = DefaultPathProvider()) {
         self.fileSystemManager = fileSystemManager
+        self.pathProvider = pathProvider
+    }
+
+    /// Convenience initializer with default dependencies
+    public init() {
+        self.fileSystemManager = FileSystemManager()
+        self.pathProvider = DefaultPathProvider()
     }
 
     /// Scan for all Claude projects by reading the ~/.claude.json file
     public func scanProjects() async throws -> [ClaudeProject] {
         logger.info("Starting project scan")
 
-        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-        let claudeConfigFile = homeDirectory.appendingPathComponent(".claude.json")
+        let homeDirectory = pathProvider.homeDirectory
+        let claudeConfigFile = pathProvider.claudeConfigPath
 
         guard await fileSystemManager.exists(at: claudeConfigFile) else {
             logger.warning("Claude config file not found at \(claudeConfigFile.path)")

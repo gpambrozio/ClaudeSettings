@@ -2,6 +2,56 @@ import Foundation
 import Testing
 @testable import ClaudeSettingsFeature
 
+// MARK: - Test Environment
+
+/// Shared test environment with mock file system and path provider
+struct TestEnvironment {
+    let mockFileSystem: MockFileSystemManager
+    let pathProvider: MockPathProvider
+    let homeDirectory: URL
+    let fileMonitor: SettingsFileMonitor
+
+    init() {
+        self.homeDirectory = URL(fileURLWithPath: "/mock/home")
+        self.mockFileSystem = MockFileSystemManager()
+        self.pathProvider = MockPathProvider(homeDirectory: homeDirectory)
+        // Use a file monitor with no actual watcher for testing
+        self.fileMonitor = SettingsFileMonitor(fileWatcher: nil)
+    }
+
+    var globalSettingsPath: URL {
+        homeDirectory.appendingPathComponent(".claude/settings.json")
+    }
+
+    var globalLocalPath: URL {
+        homeDirectory.appendingPathComponent(".claude/settings.local.json")
+    }
+
+    func projectSettingsPath(for project: URL) -> URL {
+        project.appendingPathComponent(".claude/settings.json")
+    }
+
+    func projectLocalPath(for project: URL) -> URL {
+        project.appendingPathComponent(".claude/settings.local.json")
+    }
+
+    func createParser() -> SettingsParser {
+        SettingsParser(fileSystemManager: mockFileSystem)
+    }
+
+    @MainActor
+    func createViewModel(project: ClaudeProject? = nil) -> SettingsViewModel {
+        let parser = createParser()
+        return SettingsViewModel(
+            project: project,
+            fileSystemManager: mockFileSystem,
+            pathProvider: pathProvider,
+            settingsParser: parser,
+            fileMonitor: fileMonitor
+        )
+    }
+}
+
 /// Tests for SettingsViewModel settings hierarchy and precedence resolution
 @Suite("SettingsViewModel Tests")
 struct SettingsViewModelTests {
@@ -466,46 +516,44 @@ struct SettingsViewModelTests {
 @Suite("SettingsViewModel File Operations")
 @MainActor
 struct SettingsViewModelFileOperationsTests {
-    /// Helper to create a temporary settings file with given content
-    func createTempSettingsFile(content: [String: SettingValue], type: SettingsFileType) async throws -> (url: URL, file: SettingsFile) {
-        let tempDir = FileManager.default.temporaryDirectory
-        let testFile = tempDir.appendingPathComponent("test-\(UUID().uuidString).json")
+    /// Helper to create a mock settings file with given content
+    func createMockSettingsFile(
+        env: TestEnvironment,
+        content: [String: SettingValue],
+        type: SettingsFileType,
+        path: URL? = nil
+    ) async throws -> SettingsFile {
+        let url = path ?? env.globalSettingsPath
+        // Serialize JSON to Data locally before crossing actor boundary (Data is Sendable)
+        let jsonData = try JSONSerialization.data(withJSONObject: Self.convertToJSON(content), options: .prettyPrinted)
+        await env.mockFileSystem.addFile(at: url, content: jsonData)
+        let parser = env.createParser()
+        return try await parser.parseSettingsFile(at: url, type: type)
+    }
 
-        // Convert SettingValue dictionary to JSON-compatible dictionary
-        func convertToJSON(_ value: SettingValue) -> Any {
+    /// Convert SettingValue dictionary to JSON-compatible dictionary
+    static func convertToJSON(_ content: [String: SettingValue]) -> [String: Any] {
+        func convert(_ value: SettingValue) -> Any {
             switch value {
             case let .string(str): return str
             case let .bool(bool): return bool
             case let .int(int): return int
             case let .double(double): return double
-            case let .array(arr): return arr.map { convertToJSON($0) }
-            case let .object(dict): return dict.mapValues { convertToJSON($0) }
+            case let .array(arr): return arr.map { convert($0) }
+            case let .object(dict): return dict.mapValues { convert($0) }
             case .null: return NSNull()
             }
         }
-
-        let jsonDict = content.mapValues { convertToJSON($0) }
-        let jsonData = try JSONSerialization.data(withJSONObject: jsonDict, options: .prettyPrinted)
-        try jsonData.write(to: testFile)
-
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let settingsFile = try await parser.parseSettingsFile(at: testFile, type: type)
-
-        return (testFile, settingsFile)
-    }
-
-    /// Helper to cleanup test files
-    func cleanup(_ urls: URL...) {
-        for url in urls {
-            try? FileManager.default.removeItem(at: url)
-        }
+        return content.mapValues { convert($0) }
     }
 
     /// Test batchDeleteSettings removes multiple settings in one operation
     @Test("batchDeleteSettings removes multiple settings")
     func batchDeleteSettingsRemovesMultiple() async throws {
         // Given: A settings file with multiple settings
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "theme": .string("dark"),
                 "fontSize": .int(14),
@@ -514,9 +562,8 @@ struct SettingsViewModelFileOperationsTests {
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -524,8 +571,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.batchDeleteSettings(["theme", "fontSize", "tabSize"], from: .globalSettings)
 
         // Then: Settings should be deleted from the file
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         #expect(updatedFile.content["theme"] == nil, "theme should be deleted")
         #expect(updatedFile.content["fontSize"] == nil, "fontSize should be deleted")
@@ -541,7 +588,12 @@ struct SettingsViewModelFileOperationsTests {
     @Test("batchDeleteSettings removes nested settings")
     func batchDeleteSettingsRemovesNested() async throws {
         // Given: A settings file with nested settings
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let settingsPath = env.projectSettingsPath(for: projectPath)
+
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "editor": .object([
                     "theme": .string("dark"),
@@ -551,11 +603,17 @@ struct SettingsViewModelFileOperationsTests {
                     "shell": .string("zsh"),
                 ]),
             ],
-            type: .projectSettings
+            type: .projectSettings,
+            path: settingsPath
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectPath,
+            claudeDirectory: projectPath.appendingPathComponent(".claude"),
+            hasSharedSettings: true
+        )
+        let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -563,8 +621,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.batchDeleteSettings(["editor.theme", "editor.fontSize"], from: .projectSettings)
 
         // Then: Nested settings should be deleted
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .projectSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: settingsPath, type: .projectSettings)
 
         // Editor object should either be removed entirely (if empty) or be an empty object
         if let editorValue = updatedFile.content["editor"] {
@@ -583,13 +641,14 @@ struct SettingsViewModelFileOperationsTests {
     @Test("batchDeleteSettings handles empty keys array")
     func batchDeleteSettingsHandlesEmpty() async throws {
         // Given: A settings file
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: ["setting1": .string("value1"), "setting2": .string("value2")],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -598,8 +657,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.batchDeleteSettings([], from: .globalSettings)
 
         // Verify file unchanged
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
         #expect(updatedFile.content["setting1"] == .string("value1"), "setting1 should remain")
         #expect(updatedFile.content["setting2"] == .string("value2"), "setting2 should remain")
     }
@@ -608,7 +667,12 @@ struct SettingsViewModelFileOperationsTests {
     @Test("moveNode moves settings from source to destination")
     func moveNodeMovesSettings() async throws {
         // Given: Source and destination files
-        let (sourceURL, sourceFile) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let projectSettingsPath = env.projectSettingsPath(for: projectPath)
+
+        let sourceFile = try await createMockSettingsFile(
+            env: env,
             content: [
                 "editor": .object([
                     "theme": .string("dark"),
@@ -617,13 +681,20 @@ struct SettingsViewModelFileOperationsTests {
             ],
             type: .globalSettings
         )
-        let (destURL, destFile) = try await createTempSettingsFile(
+        let destFile = try await createMockSettingsFile(
+            env: env,
             content: ["existing": .string("value")],
-            type: .projectSettings
+            type: .projectSettings,
+            path: projectSettingsPath
         )
-        defer { cleanup(sourceURL, destURL) }
 
-        let viewModel = SettingsViewModel()
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectPath,
+            claudeDirectory: projectPath.appendingPathComponent(".claude"),
+            hasSharedSettings: true
+        )
+        let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [sourceFile, destFile]
         viewModel.settingItems = viewModel.computeSettingItems(from: [sourceFile, destFile])
         viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
@@ -632,9 +703,9 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.moveNode(key: "editor", from: .globalSettings, to: .projectSettings)
 
         // Then: Settings should be in destination and removed from source
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedSource = try await parser.parseSettingsFile(at: sourceURL, type: .globalSettings)
-        let updatedDest = try await parser.parseSettingsFile(at: destURL, type: .projectSettings)
+        let parser = env.createParser()
+        let updatedSource = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
+        let updatedDest = try await parser.parseSettingsFile(at: projectSettingsPath, type: .projectSettings)
 
         #expect(updatedSource.content["editor"] == nil, "editor should be removed from source")
 
@@ -652,17 +723,29 @@ struct SettingsViewModelFileOperationsTests {
     @Test("moveNode moves single leaf setting")
     func moveNodeMovesSingleLeaf() async throws {
         // Given: Source and destination files with a single setting to move
-        let (sourceURL, sourceFile) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let projectLocalPath = env.projectLocalPath(for: projectPath)
+
+        let sourceFile = try await createMockSettingsFile(
+            env: env,
             content: ["theme": .string("dark"), "fontSize": .int(14)],
             type: .globalSettings
         )
-        let (destURL, destFile) = try await createTempSettingsFile(
+        let destFile = try await createMockSettingsFile(
+            env: env,
             content: [:],
-            type: .projectLocal
+            type: .projectLocal,
+            path: projectLocalPath
         )
-        defer { cleanup(sourceURL, destURL) }
 
-        let viewModel = SettingsViewModel()
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectPath,
+            claudeDirectory: projectPath.appendingPathComponent(".claude"),
+            hasLocalSettings: true
+        )
+        let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [sourceFile, destFile]
         viewModel.settingItems = viewModel.computeSettingItems(from: [sourceFile, destFile])
         viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
@@ -671,9 +754,9 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.moveNode(key: "theme", from: .globalSettings, to: .projectLocal)
 
         // Then: Only that setting should be moved
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedSource = try await parser.parseSettingsFile(at: sourceURL, type: .globalSettings)
-        let updatedDest = try await parser.parseSettingsFile(at: destURL, type: .projectLocal)
+        let parser = env.createParser()
+        let updatedSource = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
+        let updatedDest = try await parser.parseSettingsFile(at: projectLocalPath, type: .projectLocal)
 
         #expect(updatedSource.content["theme"] == nil, "theme should be removed from source")
         #expect(updatedSource.content["fontSize"] == .int(14), "fontSize should remain in source")
@@ -684,13 +767,14 @@ struct SettingsViewModelFileOperationsTests {
     @Test("moveNode skips when source equals destination")
     func moveNodeSkipsSameSourceAndDestination() async throws {
         // Given: A settings file
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: ["setting": .string("value")],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
         viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
@@ -700,8 +784,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.moveNode(key: "setting", from: .globalSettings, to: .globalSettings)
 
         // Verify file unchanged
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
         #expect(updatedFile.content["setting"] == .string("value"), "setting should remain unchanged")
     }
 
@@ -709,7 +793,12 @@ struct SettingsViewModelFileOperationsTests {
     @Test("deleteNode removes parent node with all children")
     func deleteNodeRemovesParentWithChildren() async throws {
         // Given: A settings file with nested structure
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let settingsPath = env.projectSettingsPath(for: projectPath)
+
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "editor": .object([
                     "theme": .string("dark"),
@@ -723,11 +812,17 @@ struct SettingsViewModelFileOperationsTests {
                     "shell": .string("zsh"),
                 ]),
             ],
-            type: .projectSettings
+            type: .projectSettings,
+            path: settingsPath
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectPath,
+            claudeDirectory: projectPath.appendingPathComponent(".claude"),
+            hasSharedSettings: true
+        )
+        let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
         viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
@@ -736,8 +831,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.deleteNode(key: "editor", from: .projectSettings)
 
         // Then: All editor settings should be removed
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .projectSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: settingsPath, type: .projectSettings)
 
         #expect(updatedFile.content["editor"] == nil, "editor node should be completely removed")
         #expect(updatedFile.content["terminal"] != nil, "terminal should remain")
@@ -751,7 +846,9 @@ struct SettingsViewModelFileOperationsTests {
     @Test("deleteNode removes single leaf setting")
     func deleteNodeRemovesSingleLeaf() async throws {
         // Given: A settings file with multiple settings
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "theme": .string("dark"),
                 "fontSize": .int(14),
@@ -759,9 +856,8 @@ struct SettingsViewModelFileOperationsTests {
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
         viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
@@ -770,8 +866,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.deleteNode(key: "fontSize", from: .globalSettings)
 
         // Then: Only that setting should be removed
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         #expect(updatedFile.content["fontSize"] == nil, "fontSize should be removed")
         #expect(updatedFile.content["theme"] == .string("dark"), "theme should remain")
@@ -782,7 +878,12 @@ struct SettingsViewModelFileOperationsTests {
     @Test("deleteNode handles deeply nested parent nodes")
     func deleteNodeHandlesDeeplyNested() async throws {
         // Given: A parent node with deeply nested children
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let settingsPath = env.projectSettingsPath(for: projectPath)
+
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "hooks": .object([
                     "onRead": .string("read.sh"),
@@ -796,11 +897,17 @@ struct SettingsViewModelFileOperationsTests {
                 ]),
                 "otherSetting": .string("keep"),
             ],
-            type: .projectSettings
+            type: .projectSettings,
+            path: settingsPath
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectPath,
+            claudeDirectory: projectPath.appendingPathComponent(".claude"),
+            hasSharedSettings: true
+        )
+        let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
         viewModel.hierarchicalSettings = viewModel.computeHierarchicalSettings(from: viewModel.settingItems)
@@ -809,8 +916,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.deleteNode(key: "hooks", from: .projectSettings)
 
         // Then: All nested children should be removed
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .projectSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: settingsPath, type: .projectSettings)
 
         #expect(updatedFile.content["hooks"] == nil, "hooks node should be completely removed")
         #expect(updatedFile.content["otherSetting"] == .string("keep"), "Other settings should remain")
@@ -918,20 +1025,32 @@ struct SettingsViewModelFileOperationsTests {
     @MainActor
     func saveAllEditsMovesSettingsWhenTargetChanges() async throws {
         // Given: A setting exists in global settings, and we want to move it to project settings
-        let (globalURL, globalFile) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let projectSettingsPath = env.projectSettingsPath(for: projectPath)
+
+        let globalFile = try await createMockSettingsFile(
+            env: env,
             content: [
                 "theme": .string("dark"),
                 "fontSize": .int(14),
             ],
             type: .globalSettings
         )
-        let (projectURL, projectFile) = try await createTempSettingsFile(
+        let projectFile = try await createMockSettingsFile(
+            env: env,
             content: [:],
-            type: .projectSettings
+            type: .projectSettings,
+            path: projectSettingsPath
         )
-        defer { cleanup(globalURL, projectURL) }
 
-        let viewModel = SettingsViewModel()
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectPath,
+            claudeDirectory: projectPath.appendingPathComponent(".claude"),
+            hasSharedSettings: true
+        )
+        let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [globalFile, projectFile]
         viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile, projectFile])
 
@@ -947,9 +1066,9 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.saveAllEdits()
 
         // Then: Setting should be removed from global and added to project (move, not copy)
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedGlobal = try await parser.parseSettingsFile(at: globalURL, type: .globalSettings)
-        let updatedProject = try await parser.parseSettingsFile(at: projectURL, type: .projectSettings)
+        let parser = env.createParser()
+        let updatedGlobal = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
+        let updatedProject = try await parser.parseSettingsFile(at: projectSettingsPath, type: .projectSettings)
 
         #expect(updatedGlobal.content["theme"] == nil, "theme should be deleted from original file (global)")
         #expect(updatedGlobal.content["fontSize"] == .int(14), "fontSize should remain in global")
@@ -964,16 +1083,17 @@ struct SettingsViewModelFileOperationsTests {
     @MainActor
     func saveAllEditsUpdatesInPlaceWhenTargetEqualsOriginal() async throws {
         // Given: A setting exists in global settings, and we're just changing its value
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "theme": .string("dark"),
                 "fontSize": .int(14),
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -989,8 +1109,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.saveAllEdits()
 
         // Then: Setting should be updated in place (not deleted and re-added)
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         #expect(updatedFile.content["theme"] == .string("light"), "theme should be updated in place")
         #expect(updatedFile.content["fontSize"] == .int(14), "fontSize should remain unchanged")
@@ -1001,7 +1121,13 @@ struct SettingsViewModelFileOperationsTests {
     @MainActor
     func saveAllEditsHandlesMultipleMoves() async throws {
         // Given: Multiple settings in global, moving them to different targets
-        let (globalURL, globalFile) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let projectSettingsPath = env.projectSettingsPath(for: projectPath)
+        let projectLocalPath = env.projectLocalPath(for: projectPath)
+
+        let globalFile = try await createMockSettingsFile(
+            env: env,
             content: [
                 "setting1": .string("value1"),
                 "setting2": .string("value2"),
@@ -1009,17 +1135,27 @@ struct SettingsViewModelFileOperationsTests {
             ],
             type: .globalSettings
         )
-        let (projectURL, projectFile) = try await createTempSettingsFile(
+        let projectFile = try await createMockSettingsFile(
+            env: env,
             content: [:],
-            type: .projectSettings
+            type: .projectSettings,
+            path: projectSettingsPath
         )
-        let (localURL, localFile) = try await createTempSettingsFile(
+        let localFile = try await createMockSettingsFile(
+            env: env,
             content: [:],
-            type: .projectLocal
+            type: .projectLocal,
+            path: projectLocalPath
         )
-        defer { cleanup(globalURL, projectURL, localURL) }
 
-        let viewModel = SettingsViewModel()
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectPath,
+            claudeDirectory: projectPath.appendingPathComponent(".claude"),
+            hasLocalSettings: true,
+            hasSharedSettings: true
+        )
+        let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [globalFile, projectFile, localFile]
         viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile, projectFile, localFile])
 
@@ -1041,10 +1177,10 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.saveAllEdits()
 
         // Then: Settings should be moved to their respective targets
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedGlobal = try await parser.parseSettingsFile(at: globalURL, type: .globalSettings)
-        let updatedProject = try await parser.parseSettingsFile(at: projectURL, type: .projectSettings)
-        let updatedLocal = try await parser.parseSettingsFile(at: localURL, type: .projectLocal)
+        let parser = env.createParser()
+        let updatedGlobal = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
+        let updatedProject = try await parser.parseSettingsFile(at: projectSettingsPath, type: .projectSettings)
+        let updatedLocal = try await parser.parseSettingsFile(at: projectLocalPath, type: .projectLocal)
 
         #expect(updatedGlobal.content["setting1"] == nil, "setting1 should be deleted from global")
         #expect(updatedGlobal.content["setting2"] == nil, "setting2 should be deleted from global")
@@ -1092,21 +1228,37 @@ struct SettingsViewModelFileOperationsTests {
     @MainActor
     func movingSettingWithMultipleContributionsOnlyRemovesFromActive() async throws {
         // Given: A setting exists in both global and project (project overrides)
-        let (globalURL, globalFile) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let projectSettingsPath = env.projectSettingsPath(for: projectPath)
+        let projectLocalPath = env.projectLocalPath(for: projectPath)
+
+        let globalFile = try await createMockSettingsFile(
+            env: env,
             content: ["maxTokens": .int(1_000)],
             type: .globalSettings
         )
-        let (projectURL, projectFile) = try await createTempSettingsFile(
+        let projectFile = try await createMockSettingsFile(
+            env: env,
             content: ["maxTokens": .int(2_000)],
-            type: .projectSettings
+            type: .projectSettings,
+            path: projectSettingsPath
         )
-        let (localURL, localFile) = try await createTempSettingsFile(
+        let localFile = try await createMockSettingsFile(
+            env: env,
             content: [:],
-            type: .projectLocal
+            type: .projectLocal,
+            path: projectLocalPath
         )
-        defer { cleanup(globalURL, projectURL, localURL) }
 
-        let viewModel = SettingsViewModel()
+        let project = ClaudeProject(
+            name: "TestProject",
+            path: projectPath,
+            claudeDirectory: projectPath.appendingPathComponent(".claude"),
+            hasLocalSettings: true,
+            hasSharedSettings: true
+        )
+        let viewModel = env.createViewModel(project: project)
         viewModel.settingsFiles = [globalFile, projectFile, localFile]
         viewModel.settingItems = viewModel.computeSettingItems(from: [globalFile, projectFile, localFile])
 
@@ -1122,10 +1274,10 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.saveAllEdits()
 
         // Then: Should delete from project (original) but leave global untouched
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedGlobal = try await parser.parseSettingsFile(at: globalURL, type: .globalSettings)
-        let updatedProject = try await parser.parseSettingsFile(at: projectURL, type: .projectSettings)
-        let updatedLocal = try await parser.parseSettingsFile(at: localURL, type: .projectLocal)
+        let parser = env.createParser()
+        let updatedGlobal = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
+        let updatedProject = try await parser.parseSettingsFile(at: projectSettingsPath, type: .projectSettings)
+        let updatedLocal = try await parser.parseSettingsFile(at: projectLocalPath, type: .projectLocal)
 
         #expect(updatedGlobal.content["maxTokens"] == .int(1_000), "Global should remain untouched")
         #expect(updatedProject.content["maxTokens"] == nil, "Project should be deleted (was original)")
@@ -1138,7 +1290,9 @@ struct SettingsViewModelFileOperationsTests {
     @Test("Adding to existing dictionary merges keys")
     func addingToDictionaryMergesKeys() async throws {
         // Given: A settings file with an existing dictionary (mcpServers with existing servers)
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "mcpServers": .object([
                     "server1": .object(["command": .string("cmd1"), "args": .array([.string("arg1")])]),
@@ -1147,9 +1301,8 @@ struct SettingsViewModelFileOperationsTests {
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -1160,8 +1313,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.updateSetting(key: "mcpServers", value: newServers, in: .globalSettings)
 
         // Then: The new server should be merged with existing servers (not replace them)
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         guard case let .object(mcpServers) = updatedFile.content["mcpServers"] else {
             Issue.record("mcpServers should be an object")
@@ -1185,7 +1338,9 @@ struct SettingsViewModelFileOperationsTests {
     @Test("Adding to dictionary overrides conflicting keys")
     func addingToDictionaryOverridesConflictingKeys() async throws {
         // Given: A settings file with an existing dictionary
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "mcpServers": .object([
                     "server1": .object(["command": .string("old-cmd")]),
@@ -1194,9 +1349,8 @@ struct SettingsViewModelFileOperationsTests {
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -1208,8 +1362,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.updateSetting(key: "mcpServers", value: newServers, in: .globalSettings)
 
         // Then: server1 should be overridden, server2 preserved, server3 added
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         guard case let .object(mcpServers) = updatedFile.content["mcpServers"] else {
             Issue.record("mcpServers should be an object")
@@ -1237,15 +1391,16 @@ struct SettingsViewModelFileOperationsTests {
     @Test("Adding to existing array appends items")
     func addingToArrayAppendsItems() async throws {
         // Given: A settings file with an existing array
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "allowedTools": .array([.string("Read"), .string("Write")]),
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -1254,8 +1409,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.updateSetting(key: "allowedTools", value: newTools, in: .globalSettings)
 
         // Then: The new items should be appended to the existing array
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         guard case let .array(allowedTools) = updatedFile.content["allowedTools"] else {
             Issue.record("allowedTools should be an array")
@@ -1274,15 +1429,16 @@ struct SettingsViewModelFileOperationsTests {
     @Test("Type mismatch replaces instead of merging")
     func typeMismatchReplaces() async throws {
         // Given: A settings file where a key has a string value
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "setting": .string("old-value"),
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -1291,8 +1447,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.updateSetting(key: "setting", value: newValue, in: .globalSettings)
 
         // Then: The value should be replaced (since types don't match)
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         guard case let .object(settingDict) = updatedFile.content["setting"] else {
             Issue.record("setting should now be an object")
@@ -1306,7 +1462,9 @@ struct SettingsViewModelFileOperationsTests {
     @Test("Adding empty dictionary preserves existing")
     func addingEmptyDictionaryPreservesExisting() async throws {
         // Given: A settings file with an existing dictionary
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "mcpServers": .object([
                     "server1": .object(["command": .string("cmd1")]),
@@ -1314,9 +1472,8 @@ struct SettingsViewModelFileOperationsTests {
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -1324,8 +1481,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.updateSetting(key: "mcpServers", value: .object([:]), in: .globalSettings)
 
         // Then: The existing content should be preserved (empty merge = no change)
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         guard case let .object(mcpServers) = updatedFile.content["mcpServers"] else {
             Issue.record("mcpServers should be an object")
@@ -1339,15 +1496,16 @@ struct SettingsViewModelFileOperationsTests {
     @Test("Adding empty array preserves existing")
     func addingEmptyArrayPreservesExisting() async throws {
         // Given: A settings file with an existing array
-        let (url, file) = try await createTempSettingsFile(
+        let env = TestEnvironment()
+        let file = try await createMockSettingsFile(
+            env: env,
             content: [
                 "allowedTools": .array([.string("Read"), .string("Write")]),
             ],
             type: .globalSettings
         )
-        defer { cleanup(url) }
 
-        let viewModel = SettingsViewModel()
+        let viewModel = env.createViewModel()
         viewModel.settingsFiles = [file]
         viewModel.settingItems = viewModel.computeSettingItems(from: [file])
 
@@ -1355,8 +1513,8 @@ struct SettingsViewModelFileOperationsTests {
         try await viewModel.updateSetting(key: "allowedTools", value: .array([]), in: .globalSettings)
 
         // Then: The existing content should be preserved
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
-        let updatedFile = try await parser.parseSettingsFile(at: url, type: .globalSettings)
+        let parser = env.createParser()
+        let updatedFile = try await parser.parseSettingsFile(at: env.globalSettingsPath, type: .globalSettings)
 
         guard case let .array(allowedTools) = updatedFile.content["allowedTools"] else {
             Issue.record("allowedTools should be an array")
@@ -1372,30 +1530,27 @@ struct SettingsViewModelFileOperationsTests {
     @Test("Drag and drop merges with existing settings")
     func dragAndDropMergesSettings() async throws {
         // Given: A target project with existing settings
-        let tempDir = FileManager.default.temporaryDirectory
-        let projectDir = tempDir.appendingPathComponent("test-project-\(UUID().uuidString)")
-        let claudeDir = projectDir.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
-
+        let env = TestEnvironment()
+        let projectPath = URL(fileURLWithPath: "/mock/projects/TestProject")
+        let claudeDir = projectPath.appendingPathComponent(".claude")
         let projectSettingsPath = claudeDir.appendingPathComponent("settings.json")
 
         // Create existing settings in the project file
-        let existingContent: [String: Any] = [
-            "existingSetting1": "value1",
-            "existingSetting2": 42,
-            "editor": [
-                "theme": "light",
-            ],
-        ]
-        let existingData = try JSONSerialization.data(withJSONObject: existingContent, options: .prettyPrinted)
-        try existingData.write(to: projectSettingsPath)
-
-        defer { try? FileManager.default.removeItem(at: projectDir) }
+        try await env.mockFileSystem.addJSONFile(
+            at: projectSettingsPath,
+            content: [
+                "existingSetting1": "value1",
+                "existingSetting2": 42,
+                "editor": [
+                    "theme": "light",
+                ],
+            ]
+        )
 
         // Create a project instance
         let project = ClaudeProject(
             name: "TestProject",
-            path: projectDir,
+            path: projectPath,
             claudeDirectory: claudeDir,
             hasLocalSettings: false,
             hasSharedSettings: true
@@ -1424,11 +1579,12 @@ struct SettingsViewModelFileOperationsTests {
         try await SettingsCopyHelper.copySetting(
             setting: draggableSettings,
             to: project,
-            fileType: .projectSettings
+            fileType: .projectSettings,
+            fileSystemManager: env.mockFileSystem
         )
 
         // Then: The file should contain BOTH existing and new settings
-        let parser = SettingsParser(fileSystemManager: FileSystemManager())
+        let parser = env.createParser()
         let updatedFile = try await parser.parseSettingsFile(at: projectSettingsPath, type: .projectSettings)
 
         // Verify existing settings are still there
