@@ -6,6 +6,39 @@
       <description>Most recent changes with links to updates.</description>
       <language>en</language>
       <item>
+         <title>Version 1.5</title>
+         <sparkle:version>1.5</sparkle:version>
+         <sparkle:shortVersionString>1.5</sparkle:shortVersionString>
+         <pubDate>Fri, 26 Dec 2025 10:16:48 -1000</pubDate>
+         <description><![CDATA[
+# ClaudeSettings 1.5 Release Notes
+
+<h2>New Features</h2>
+
+<h3>Search Filtering</h3>
+Quickly find what you're looking for with the new search functionality. Filter through your projects and settings instantly, making it easier to navigate large configurations.
+
+<h3>Drag Settings to Global Configuration</h3>
+You can now drag individual settings directly to your global configuration. This streamlines the workflow for promoting project-specific settings to apply across all your Claude Code projects.
+
+<h2>Improvements</h2>
+
+<h3>Enhanced Code Architecture</h3>
+Internal refactoring improves the codebase's testability and maintainability. While not visible to end users, this foundation enables more reliable updates and faster feature development going forward.
+
+<h3>Build Process Improvements</h3>
+Updates to release automation ensure smoother and more consistent application updates.
+
+---
+
+*ClaudeSettings is an independent open source project for managing Claude Code configuration on macOS.*
+         ]]></description>
+         <enclosure url="https://github.com/gpambrozio/ClaudeSettings/releases/download/v1.5/ClaudeSettings-1.5.dmg"
+                    sparkle:edSignature="28Je+CJoEJxInZor2Z4a1qkYn32ef6wiq3RdTj/DUL1SsSlWGrhhw1dJoZCEYtp25Yep/6sX3YXQzf43+GbCCg=="
+                    length="2371294"
+                    type="application/octet-stream"/>
+      </item>
+      <item>
          <title>Version 1.4</title>
          <sparkle:version>1.4</sparkle:version>
          <sparkle:shortVersionString>1.4</sparkle:shortVersionString>
