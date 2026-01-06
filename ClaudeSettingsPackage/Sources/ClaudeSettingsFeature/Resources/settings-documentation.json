@@ -1,5 +1,5 @@
 {
-  "version": "2025-11",
+  "version": "2026-01",
   "categories": [
     {
       "id": "model-behavior",
@@ -260,23 +260,40 @@
         {
           "key": "hooks",
           "type": "object",
-          "description": "Hooks configuration for executing commands at specific points in Claude Code's lifecycle.",
-          "hookTypes": [
-            "PreToolUse",
-            "PostToolUse",
-            "Notification",
-            "UserPromptSubmit",
-            "Stop",
-            "SubagentStop",
-            "PreCompact",
-            "SessionStart",
-            "SessionEnd"
+          "description": "Custom commands or prompts to run before/after tool executions and at other lifecycle events.",
+          "hookTypes": {
+            "PreToolUse": "Hooks that run before tool calls",
+            "PostToolUse": "Hooks that run after tool completion",
+            "Notification": "Hooks that trigger on notifications",
+            "UserPromptSubmit": "Hooks that run when a user submits a prompt",
+            "Stop": "Hooks that run when agents finish responding",
+            "SubagentStop": "Hooks that run when subagents finish responding",
+            "PreCompact": "Hooks that run before the context is compacted",
+            "SessionStart": "Hooks that run when a new session starts",
+            "SessionEnd": "Hooks that run when a session ends"
+          },
+          "hookCommandTypes": [
+            {
+              "type": "command",
+              "description": "Bash command hook - executes a shell command",
+              "properties": ["command", "timeout"]
+            },
+            {
+              "type": "prompt",
+              "description": "LLM prompt hook - evaluates a prompt with the LLM. Use $ARGUMENTS placeholder for hook input JSON.",
+              "properties": ["prompt", "timeout"]
+            }
           ],
           "examples": [
             {
               "code": "{\n  \"hooks\": {\n    \"PostToolUse\": [\n      {\n        \"matcher\": \"Edit|Write\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"prettier --write\",\n            \"timeout\": 5\n          }\n        ]\n      }\n    ]\n  }\n}",
               "description": "Run prettier after file edits",
               "id": "2297c4c7-08b3-41ea-8d50-2e663adbb7b8"
+            },
+            {
+              "code": "{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"prompt\",\n            \"prompt\": \"Review this bash command for safety: $ARGUMENTS\",\n            \"timeout\": 30\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "description": "Use LLM to review bash commands before execution",
+              "id": "1020755c-367a-415a-9b96-7ae587862de6"
             }
           ]
         },
@@ -432,7 +449,7 @@
           "key": "sandbox.allowUnsandboxedCommands",
           "type": "boolean",
           "defaultValue": "true",
-          "description": "Allow commands to run outside the sandbox via the dangerouslyDisableSandbox parameter. When false, the dangerouslyDisableSandbox parameter is completely ignored and all commands must run sandboxed.",
+          "description": "Allow commands to run outside the sandbox via the dangerouslyDisableSandbox parameter. When false, the dangerouslyDisableSandbox parameter is completely ignored and all commands must run sandboxed. Default: true.",
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"allowUnsandboxedCommands\": false\n  }\n}",
@@ -484,7 +501,7 @@
           "type": "boolean",
           "defaultValue": "false",
           "platformNote": "macOS only",
-          "description": "Allow binding to local network addresses (e.g., localhost ports). Defaults to false if not specified.",
+          "description": "Allow binding to local network addresses (e.g., localhost ports). Default: false.",
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"network\": {\n      \"allowLocalBinding\": true\n    }\n  }\n}",
@@ -525,7 +542,7 @@
           "key": "sandbox.enableWeakerNestedSandbox",
           "type": "boolean",
           "defaultValue": "false",
-          "description": "Enable weaker sandbox mode for unprivileged docker environments where --proc mounting fails. This significantly reduces the strength of the sandbox and should only be used when this risk is acceptable.",
+          "description": "Enable weaker sandbox mode for unprivileged docker environments where --proc mounting fails. This significantly reduces the strength of the sandbox and should only be used when this risk is acceptable. Default: false (secure).",
           "examples": [
             {
               "code": "{\n  \"sandbox\": {\n    \"enableWeakerNestedSandbox\": true\n  }\n}",
@@ -631,11 +648,50 @@
           "key": "extraKnownMarketplaces",
           "type": "object",
           "description": "Additional marketplaces to make available for this repository. Typically used in repository .claude/settings.json to ensure team members have required plugin sources. Keys are marketplace names, values define the source configuration.",
+          "sourceTypes": [
+            {
+              "source": "url",
+              "description": "Direct URL to marketplace.json file",
+              "requiredProperties": ["url"]
+            },
+            {
+              "source": "github",
+              "description": "GitHub repository in owner/repo format",
+              "requiredProperties": ["repo"],
+              "optionalProperties": ["ref", "path"]
+            },
+            {
+              "source": "git",
+              "description": "Full git repository URL (must end with .git)",
+              "requiredProperties": ["url"],
+              "optionalProperties": ["ref", "path"]
+            },
+            {
+              "source": "npm",
+              "description": "NPM package containing marketplace.json",
+              "requiredProperties": ["package"]
+            },
+            {
+              "source": "file",
+              "description": "Local file path to marketplace.json",
+              "requiredProperties": ["path"]
+            },
+            {
+              "source": "directory",
+              "description": "Local directory containing .claude-plugin/marketplace.json",
+              "requiredProperties": ["path"]
+            }
+          ],
           "examples": [
             {
               "code": "{\n  \"extraKnownMarketplaces\": {\n    \"company-tools\": {\n      \"source\": {\n        \"source\": \"github\",\n        \"repo\": \"company/claude-plugins\",\n        \"ref\": \"main\"\n      }\n    },\n    \"local-dev\": {\n      \"source\": {\n        \"source\": \"directory\",\n        \"path\": \"/Users/dev/my-plugins\"\n      }\n    }\n  }\n}",
-              "description": "Add custom plugin marketplaces",
+              "description": "Add custom plugin marketplaces via GitHub and local directory",
               "id": "e265edc0-3d25-4ecc-be5a-f4fea1c16b67"
+            },
+            {
+              "code": "{\n  \"extraKnownMarketplaces\": {\n    \"internal-tools\": {\n      \"source\": {\n        \"source\": \"url\",\n        \"url\": \"https://internal.company.com/marketplace.json\"\n      }\n    },\n    \"npm-plugins\": {\n      \"source\": {\n        \"source\": \"npm\",\n        \"package\": \"@company/claude-marketplace\"\n      }\n    }\n  }\n}",
+              "description": "Add marketplaces via URL and npm package",
+              "id": "e8b52e06-f5f3-4558-98ee-6b6ac4be0814"
             }
           ]
         },
