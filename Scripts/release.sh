@@ -321,9 +321,10 @@ sign_dmg_for_sparkle() {
 # Update appcast.xml with new release
 update_appcast() {
     local version=$1
-    local dmg_path=$2
-    local signature=$3
-    local release_notes=$4
+    local build_number=$2
+    local dmg_path=$3
+    local signature=$4
+    local release_notes=$5
 
     if [ -z "$signature" ]; then
         log_warning "No Sparkle signature provided, skipping appcast update"
@@ -371,7 +372,7 @@ update_appcast() {
     cat > "$item_file" << ITEMEOF
       <item>
          <title>Version $version</title>
-         <sparkle:version>$version</sparkle:version>
+         <sparkle:version>$build_number</sparkle:version>
          <sparkle:shortVersionString>$version</sparkle:shortVersionString>
          <pubDate>$pub_date</pubDate>
          <description><![CDATA[
@@ -560,10 +561,12 @@ main() {
     # Check prerequisites
     check_prerequisites
 
-    # Get current version
+    # Get current version and build number
     local version
     version=$(get_version)
-    log_info "Current version: $version"
+    local build_number
+    build_number=$(get_build_number)
+    log_info "Current version: $version (build $build_number)"
 
     # Confirm with user
     echo ""
@@ -610,7 +613,7 @@ main() {
     fi
 
     # Update appcast.xml with release notes (after user confirms)
-    update_appcast "$version" "$dmg_path" "$sparkle_signature" "$release_notes"
+    update_appcast "$version" "$build_number" "$dmg_path" "$sparkle_signature" "$release_notes"
 
     # Create GitHub release
     create_github_release "$version" "$dmg_path" "$release_notes"

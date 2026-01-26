@@ -7,7 +7,7 @@
       <language>en</language>
       <item>
          <title>Version 1.5</title>
-         <sparkle:version>1.5</sparkle:version>
+         <sparkle:version>6</sparkle:version>
          <sparkle:shortVersionString>1.5</sparkle:shortVersionString>
          <pubDate>Fri, 26 Dec 2025 10:16:48 -1000</pubDate>
          <description><![CDATA[
@@ -40,7 +40,7 @@ Updates to release automation ensure smoother and more consistent application up
       </item>
       <item>
          <title>Version 1.4</title>
-         <sparkle:version>1.4</sparkle:version>
+         <sparkle:version>5</sparkle:version>
          <sparkle:shortVersionString>1.4</sparkle:shortVersionString>
          <pubDate>Sat, 06 Dec 2025 12:12:17 -1000</pubDate>
          <description><![CDATA[
@@ -73,7 +73,7 @@ Updates to release automation ensure smoother and more consistent application up
       </item>
       <item>
          <title>Version 1.3</title>
-         <sparkle:version>1.3</sparkle:version>
+         <sparkle:version>4</sparkle:version>
          <sparkle:shortVersionString>1.3</sparkle:shortVersionString>
          <pubDate>Mon, 01 Dec 2025 09:42:02 -1000</pubDate>
          <description><![CDATA[
@@ -97,7 +97,7 @@ ClaudeSettings now includes built-in auto-update functionality. The app will aut
       </item>
       <item>
          <title>Version 1.2</title>
-         <sparkle:version>1.2</sparkle:version>
+         <sparkle:version>3</sparkle:version>
          <sparkle:shortVersionString>1.2</sparkle:shortVersionString>
          <pubDate>Fri, 28 Nov 2025 11:19:16 -1000</pubDate>
          <description><![CDATA[
