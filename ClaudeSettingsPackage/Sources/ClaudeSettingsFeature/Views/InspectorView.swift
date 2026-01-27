@@ -6,7 +6,10 @@ public struct InspectorView: View {
     let selectedKey: String?
     let settingsViewModel: SettingsViewModel?
     @ObservedObject var documentationLoader: DocumentationLoader
+    let availableProjects: [ClaudeProject]
+
     @State private var actionState = SettingActionState()
+    @State private var marketplaceToMove: KnownMarketplace?
 
     public var body: some View {
         Group {
@@ -21,7 +24,19 @@ public struct InspectorView: View {
 
     @ViewBuilder
     private func settingDetails(key: String, viewModel: SettingsViewModel) -> some View {
-        if let item = viewModel.settingItems.first(where: { $0.key == key }) {
+        // Check if it's a marketplace key
+        if key.hasPrefix("marketplace:") {
+            let name = String(key.dropFirst("marketplace:".count))
+            if let marketplace = viewModel.marketplaceViewModel.marketplace(named: name) {
+                marketplaceDetails(marketplace: marketplace, viewModel: viewModel)
+            } else if let edit = viewModel.marketplaceViewModel.pendingMarketplaceEdits[name] {
+                newMarketplaceDetails(edit: edit, viewModel: viewModel)
+            } else {
+                emptyState
+            }
+        }
+        // Regular settings
+        else if let item = viewModel.settingItems.first(where: { $0.key == key }) {
             // Leaf node with actual setting value
             leafNodeDetails(item: item)
         } else if let doc = documentationLoader.documentation(for: key) {
@@ -60,6 +75,11 @@ public struct InspectorView: View {
                                 .font(.caption)
                         }
                     }
+                }
+
+                // CLI-managed key warning (when viewing in global settings)
+                if let viewModel = settingsViewModel, !viewModel.isProjectView && isCliManagedKey(item.key) {
+                    cliManagedKeyWarning(for: item.key)
                 }
 
                 // Show all source contributions
@@ -268,6 +288,11 @@ public struct InspectorView: View {
                     }
                 }
 
+                // CLI-managed key warning (when viewing in global settings)
+                if let viewModel = settingsViewModel, !viewModel.isProjectView && isCliManagedKey(key) {
+                    cliManagedKeyWarning(for: key)
+                }
+
                 Divider()
 
                 // Documentation section - reuses DocumentationSectionView
@@ -345,6 +370,11 @@ public struct InspectorView: View {
                         .textSelection(.enabled)
                 }
 
+                // CLI-managed key warning (when viewing in global settings)
+                if !viewModel.isProjectView && isCliManagedKey(key) {
+                    cliManagedKeyWarning(for: key)
+                }
+
                 Divider()
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -417,44 +447,529 @@ public struct InspectorView: View {
         viewModel.settingItems.filter { $0.key.hasPrefix(key + ".") }.count
     }
 
-    @ViewBuilder
-    private func sourceInfo(for item: SettingItem) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(SettingsActionHelpers.sourceColor(for: item.source))
-                .frame(width: 8, height: 8)
+    // MARK: - CLI-Managed Key Warning
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(sourceLabel(for: item.source))
-                    .font(.body)
-
-                Text(item.source.filename)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
+    /// Check if a key is CLI-managed (marketplaces/plugins that should be in dedicated JSON files)
+    private func isCliManagedKey(_ key: String) -> Bool {
+        key == "extraKnownMarketplaces" || key.hasPrefix("extraKnownMarketplaces.") ||
+            key == "enabledPlugins" || key.hasPrefix("enabledPlugins.")
     }
 
     @ViewBuilder
-    private func overrideInfo(type: SettingsFileType) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(SettingsActionHelpers.sourceColor(for: type))
-                .frame(width: 8, height: 8)
+    private func cliManagedKeyWarning(for key: String) -> some View {
+        let isMarketplace = key == "extraKnownMarketplaces" || key.hasPrefix("extraKnownMarketplaces.")
+        let isPlugin = key == "enabledPlugins" || key.hasPrefix("enabledPlugins.")
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(sourceLabel(for: type))
-                    .font(.body)
-
-                Text("This value overrides the original")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Symbols.exclamationmarkCircle.image
+                    .foregroundStyle(.orange)
                     .font(.caption)
+
+                Text("Global Setting — CLI Managed")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.orange)
+            }
+
+            if isMarketplace {
+                Text("Global marketplaces should be managed by the Claude CLI, not in settings.json. The CLI stores them in ~/.claude/plugins/known_marketplaces.json.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+
+                Text("Use `claude plugin marketplace add` to add global marketplaces. Project-specific marketplaces can still be added to project settings.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else if isPlugin {
+                Text("Global plugins should be managed by the Claude CLI, not in settings.json. The CLI stores them in ~/.claude/plugins/installed_plugins.json.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                Text("Use `claude plugin install` to install global plugins. Project-specific plugins can still be added to project settings.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .italic()
             }
         }
+        .padding(10)
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(8)
+    }
+
+    // MARK: - Marketplace Helpers
+
+    @ViewBuilder
+    private func marketplaceDataSourceBadge(_ dataSource: MarketplaceDataSource) -> some View {
+        let (color, icon): (Color, Symbols) = switch dataSource {
+        case .global:
+            (.blue, .arrowDownCircle)
+        case .project:
+            (.orange, .gearshape)
+        case .both:
+            (.green, .checkmarkCircle)
+        }
+
+        icon.image
+            .foregroundStyle(color)
+            .font(.caption)
     }
 
     private func sourceLabel(for type: SettingsFileType) -> String {
         SettingsActionHelpers.sourceLabel(for: type)
+    }
+
+    // MARK: - Marketplace Details
+
+    @ViewBuilder
+    private func marketplaceDetails(marketplace: KnownMarketplace, viewModel: SettingsViewModel) -> some View {
+        let marketplaceVM = viewModel.marketplaceViewModel
+        let isEditing = marketplaceVM.isEditingMode
+        let isDeleted = marketplaceVM.isMarkedForDeletion(marketplace: marketplace.name)
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader(text: "Marketplace")
+
+                    HStack {
+                        Text(marketplace.name)
+                            .font(.system(.title2, design: .monospaced))
+                            .fontWeight(.semibold)
+                            .strikethrough(isDeleted)
+                            .foregroundStyle(isDeleted ? .red : .primary)
+                            .textSelection(.enabled)
+
+                        Spacer()
+
+                        marketplaceDataSourceBadge(marketplace.dataSource)
+                    }
+                }
+
+                Divider()
+
+                // Source Configuration
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader(text: "Source")
+
+                    if isEditing && !isDeleted {
+                        marketplaceEditForm(for: marketplace, viewModel: viewModel)
+                    } else {
+                        marketplaceReadOnlyInfo(marketplace: marketplace, viewModel: viewModel)
+                    }
+                }
+
+                // Plugin Management (dual toggles)
+                Divider()
+                pluginManagementSection(for: marketplace, viewModel: viewModel)
+
+                // Marketplace Actions
+                if isEditing && !isDeleted {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(text: "Marketplace Actions")
+
+                        Button("Delete Marketplace", role: .destructive) {
+                            // Also mark all plugins from this marketplace for deletion
+                            let plugins = marketplaceVM.plugins(from: marketplace.name)
+                            for plugin in plugins {
+                                marketplaceVM.deletePlugin(id: plugin.id)
+                            }
+                            marketplaceVM.deleteMarketplace(named: marketplace.name)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Text("Deleting the marketplace will also remove all installed plugins from it.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if isDeleted {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(text: "Marketplace Actions")
+
+                        Button("Restore Marketplace") {
+                            // Also restore all plugins from this marketplace
+                            let plugins = marketplaceVM.plugins(from: marketplace.name)
+                            for plugin in plugins {
+                                marketplaceVM.restorePlugin(id: plugin.id)
+                            }
+                            marketplaceVM.restoreMarketplace(named: marketplace.name)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
+                // Scope Management
+                if !isEditing && !isDeleted {
+                    // Global or both marketplace → Copy to Project
+                    if (marketplace.dataSource == .global || marketplace.dataSource == .both) && !availableProjects.isEmpty {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionHeader(text: "Scope")
+
+                            Text("This marketplace is installed globally. Copy it to a project to share the configuration via git.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Button("Copy to Project...") {
+                                marketplaceToMove = marketplace
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+
+                    // Project marketplace → Make Global
+                    if marketplace.dataSource == .project {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionHeader(text: "Scope")
+
+                            Text("This marketplace is project-only. Make it global to install on your machine.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Button("Make Global") {
+                                Task { @MainActor in
+                                    do {
+                                        try await marketplaceVM.promoteMarketplaceToGlobal(
+                                            marketplace: marketplace,
+                                            settingsViewModel: viewModel
+                                        )
+                                    } catch {
+                                        viewModel.errorMessage = "Failed to promote marketplace: \(error.localizedDescription)"
+                                    }
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+            .padding()
+        }
+        .task(id: marketplace.name) {
+            // Auto-load available plugins when marketplace details are shown
+            if marketplaceVM.effectiveInstallLocation(for: marketplace) != nil {
+                await marketplaceVM.loadAvailablePlugins(for: marketplace)
+            }
+        }
+        // Sheet: Pick project for Copy to Project
+        // Using sheet(item:) to avoid race condition with state
+        .sheet(item: $marketplaceToMove) { marketplace in
+            CopyMarketplaceToProjectSheet(
+                marketplace: marketplace,
+                projects: availableProjects,
+                marketplaceViewModel: marketplaceVM,
+                onComplete: {
+                    marketplaceToMove = nil
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func marketplaceReadOnlyInfo(marketplace: KnownMarketplace, viewModel: SettingsViewModel) -> some View {
+        let marketplaceVM = viewModel.marketplaceViewModel
+
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent("Type", value: marketplace.source.source)
+
+            if let repo = marketplace.source.repo {
+                LabeledContent("Repository", value: repo)
+            }
+
+            if let path = marketplace.source.path {
+                LabeledContent("Path", value: path)
+            }
+
+            if let ref = marketplace.source.ref {
+                LabeledContent("Branch/Tag", value: ref)
+            }
+
+            if let location = marketplaceVM.effectiveInstallLocation(for: marketplace) {
+                LabeledContent("Install Location", value: location)
+            }
+
+            if let lastUpdated = marketplace.lastUpdated {
+                LabeledContent("Last Updated") {
+                    Text(lastUpdated, style: .relative)
+                }
+            }
+        }
+        .font(.caption)
+    }
+
+    // MARK: - Dual-Toggle Plugin Management
+
+    /// Dual-toggle plugin management section
+    /// Shows "Installed" toggle (always) and "In Project" toggle (when in project view)
+    /// Note: Each row uses PluginToggleRowView which properly observes @Observable changes
+    @ViewBuilder
+    private func pluginManagementSection(for marketplace: KnownMarketplace, viewModel: SettingsViewModel) -> some View {
+        let marketplaceVM = viewModel.marketplaceViewModel
+        let plugins = marketplaceVM.allPlugins(from: marketplace.name, enabledPluginKeys: [])
+
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(text: "Plugins (\(plugins.count))")
+
+            if plugins.isEmpty {
+                Text("No plugins found for this marketplace")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                // Column headers
+                pluginToggleHeaders(showProjectColumn: viewModel.isProjectView)
+
+                ForEach(plugins, id: \.id) { plugin in
+                    pluginToggleRow(
+                        plugin: plugin,
+                        marketplaceVM: marketplaceVM,
+                        settingsVM: viewModel
+                    )
+                }
+
+                // Help text
+                Text("Global = install on your machine. Project = declare in settings (Shared is git-committed, Local is not).")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 4)
+            }
+        }
+    }
+
+    /// Column headers for the dual-toggle table
+    @ViewBuilder
+    private func pluginToggleHeaders(showProjectColumn: Bool) -> some View {
+        HStack {
+            Text("Plugin")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            Spacer()
+
+            Text("Global")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(.blue)
+                .textCase(.uppercase)
+                .frame(width: 70)
+
+            if showProjectColumn {
+                Text("Project")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.orange)
+                    .textCase(.uppercase)
+                    .frame(width: 70)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    /// A single row with plugin name, description, global toggle, and project picker
+    /// Now uses a dedicated View struct for proper @Observable observation
+    @ViewBuilder
+    private func pluginToggleRow(
+        plugin: InstalledPlugin,
+        marketplaceVM: MarketplaceViewModel,
+        settingsVM: SettingsViewModel
+    ) -> some View {
+        PluginToggleRowView(
+            pluginId: plugin.id,
+            pluginName: plugin.name,
+            pluginMarketplace: plugin.marketplace,
+            marketplaceVM: marketplaceVM,
+            settingsVM: settingsVM
+        )
+    }
+
+    /// Get the label for the project location picker
+    private func projectLocationLabel(isInProject: Bool, location: ProjectFileLocation?) -> String {
+        guard isInProject else { return "None" }
+        switch location {
+        case .shared:
+            return "Shared"
+        case .local:
+            return "Local"
+        case nil:
+            return "Project"
+        }
+    }
+
+    @ViewBuilder
+    private func marketplaceEditForm(for marketplace: KnownMarketplace, viewModel: SettingsViewModel) -> some View {
+        let marketplaceVM = viewModel.marketplaceViewModel
+        let edit = marketplaceVM.pendingEdit(for: marketplace)
+
+        VStack(alignment: .leading, spacing: 12) {
+            // Source Type Picker
+            Picker("Type", selection: Binding(
+                get: { edit.sourceType },
+                set: { newValue in
+                    var updated = edit
+                    updated.sourceType = newValue
+                    marketplaceVM.updatePendingEdit(updated, for: marketplace.name)
+                }
+            )) {
+                Text("GitHub").tag("github")
+                Text("Directory").tag("directory")
+            }
+            .pickerStyle(.segmented)
+
+            // GitHub fields
+            if edit.sourceType == "github" {
+                TextField("Repository (org/repo)", text: Binding(
+                    get: { edit.repo },
+                    set: { newValue in
+                        var updated = edit
+                        updated.repo = newValue
+                        marketplaceVM.updatePendingEdit(updated, for: marketplace.name)
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+
+                TextField("Branch/Tag (optional)", text: Binding(
+                    get: { edit.ref },
+                    set: { newValue in
+                        var updated = edit
+                        updated.ref = newValue
+                        marketplaceVM.updatePendingEdit(updated, for: marketplace.name)
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+            }
+
+            // Directory fields
+            if edit.sourceType == "directory" {
+                TextField("Path", text: Binding(
+                    get: { edit.path },
+                    set: { newValue in
+                        var updated = edit
+                        updated.path = newValue
+                        marketplaceVM.updatePendingEdit(updated, for: marketplace.name)
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+            }
+
+            // Validation error
+            if let error = edit.validationError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func newMarketplaceDetails(edit: MarketplacePendingEdit, viewModel: SettingsViewModel) -> some View {
+        let marketplaceVM = viewModel.marketplaceViewModel
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader(text: "New Marketplace")
+
+                    TextField("Name", text: Binding(
+                        get: { edit.name },
+                        set: { newValue in
+                            var updated = edit
+                            // Remove old key, add new one
+                            marketplaceVM.pendingMarketplaceEdits.removeValue(forKey: edit.name)
+                            updated.name = newValue
+                            marketplaceVM.pendingMarketplaceEdits[newValue] = updated
+                        }
+                    ))
+                    .font(.system(.title2, design: .monospaced))
+                    .textFieldStyle(.roundedBorder)
+                }
+
+                Divider()
+
+                // Source Configuration
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader(text: "Source")
+
+                    // Source Type Picker
+                    Picker("Type", selection: Binding(
+                        get: { edit.sourceType },
+                        set: { newValue in
+                            var updated = edit
+                            updated.sourceType = newValue
+                            marketplaceVM.pendingMarketplaceEdits[edit.name] = updated
+                        }
+                    )) {
+                        Text("GitHub").tag("github")
+                        Text("Directory").tag("directory")
+                    }
+                    .pickerStyle(.segmented)
+
+                    // GitHub fields
+                    if edit.sourceType == "github" {
+                        TextField("Repository (org/repo)", text: Binding(
+                            get: { edit.repo },
+                            set: { newValue in
+                                var updated = edit
+                                updated.repo = newValue
+                                marketplaceVM.pendingMarketplaceEdits[edit.name] = updated
+                            }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+
+                        TextField("Branch/Tag (optional)", text: Binding(
+                            get: { edit.ref },
+                            set: { newValue in
+                                var updated = edit
+                                updated.ref = newValue
+                                marketplaceVM.pendingMarketplaceEdits[edit.name] = updated
+                            }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                    }
+
+                    // Directory fields
+                    if edit.sourceType == "directory" {
+                        TextField("Path", text: Binding(
+                            get: { edit.path },
+                            set: { newValue in
+                                var updated = edit
+                                updated.path = newValue
+                                marketplaceVM.pendingMarketplaceEdits[edit.name] = updated
+                            }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                    }
+
+                    // Validation error
+                    if let error = edit.validationError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding()
+        }
     }
 
     @ViewBuilder
@@ -551,11 +1066,413 @@ public struct InspectorView: View {
     public init(
         selectedKey: String?,
         settingsViewModel: SettingsViewModel?,
-        documentationLoader: DocumentationLoader = .shared
+        documentationLoader: DocumentationLoader = .shared,
+        availableProjects: [ClaudeProject] = []
     ) {
         self.selectedKey = selectedKey
         self.settingsViewModel = settingsViewModel
         self.documentationLoader = documentationLoader
+        self.availableProjects = availableProjects
+    }
+}
+
+// MARK: - Move Marketplace to Project Sheet
+
+/// Row for displaying a project in the picker (supports multi-select)
+private struct ProjectPickerRow: View {
+    let project: ClaudeProject
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 12) {
+                // Checkbox
+                Group {
+                    if isSelected {
+                        Symbols.checkmarkCircleFill.image
+                            .foregroundStyle(.tint)
+                    } else {
+                        Symbols.circle.image
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.title3)
+
+                // Project info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.name)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Text(project.path.path)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+            .cornerRadius(6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Sheet for selecting which project(s) to copy a marketplace to
+private struct CopyMarketplaceToProjectSheet: View {
+    let marketplace: KnownMarketplace
+    let projects: [ClaudeProject]
+    let marketplaceViewModel: MarketplaceViewModel
+    let onComplete: () -> Void
+
+    @State private var selectedProjectIDs: Set<UUID> = []
+    @State private var includePlugins = true
+    @State private var isCopying = false
+    @State private var errorMessage: String?
+    @Environment(\.dismiss) private var dismiss
+
+    /// Number of global plugins that will be moved
+    private var globalPluginCount: Int {
+        marketplaceViewModel.globalPlugins(from: marketplace.name).count
+    }
+
+    private var selectedProjects: [ClaudeProject] {
+        projects.filter { selectedProjectIDs.contains($0.id) }
+    }
+
+    private var confirmButtonTitle: String {
+        let count = selectedProjectIDs.count
+        if count == 0 {
+            return "Copy to Project"
+        } else if count == 1 {
+            return "Copy to 1 Project"
+        } else {
+            return "Copy to \(count) Projects"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Copy Marketplace to Project")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            // Scrollable content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Info message
+                    HStack(alignment: .top, spacing: 10) {
+                        Symbols.infoCircle.image
+                            .foregroundStyle(.blue)
+                            .font(.title3)
+                        Text("This will copy \"\(marketplace.name)\" to the selected project(s). The marketplace will remain in your global registry.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(8)
+
+                    // Project picker
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Select project(s):")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+
+                        ForEach(projects, id: \.id) { project in
+                            ProjectPickerRow(
+                                project: project,
+                                isSelected: selectedProjectIDs.contains(project.id),
+                                onToggle: {
+                                    if selectedProjectIDs.contains(project.id) {
+                                        selectedProjectIDs.remove(project.id)
+                                    } else {
+                                        selectedProjectIDs.insert(project.id)
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    // Plugin option
+                    if globalPluginCount > 0 {
+                        Divider()
+                            .padding(.vertical, 8)
+
+                        Toggle(isOn: $includePlugins) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Also include installed plugins")
+                                    .font(.subheadline)
+                                Text("\(globalPluginCount) plugin\(globalPluginCount == 1 ? "" : "s") will be added to selected project(s)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+
+                    if let error = errorMessage {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .padding()
+            }
+
+            Divider()
+
+            // Footer - always visible
+            HStack {
+                if isCopying {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .padding(.trailing, 8)
+                }
+                Spacer()
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button(confirmButtonTitle) {
+                    copyToProjects()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedProjectIDs.isEmpty || isCopying)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 500, height: 550)
+    }
+
+    private func copyToProjects() {
+        guard !selectedProjects.isEmpty else { return }
+
+        isCopying = true
+        errorMessage = nil
+
+        Task { @MainActor in
+            do {
+                // Copy marketplace config to each selected project
+                for project in selectedProjects {
+                    let targetViewModel = SettingsViewModel(project: project)
+                    await targetViewModel.loadSettings()
+
+                    try await marketplaceViewModel.copyMarketplaceToProject(
+                        marketplace: marketplace,
+                        settingsViewModel: targetViewModel,
+                        includePlugins: includePlugins
+                    )
+                }
+
+                onComplete()
+            } catch {
+                errorMessage = error.localizedDescription
+                isCopying = false
+            }
+        }
+    }
+}
+
+// MARK: - Plugin Toggle Row View
+
+/// A dedicated View struct for plugin toggle rows that properly observes @Observable
+/// This is necessary because SwiftUI's observation tracking doesn't work correctly
+/// with helper functions - it needs a proper View struct to establish the observation context.
+private struct PluginToggleRowView: View {
+    let pluginId: String
+    let pluginName: String
+    let pluginMarketplace: String
+    let marketplaceVM: MarketplaceViewModel
+    let settingsVM: SettingsViewModel
+
+    var body: some View {
+        // Look up current state from viewmodel - this creates proper observation
+        // because we're accessing the @Observable property inside a View's body
+        let currentPlugin = marketplaceVM.plugins.first { $0.id == pluginId }
+        let isInstalled = currentPlugin.map { $0.dataSource == .global || $0.dataSource == .both } ?? false
+        let isInProject = currentPlugin.map { $0.dataSource == .project || $0.dataSource == .both } ?? false
+        let projectLocation = currentPlugin?.projectFileLocation
+
+        // Look up description from available plugins cache
+        let availablePlugin = marketplaceVM.availablePlugins(for: pluginMarketplace)
+            .first { $0.name == pluginName }
+        let description = availablePlugin?.description
+
+        HStack(alignment: .top, spacing: 8) {
+            Symbols.puzzlepiece.image
+                .foregroundStyle(.secondary)
+                .font(.caption)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pluginName)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .textSelection(.enabled)
+
+                if let description {
+                    Text(description)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                } else {
+                    Text("No description available")
+                        .font(.caption2)
+                        .foregroundStyle(.quaternary)
+                        .italic()
+                }
+            }
+
+            Spacer()
+
+            // Global toggle - controls installed_plugins.json
+            Toggle("", isOn: Binding(
+                get: { isInstalled },
+                set: { newValue in
+                    Task { @MainActor in
+                        do {
+                            if newValue {
+                                try await marketplaceVM.installPluginGlobally(
+                                    name: pluginName,
+                                    marketplace: pluginMarketplace
+                                )
+                            } else {
+                                try await marketplaceVM.uninstallPluginGlobally(pluginId: pluginId)
+                            }
+                        } catch {
+                            settingsVM.errorMessage = "Failed to update plugin: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.small)
+            .frame(width: 70)
+            .help("Global: Install on your machine")
+
+            // Project picker - only visible in project view
+            if settingsVM.isProjectView {
+                Menu {
+                    Button {
+                        Task { @MainActor in
+                            do {
+                                try await marketplaceVM.removePluginFromProject(
+                                    name: pluginName,
+                                    marketplace: pluginMarketplace,
+                                    settingsViewModel: settingsVM
+                                )
+                            } catch {
+                                settingsVM.errorMessage = "Failed to update plugin: \(error.localizedDescription)"
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text("None")
+                            if !isInProject {
+                                Symbols.checkmarkCircle.image
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Button {
+                        Task { @MainActor in
+                            do {
+                                try await marketplaceVM.addPluginToProject(
+                                    name: pluginName,
+                                    marketplace: pluginMarketplace,
+                                    location: .shared,
+                                    settingsViewModel: settingsVM
+                                )
+                            } catch {
+                                settingsVM.errorMessage = "Failed to update plugin: \(error.localizedDescription)"
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text("Shared")
+                            Text("(git-committed)")
+                                .foregroundStyle(.secondary)
+                            if isInProject && projectLocation == .shared {
+                                Symbols.checkmarkCircle.image
+                            }
+                        }
+                    }
+
+                    Button {
+                        Task { @MainActor in
+                            do {
+                                try await marketplaceVM.addPluginToProject(
+                                    name: pluginName,
+                                    marketplace: pluginMarketplace,
+                                    location: .local,
+                                    settingsViewModel: settingsVM
+                                )
+                            } catch {
+                                settingsVM.errorMessage = "Failed to update plugin: \(error.localizedDescription)"
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text("Local")
+                            Text("(not shared)")
+                                .foregroundStyle(.secondary)
+                            if isInProject && projectLocation == .local {
+                                Symbols.checkmarkCircle.image
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(projectLocationLabel)
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .frame(width: 45, alignment: .trailing)
+                        Symbols.chevronUpChevronDown.image
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(isInProject ? .orange : .secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 70)
+                .help("Project: Declare in this project's settings")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Computed property for project location label
+    private var projectLocationLabel: String {
+        let currentPlugin = marketplaceVM.plugins.first { $0.id == pluginId }
+        let isInProject = currentPlugin.map { $0.dataSource == .project || $0.dataSource == .both } ?? false
+        let location = currentPlugin?.projectFileLocation
+
+        guard isInProject else { return "None" }
+        switch location {
+        case .shared:
+            return "Shared"
+        case .local:
+            return "Local"
+        case nil:
+            return "Project"
+        }
     }
 }
 

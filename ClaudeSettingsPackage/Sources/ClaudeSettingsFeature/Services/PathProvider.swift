@@ -17,6 +17,18 @@ public protocol PathProvider: Sendable {
 
     /// All possible enterprise managed settings paths, in priority order
     var enterpriseManagedPaths: [URL] { get }
+
+    /// The plugins directory (~/.claude/plugins/)
+    var pluginsDirectory: URL { get }
+
+    /// Runtime marketplace registry (~/.claude/plugins/known_marketplaces.json)
+    var knownMarketplacesPath: URL { get }
+
+    /// Installed plugins tracking (~/.claude/plugins/installed_plugins.json)
+    var installedPluginsPath: URL { get }
+
+    /// Plugin cache directory (~/.claude/plugins/cache/)
+    var pluginsCacheDirectory: URL { get }
 }
 
 /// Default path provider using real system paths
@@ -45,6 +57,22 @@ public struct DefaultPathProvider: PathProvider {
             homeDirectory.appendingPathComponent(".claude/managed-settings.json"),
         ]
     }
+
+    public var pluginsDirectory: URL {
+        globalClaudeDirectory.appendingPathComponent("plugins")
+    }
+
+    public var knownMarketplacesPath: URL {
+        pluginsDirectory.appendingPathComponent("known_marketplaces.json")
+    }
+
+    public var installedPluginsPath: URL {
+        pluginsDirectory.appendingPathComponent("installed_plugins.json")
+    }
+
+    public var pluginsCacheDirectory: URL {
+        pluginsDirectory.appendingPathComponent("cache")
+    }
 }
 
 /// Mock path provider for testing with configurable paths
@@ -54,6 +82,10 @@ public struct MockPathProvider: PathProvider {
     public let claudeConfigPath: URL
     public let globalClaudeDirectory: URL
     public let enterpriseManagedPaths: [URL]
+    public let pluginsDirectory: URL
+    public let knownMarketplacesPath: URL
+    public let installedPluginsPath: URL
+    public let pluginsCacheDirectory: URL
 
     /// Create a mock path provider with a custom home directory
     /// All other paths are derived from the home directory
@@ -65,6 +97,10 @@ public struct MockPathProvider: PathProvider {
         self.enterpriseManagedPaths = [
             homeDirectory.appendingPathComponent(".claude/managed-settings.json"),
         ]
+        self.pluginsDirectory = homeDirectory.appendingPathComponent(".claude/plugins")
+        self.knownMarketplacesPath = homeDirectory.appendingPathComponent(".claude/plugins/known_marketplaces.json")
+        self.installedPluginsPath = homeDirectory.appendingPathComponent(".claude/plugins/installed_plugins.json")
+        self.pluginsCacheDirectory = homeDirectory.appendingPathComponent(".claude/plugins/cache")
     }
 
     /// Create a mock path provider with fully custom paths
@@ -73,12 +109,23 @@ public struct MockPathProvider: PathProvider {
         backupDirectory: URL,
         claudeConfigPath: URL,
         globalClaudeDirectory: URL,
-        enterpriseManagedPaths: [URL]
+        enterpriseManagedPaths: [URL],
+        pluginsDirectory: URL? = nil,
+        knownMarketplacesPath: URL? = nil,
+        installedPluginsPath: URL? = nil,
+        pluginsCacheDirectory: URL? = nil
     ) {
         self.homeDirectory = homeDirectory
         self.backupDirectory = backupDirectory
         self.claudeConfigPath = claudeConfigPath
         self.globalClaudeDirectory = globalClaudeDirectory
         self.enterpriseManagedPaths = enterpriseManagedPaths
+
+        // Default to derived paths if not provided
+        let defaultPluginsDir = globalClaudeDirectory.appendingPathComponent("plugins")
+        self.pluginsDirectory = pluginsDirectory ?? defaultPluginsDir
+        self.knownMarketplacesPath = knownMarketplacesPath ?? defaultPluginsDir.appendingPathComponent("known_marketplaces.json")
+        self.installedPluginsPath = installedPluginsPath ?? defaultPluginsDir.appendingPathComponent("installed_plugins.json")
+        self.pluginsCacheDirectory = pluginsCacheDirectory ?? defaultPluginsDir.appendingPathComponent("cache")
     }
 }

@@ -93,7 +93,7 @@ struct DocumentationSectionView: View {
         if let hookTypes = documentation.hookTypes, !hookTypes.isEmpty {
             BulletedListView(
                 title: "Available hook types:",
-                items: hookTypes,
+                items: Array(hookTypes.keys).sorted(),
                 monospaced: true
             )
         }
