@@ -101,4 +101,196 @@ struct ISO8601DateParsingTests {
         let date = parseISO8601Date("")
         #expect(date == nil)
     }
+
+    @Test("Parse date with +00:00 timezone format")
+    func parsePlusZeroTimezone() {
+        let date = parseISO8601Date("2026-01-24T00:22:38+00:00")
+        #expect(date != nil)
+    }
+}
+
+// MARK: - InstalledPlugin Codable Tests
+
+@Suite("InstalledPlugin Codable Tests")
+struct InstalledPluginCodableTests {
+    @Test("Encode only persists name, marketplace, installedAt")
+    func encodeOnlyPersistsBasicFields() throws {
+        let plugin = InstalledPlugin(
+            name: "test-plugin",
+            marketplace: "TestMarket",
+            installedAt: "2026-01-24T00:22:38Z",
+            dataSource: .global,
+            projectFileLocation: .shared,
+            installPath: "/path/to/plugin",
+            version: "1.0.0"
+        )
+
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(plugin)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+        // Should include these
+        #expect(json?["name"] as? String == "test-plugin")
+        #expect(json?["marketplace"] as? String == "TestMarket")
+        #expect(json?["installedAt"] as? String == "2026-01-24T00:22:38Z")
+
+        // Should NOT include these (not in CodingKeys)
+        #expect(json?["dataSource"] == nil)
+        #expect(json?["projectFileLocation"] == nil)
+        #expect(json?["installPath"] == nil)
+        #expect(json?["version"] == nil)
+    }
+
+    @Test("Decode sets default values for non-persisted fields")
+    func decodeSetDefaults() throws {
+        let json = """
+        {
+            "name": "decoded-plugin",
+            "marketplace": "DecodedMarket",
+            "installedAt": "2026-01-25T10:00:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        let plugin = try decoder.decode(InstalledPlugin.self, from: json)
+
+        #expect(plugin.name == "decoded-plugin")
+        #expect(plugin.marketplace == "DecodedMarket")
+        #expect(plugin.installedAt == "2026-01-25T10:00:00Z")
+
+        // Defaults
+        #expect(plugin.dataSource == .global)
+        #expect(plugin.projectFileLocation == nil)
+        #expect(plugin.installPath == nil)
+        #expect(plugin.version == nil)
+    }
+
+    @Test("Encode/decode round-trip preserves basic fields")
+    func roundTrip() throws {
+        let original = InstalledPlugin(
+            name: "round-trip-plugin",
+            marketplace: "RoundTripMarket",
+            installedAt: "2026-01-24T12:30:45Z"
+        )
+
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(original)
+
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(InstalledPlugin.self, from: data)
+
+        #expect(decoded.name == original.name)
+        #expect(decoded.marketplace == original.marketplace)
+        #expect(decoded.installedAt == original.installedAt)
+        #expect(decoded.id == original.id)
+    }
+
+    @Test("Decode handles missing installedAt")
+    func decodeMissingInstalledAt() throws {
+        let json = """
+        {
+            "name": "no-date-plugin",
+            "marketplace": "TestMarket"
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        let plugin = try decoder.decode(InstalledPlugin.self, from: json)
+
+        #expect(plugin.name == "no-date-plugin")
+        #expect(plugin.marketplace == "TestMarket")
+        #expect(plugin.installedAt == nil)
+    }
+
+    @Test("Decode throws for missing required fields")
+    func decodeThrowsForMissingRequired() {
+        let jsonMissingName = """
+        {
+            "marketplace": "TestMarket"
+        }
+        """.data(using: .utf8)!
+
+        let jsonMissingMarketplace = """
+        {
+            "name": "test-plugin"
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+
+        #expect(throws: (any Error).self) {
+            _ = try decoder.decode(InstalledPlugin.self, from: jsonMissingName)
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try decoder.decode(InstalledPlugin.self, from: jsonMissingMarketplace)
+        }
+    }
+
+    @Test("Encode produces valid JSON")
+    func encodeProducesValidJSON() throws {
+        let plugin = InstalledPlugin(
+            name: "json-plugin",
+            marketplace: "JSONMarket",
+            installedAt: "2026-01-24T00:00:00Z"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let data = try encoder.encode(plugin)
+        let jsonString = String(data: data, encoding: .utf8)
+
+        #expect(jsonString != nil)
+        #expect(jsonString?.contains("\"name\" : \"json-plugin\"") == true)
+    }
+}
+
+// MARK: - InstalledPlugin Property Tests
+
+@Suite("InstalledPlugin Property Tests")
+struct InstalledPluginPropertyTests {
+    @Test("Default dataSource is global")
+    func defaultDataSource() {
+        let plugin = InstalledPlugin(name: "test", marketplace: "Market")
+        #expect(plugin.dataSource == .global)
+    }
+
+    @Test("All properties can be set in initializer")
+    func allPropertiesSet() {
+        let plugin = InstalledPlugin(
+            name: "full-plugin",
+            marketplace: "FullMarket",
+            installedAt: "2026-01-24T00:00:00Z",
+            dataSource: .both,
+            projectFileLocation: .local,
+            installPath: "/path/to/install",
+            version: "2.0.0"
+        )
+
+        #expect(plugin.name == "full-plugin")
+        #expect(plugin.marketplace == "FullMarket")
+        #expect(plugin.installedAt == "2026-01-24T00:00:00Z")
+        #expect(plugin.dataSource == .both)
+        #expect(plugin.projectFileLocation == .local)
+        #expect(plugin.installPath == "/path/to/install")
+        #expect(plugin.version == "2.0.0")
+    }
+
+    @Test("dataSource is mutable")
+    func dataSourceMutable() {
+        var plugin = InstalledPlugin(name: "test", marketplace: "Market")
+        #expect(plugin.dataSource == .global)
+
+        plugin.dataSource = .project
+        #expect(plugin.dataSource == .project)
+    }
+
+    @Test("projectFileLocation is mutable")
+    func projectFileLocationMutable() {
+        var plugin = InstalledPlugin(name: "test", marketplace: "Market")
+        #expect(plugin.projectFileLocation == nil)
+
+        plugin.projectFileLocation = .shared
+        #expect(plugin.projectFileLocation == .shared)
+    }
 }

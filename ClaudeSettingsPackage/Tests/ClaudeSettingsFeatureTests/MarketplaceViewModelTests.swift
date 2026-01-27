@@ -639,3 +639,465 @@ struct MarketplaceViewModelPluginOperationsTests {
         #expect(viewModel.isMarkedForDeletion(plugin: pluginId) == false)
     }
 }
+
+// MARK: - Save All Edits Tests
+
+@Suite("MarketplaceViewModel saveAllEdits")
+struct MarketplaceViewModelSaveTests {
+    @Test("saveAllEdits applies marketplace edits")
+    @MainActor
+    func saveAllEditsAppliesMarketplaceEdits() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeEmptyPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+
+        // Start editing and add a new marketplace
+        viewModel.startEditing()
+        var newEdit = viewModel.createNewMarketplace()
+        newEdit.name = "NewTestMarket"
+        newEdit.sourceType = "github"
+        newEdit.repo = "test/newrepo"
+        viewModel.addNewMarketplace(newEdit)
+
+        // Save changes
+        try await viewModel.saveAllEdits()
+
+        // Verify marketplace was added
+        #expect(viewModel.marketplaces.contains { $0.name == "NewTestMarket" })
+        #expect(viewModel.isEditingMode == false)
+        #expect(viewModel.pendingMarketplaceEdits.isEmpty)
+    }
+
+    @Test("saveAllEdits applies marketplace deletions")
+    @MainActor
+    func saveAllEditsAppliesMarketplaceDeletions() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeEmptyPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+        let initialCount = viewModel.marketplaces.count
+
+        // Start editing and mark a marketplace for deletion
+        viewModel.startEditing()
+        viewModel.deleteMarketplace(named: "TestMarketplace")
+
+        // Save changes
+        try await viewModel.saveAllEdits()
+
+        // Verify marketplace was removed
+        #expect(viewModel.marketplaces.count == initialCount - 1)
+        #expect(!viewModel.marketplaces.contains { $0.name == "TestMarketplace" })
+        #expect(viewModel.marketplacesToDelete.isEmpty)
+    }
+
+    @Test("saveAllEdits applies plugin edits")
+    @MainActor
+    func saveAllEditsAppliesPluginEdits() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+
+        // Start editing and modify a plugin
+        viewModel.startEditing()
+        let plugin = viewModel.plugins.first!
+        var edit = PluginPendingEdit(from: plugin)
+        edit.name = "renamed-plugin"
+        viewModel.updatePendingEdit(edit, for: plugin.id)
+
+        // Save changes
+        try await viewModel.saveAllEdits()
+
+        // Verify editing mode is cleared
+        #expect(viewModel.isEditingMode == false)
+        #expect(viewModel.pendingPluginEdits.isEmpty)
+    }
+
+    @Test("saveAllEdits processes install queue")
+    @MainActor
+    func saveAllEditsProcessesInstallQueue() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeEmptyPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+
+        // Queue a plugin for installation
+        viewModel.startEditing()
+        let pluginToInstall = AvailablePlugin(
+            name: "new-install-plugin",
+            marketplace: "TestMarketplace",
+            path: URL(fileURLWithPath: "/tmp/plugin")
+        )
+        viewModel.queuePluginInstall(pluginToInstall)
+
+        #expect(viewModel.hasUnsavedChanges == true)
+
+        // Save changes
+        try await viewModel.saveAllEdits()
+
+        // Verify plugin was installed
+        #expect(viewModel.plugins.contains { $0.name == "new-install-plugin" })
+        #expect(viewModel.pluginsToInstall.isEmpty)
+    }
+
+    @Test("saveAllEdits applies plugin deletions")
+    @MainActor
+    func saveAllEditsAppliesPluginDeletions() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+        let initialCount = viewModel.plugins.count
+
+        // Start editing and delete a plugin
+        viewModel.startEditing()
+        let pluginToDelete = viewModel.plugins.first!
+        viewModel.deletePlugin(id: pluginToDelete.id)
+
+        // Save changes
+        try await viewModel.saveAllEdits()
+
+        // Verify plugin was removed
+        #expect(viewModel.plugins.count == initialCount - 1)
+        #expect(viewModel.pluginsToDelete.isEmpty)
+    }
+
+    @Test("saveAllEdits resets all editing state")
+    @MainActor
+    func saveAllEditsResetsEditingState() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+
+        // Set up various editing states
+        viewModel.startEditing()
+        viewModel.pendingMarketplaceEdits["test"] = MarketplacePendingEdit(name: "test", isNew: true)
+        viewModel.pendingPluginEdits["test@Market"] = PluginPendingEdit(name: "test", marketplace: "Market", isNew: true)
+        viewModel.marketplacesToDelete.insert("SomeMarket")
+        viewModel.pluginsToDelete.insert("plugin@Market")
+        viewModel.pluginsToInstall["new@Market"] = AvailablePlugin(
+            name: "new",
+            marketplace: "Market",
+            path: URL(fileURLWithPath: "/tmp")
+        )
+
+        // Save changes
+        try await viewModel.saveAllEdits()
+
+        // Verify all state is cleared
+        #expect(viewModel.isEditingMode == false)
+        #expect(viewModel.pendingMarketplaceEdits.isEmpty)
+        #expect(viewModel.pendingPluginEdits.isEmpty)
+        #expect(viewModel.marketplacesToDelete.isEmpty)
+        #expect(viewModel.pluginsToDelete.isEmpty)
+        #expect(viewModel.pluginsToInstall.isEmpty)
+    }
+
+    @Test("saveAllEdits writes to correct files")
+    @MainActor
+    func saveAllEditsWritesToCorrectFiles() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+
+        viewModel.startEditing()
+        var newMarket = viewModel.createNewMarketplace()
+        newMarket.name = "FileWriteTest"
+        newMarket.repo = "test/repo"
+        viewModel.addNewMarketplace(newMarket)
+
+        try await viewModel.saveAllEdits()
+
+        // Verify files were written
+        let marketplacesWritten = await mockFS.getFileData(at: pathProvider.knownMarketplacesPath)
+        let pluginsWritten = await mockFS.getFileData(at: pathProvider.installedPluginsPath)
+
+        #expect(marketplacesWritten != nil)
+        #expect(pluginsWritten != nil)
+
+        // Verify marketplace JSON contains new entry
+        if let data = marketplacesWritten {
+            let content = String(data: data, encoding: .utf8) ?? ""
+            #expect(content.contains("FileWriteTest"))
+        }
+    }
+
+    @Test("saveAllEdits skips duplicate installs")
+    @MainActor
+    func saveAllEditsSkipsDuplicateInstalls() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+
+        // Try to install an already-installed plugin
+        viewModel.startEditing()
+        let alreadyInstalled = AvailablePlugin(
+            name: "plugin-a",
+            marketplace: "TestMarketplace",
+            path: URL(fileURLWithPath: "/tmp")
+        )
+        viewModel.queuePluginInstall(alreadyInstalled)
+
+        let countBefore = viewModel.plugins.count
+
+        try await viewModel.saveAllEdits()
+
+        // Count should remain the same (no duplicate)
+        #expect(viewModel.plugins.count == countBefore)
+    }
+}
+
+// MARK: - Atomic Plugin Operations Tests
+
+@Suite("MarketplaceViewModel Atomic Plugin Operations")
+struct MarketplaceViewModelAtomicOperationsTests {
+    @Test("installPluginGlobally adds plugin to installed_plugins.json")
+    @MainActor
+    func installPluginGlobally() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeEmptyPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+
+        try await viewModel.installPluginGlobally(name: "new-global-plugin", marketplace: "TestMarketplace")
+
+        // Verify plugin was added
+        #expect(viewModel.plugins.contains { $0.name == "new-global-plugin" })
+
+        // Verify file was written
+        let writtenData = await mockFS.getFileData(at: pathProvider.installedPluginsPath)
+        #expect(writtenData != nil)
+        if let data = writtenData {
+            let content = String(data: data, encoding: .utf8) ?? ""
+            #expect(content.contains("new-global-plugin@TestMarketplace"))
+        }
+    }
+
+    @Test("installPluginGlobally skips already-installed plugin")
+    @MainActor
+    func installPluginGloballySkipsInstalled() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+        let countBefore = viewModel.plugins.count
+
+        // Try to install already-installed plugin
+        try await viewModel.installPluginGlobally(name: "plugin-a", marketplace: "TestMarketplace")
+
+        // Count should remain the same
+        #expect(viewModel.plugins.count == countBefore)
+    }
+
+    @Test("uninstallPluginGlobally removes plugin from installed_plugins.json")
+    @MainActor
+    func uninstallPluginGlobally() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+        #expect(viewModel.plugins.contains { $0.name == "plugin-a" })
+
+        try await viewModel.uninstallPluginGlobally(pluginId: "plugin-a@TestMarketplace")
+
+        // Verify plugin was removed
+        #expect(!viewModel.plugins.contains { $0.id == "plugin-a@TestMarketplace" && $0.dataSource == .global })
+    }
+
+    @Test("uninstallPluginGlobally handles non-existent plugin gracefully")
+    @MainActor
+    func uninstallPluginGloballyHandlesNonExistent() async throws {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+        let countBefore = viewModel.plugins.count
+
+        // Try to uninstall non-existent plugin (should not throw)
+        try await viewModel.uninstallPluginGlobally(pluginId: "nonexistent@TestMarketplace")
+
+        // Count should remain the same
+        #expect(viewModel.plugins.count == countBefore)
+    }
+
+    @Test("queuePluginInstallById creates minimal plugin")
+    @MainActor
+    func queuePluginInstallById() async {
+        let viewModel = MarketplaceViewModel(
+            pathProvider: TestFixtures.makePathProvider(),
+            fileSystemManager: MockFileSystemManager()
+        )
+
+        viewModel.queuePluginInstallById("test-plugin@TestMarket", name: "test-plugin", marketplace: "TestMarket")
+
+        #expect(viewModel.pluginsToInstall["test-plugin@TestMarket"] != nil)
+        #expect(viewModel.pluginsToInstall["test-plugin@TestMarket"]?.name == "test-plugin")
+    }
+
+    @Test("unqueuePluginInstallById removes from queue")
+    @MainActor
+    func unqueuePluginInstallById() async {
+        let viewModel = MarketplaceViewModel(
+            pathProvider: TestFixtures.makePathProvider(),
+            fileSystemManager: MockFileSystemManager()
+        )
+
+        viewModel.queuePluginInstallById("test-plugin@TestMarket", name: "test-plugin", marketplace: "TestMarket")
+        #expect(viewModel.pluginsToInstall["test-plugin@TestMarket"] != nil)
+
+        viewModel.unqueuePluginInstallById("test-plugin@TestMarket")
+
+        #expect(viewModel.pluginsToInstall["test-plugin@TestMarket"] == nil)
+    }
+}
+
+// MARK: - Available Plugins Tests
+
+@Suite("MarketplaceViewModel Available Plugins")
+struct MarketplaceViewModelAvailablePluginsTests {
+    @Test("availablePlugins returns empty for unknown marketplace")
+    @MainActor
+    func availablePluginsReturnsEmpty() async {
+        let viewModel = MarketplaceViewModel(
+            pathProvider: TestFixtures.makePathProvider(),
+            fileSystemManager: MockFileSystemManager()
+        )
+
+        let plugins = viewModel.availablePlugins(for: "NonExistentMarket")
+
+        #expect(plugins.isEmpty)
+    }
+
+    @Test("isLoadingAvailablePlugins returns correct state")
+    @MainActor
+    func isLoadingAvailablePluginsState() async {
+        let viewModel = MarketplaceViewModel(
+            pathProvider: TestFixtures.makePathProvider(),
+            fileSystemManager: MockFileSystemManager()
+        )
+
+        #expect(viewModel.isLoadingAvailablePlugins(for: "TestMarket") == false)
+    }
+
+    @Test("effectiveInstallLocation returns marketplace installLocation when set")
+    @MainActor
+    func effectiveInstallLocationReturnsSet() async {
+        let pathProvider = TestFixtures.makePathProvider()
+        let mockFS = MockFileSystemManager()
+
+        await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeEmptyPluginsJSON())
+
+        let viewModel = MarketplaceViewModel(
+            pathProvider: pathProvider,
+            fileSystemManager: mockFS
+        )
+
+        await viewModel.loadAll()
+
+        let marketplace = viewModel.marketplaces.first { $0.name == "TestMarketplace" }!
+        let location = await viewModel.effectiveInstallLocation(for: marketplace)
+
+        #expect(location == marketplace.installLocation)
+    }
+}

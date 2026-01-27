@@ -29,6 +29,9 @@ public protocol PathProvider: Sendable {
 
     /// Plugin cache directory (~/.claude/plugins/cache/)
     var pluginsCacheDirectory: URL { get }
+
+    /// Marketplace clones directory (~/.claude/plugins/marketplaces/)
+    var marketplaceClonesDirectory: URL { get }
 }
 
 /// Default path provider using real system paths
@@ -73,6 +76,10 @@ public struct DefaultPathProvider: PathProvider {
     public var pluginsCacheDirectory: URL {
         pluginsDirectory.appendingPathComponent("cache")
     }
+
+    public var marketplaceClonesDirectory: URL {
+        pluginsDirectory.appendingPathComponent("marketplaces")
+    }
 }
 
 /// Mock path provider for testing with configurable paths
@@ -86,6 +93,7 @@ public struct MockPathProvider: PathProvider {
     public let knownMarketplacesPath: URL
     public let installedPluginsPath: URL
     public let pluginsCacheDirectory: URL
+    public let marketplaceClonesDirectory: URL
 
     /// Create a mock path provider with a custom home directory
     /// All other paths are derived from the home directory
@@ -101,6 +109,7 @@ public struct MockPathProvider: PathProvider {
         self.knownMarketplacesPath = homeDirectory.appendingPathComponent(".claude/plugins/known_marketplaces.json")
         self.installedPluginsPath = homeDirectory.appendingPathComponent(".claude/plugins/installed_plugins.json")
         self.pluginsCacheDirectory = homeDirectory.appendingPathComponent(".claude/plugins/cache")
+        self.marketplaceClonesDirectory = homeDirectory.appendingPathComponent(".claude/plugins/marketplaces")
     }
 
     /// Create a mock path provider with fully custom paths
@@ -113,7 +122,8 @@ public struct MockPathProvider: PathProvider {
         pluginsDirectory: URL? = nil,
         knownMarketplacesPath: URL? = nil,
         installedPluginsPath: URL? = nil,
-        pluginsCacheDirectory: URL? = nil
+        pluginsCacheDirectory: URL? = nil,
+        marketplaceClonesDirectory: URL? = nil
     ) {
         self.homeDirectory = homeDirectory
         self.backupDirectory = backupDirectory
@@ -127,5 +137,6 @@ public struct MockPathProvider: PathProvider {
         self.knownMarketplacesPath = knownMarketplacesPath ?? defaultPluginsDir.appendingPathComponent("known_marketplaces.json")
         self.installedPluginsPath = installedPluginsPath ?? defaultPluginsDir.appendingPathComponent("installed_plugins.json")
         self.pluginsCacheDirectory = pluginsCacheDirectory ?? defaultPluginsDir.appendingPathComponent("cache")
+        self.marketplaceClonesDirectory = marketplaceClonesDirectory ?? defaultPluginsDir.appendingPathComponent("marketplaces")
     }
 }

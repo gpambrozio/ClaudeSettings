@@ -205,20 +205,18 @@ final public class MarketplaceViewModel {
 
     /// Get the effective install location for a marketplace
     /// For project-only marketplaces, checks if the folder exists at the expected location
-    public func effectiveInstallLocation(for marketplace: KnownMarketplace) -> String? {
+    public func effectiveInstallLocation(for marketplace: KnownMarketplace) async -> String? {
         // If marketplace has an install location, use it
         if let location = marketplace.installLocation {
             return location
         }
 
         // For project-only marketplaces, check if the folder exists at the expected location
-        let expectedLocation = pathProvider.pluginsDirectory
-            .appendingPathComponent("marketplaces")
+        let expectedURL = pathProvider.marketplaceClonesDirectory
             .appendingPathComponent(marketplace.name)
-            .path
 
-        if FileManager.default.fileExists(atPath: expectedLocation) {
-            return expectedLocation
+        if await fileSystemManager.exists(at: expectedURL) {
+            return expectedURL.path
         }
 
         return nil
@@ -478,7 +476,7 @@ final public class MarketplaceViewModel {
         loadingAvailablePlugins.insert(marketplace.name)
 
         // Use effective install location to handle project-only marketplaces
-        let location = effectiveInstallLocation(for: marketplace)
+        let location = await effectiveInstallLocation(for: marketplace)
         let available = await parser.scanAvailablePlugins(in: marketplace, at: location)
         availablePluginsCache[marketplace.name] = available
 
@@ -666,9 +664,8 @@ final public class MarketplaceViewModel {
         }
 
         // Use effective install location or compute the expected path
-        let installLocation = effectiveInstallLocation(for: marketplace)
-            ?? pathProvider.pluginsDirectory
-            .appendingPathComponent("marketplaces")
+        let installLocation = await effectiveInstallLocation(for: marketplace)
+            ?? pathProvider.marketplaceClonesDirectory
             .appendingPathComponent(marketplace.name)
             .path
 

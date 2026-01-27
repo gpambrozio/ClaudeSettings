@@ -659,7 +659,7 @@ public struct InspectorView: View {
         }
         .task(id: marketplace.name) {
             // Auto-load available plugins when marketplace details are shown
-            if marketplaceVM.effectiveInstallLocation(for: marketplace) != nil {
+            if await marketplaceVM.effectiveInstallLocation(for: marketplace) != nil {
                 await marketplaceVM.loadAvailablePlugins(for: marketplace)
             }
         }
@@ -679,8 +679,6 @@ public struct InspectorView: View {
 
     @ViewBuilder
     private func marketplaceReadOnlyInfo(marketplace: KnownMarketplace, viewModel: SettingsViewModel) -> some View {
-        let marketplaceVM = viewModel.marketplaceViewModel
-
         VStack(alignment: .leading, spacing: 8) {
             LabeledContent("Type", value: marketplace.source.source)
 
@@ -696,7 +694,7 @@ public struct InspectorView: View {
                 LabeledContent("Branch/Tag", value: ref)
             }
 
-            if let location = marketplaceVM.effectiveInstallLocation(for: marketplace) {
+            if let location = marketplace.installLocation {
                 LabeledContent("Install Location", value: location)
             }
 

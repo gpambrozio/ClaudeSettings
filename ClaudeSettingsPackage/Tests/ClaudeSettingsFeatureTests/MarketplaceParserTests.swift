@@ -338,8 +338,8 @@ struct MarketplaceParserFileWritingTests {
 
         try await parser.saveKnownMarketplaces(marketplaces, to: testPath)
 
-        // Verify file was written to disk
-        let writtenData = try? Data(contentsOf: testPath)
+        // Verify file was written to mock file system
+        let writtenData = await mockFS.getFileData(at: testPath)
         #expect(writtenData != nil)
 
         // Parse back to verify structure
@@ -347,9 +347,6 @@ struct MarketplaceParserFileWritingTests {
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             #expect(json?["SavedMarket"] != nil)
         }
-
-        // Cleanup
-        try? FileManager.default.removeItem(at: testPath)
     }
 
     @Test("saveKnownMarketplaces excludes project-only marketplaces")
@@ -373,7 +370,7 @@ struct MarketplaceParserFileWritingTests {
 
         try await parser.saveKnownMarketplaces(marketplaces, to: testPath)
 
-        let writtenData = try? Data(contentsOf: testPath)
+        let writtenData = await mockFS.getFileData(at: testPath)
         if let data = writtenData {
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             #expect(json?["GlobalMarket"] != nil)
@@ -381,9 +378,6 @@ struct MarketplaceParserFileWritingTests {
         } else {
             #expect(writtenData != nil, "File should have been written")
         }
-
-        // Cleanup
-        try? FileManager.default.removeItem(at: testPath)
     }
 
     @Test("saveInstalledPlugins creates valid JSON structure")
@@ -403,7 +397,7 @@ struct MarketplaceParserFileWritingTests {
 
         try await parser.saveInstalledPlugins(plugins, to: testPath, existingData: nil)
 
-        let writtenData = try? Data(contentsOf: testPath)
+        let writtenData = await mockFS.getFileData(at: testPath)
         #expect(writtenData != nil)
 
         // Parse and verify structure
@@ -415,9 +409,6 @@ struct MarketplaceParserFileWritingTests {
             let pluginsDict = json?["plugins"] as? [String: Any]
             #expect(pluginsDict?["new-plugin@TestMarket"] != nil)
         }
-
-        // Cleanup
-        try? FileManager.default.removeItem(at: testPath)
     }
 
     @Test("saveInstalledPlugins preserves existing plugin data")
@@ -440,7 +431,7 @@ struct MarketplaceParserFileWritingTests {
 
         try await parser.saveInstalledPlugins(plugins, to: testPath, existingData: existingData)
 
-        let writtenData = try? Data(contentsOf: testPath)
+        let writtenData = await mockFS.getFileData(at: testPath)
         if let data = writtenData {
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             let pluginsDict = json?["plugins"] as? [String: [[String: Any]]]
@@ -451,9 +442,6 @@ struct MarketplaceParserFileWritingTests {
         } else {
             #expect(writtenData != nil, "File should have been written")
         }
-
-        // Cleanup
-        try? FileManager.default.removeItem(at: testPath)
     }
 }
 
@@ -555,5 +543,305 @@ struct MarketplaceParserCacheScanningTests {
         #expect(result.count == 2)
         #expect(result[0].name == "alpha")
         #expect(result[1].name == "zebra")
+    }
+}
+
+// MARK: - Scan Available Plugins Tests
+
+private enum ScanPluginsTestFixtures {
+    static let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("scan-plugins-tests-\(UUID().uuidString)")
+
+    static func createMarketplaceDirectory(name: String, plugins: [String: [String]]) -> URL {
+        let marketDir = tempDir.appendingPathComponent(name)
+        try? FileManager.default.createDirectory(at: marketDir, withIntermediateDirectories: true)
+
+        for (pluginName, markers) in plugins {
+            let pluginDir = marketDir.appendingPathComponent(pluginName)
+            try? FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+
+            for marker in markers {
+                let markerPath = pluginDir.appendingPathComponent(marker)
+                if marker.contains(".") {
+                    try? "{}".write(to: markerPath, atomically: true, encoding: .utf8)
+                } else {
+                    try? FileManager.default.createDirectory(at: markerPath, withIntermediateDirectories: true)
+                }
+            }
+        }
+
+        return marketDir
+    }
+
+    static func cleanup() {
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+}
+
+@Suite("MarketplaceParser scanAvailablePlugins")
+struct MarketplaceParserScanAvailablePluginsTests {
+    init() {
+        try? FileManager.default.createDirectory(at: ScanPluginsTestFixtures.tempDir, withIntermediateDirectories: true)
+    }
+
+    @Test("Returns empty array for nil install location")
+    func returnsEmptyForNilLocation() async {
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "TestMarket",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: nil
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: nil)
+
+        #expect(result.isEmpty)
+    }
+
+    @Test("Returns empty array for nonexistent directory")
+    func returnsEmptyForNonexistentDir() async {
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "TestMarket",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: "/nonexistent/path"
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: "/nonexistent/path")
+
+        #expect(result.isEmpty)
+    }
+
+    @Test("Detects plugins in root directory")
+    func detectsPluginsInRoot() async {
+        let marketDir = ScanPluginsTestFixtures.createMarketplaceDirectory(
+            name: "root-market",
+            plugins: [
+                "plugin-a": ["info.json"],
+                "plugin-b": ["SKILL.md"],
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: marketDir) }
+
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "root-market",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: marketDir.path
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: marketDir.path)
+
+        #expect(result.count == 2)
+        #expect(result.contains { $0.name == "plugin-a" })
+        #expect(result.contains { $0.name == "plugin-b" })
+    }
+
+    @Test("Detects plugins in plugins subdirectory")
+    func detectsPluginsInSubdirectory() async {
+        let marketDir = ScanPluginsTestFixtures.tempDir.appendingPathComponent("subdir-market")
+        try? FileManager.default.createDirectory(at: marketDir, withIntermediateDirectories: true)
+
+        // Create plugins subdirectory
+        let pluginsDir = marketDir.appendingPathComponent("plugins")
+        try? FileManager.default.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
+
+        // Add plugin in subdirectory
+        let pluginDir = pluginsDir.appendingPathComponent("subdir-plugin")
+        try? FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+        try? "{}".write(to: pluginDir.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+
+        defer { try? FileManager.default.removeItem(at: marketDir) }
+
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "subdir-market",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: marketDir.path
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: marketDir.path)
+
+        #expect(result.contains { $0.name == "subdir-plugin" })
+    }
+
+    @Test("Returns sorted results")
+    func returnsSortedResults() async {
+        let marketDir = ScanPluginsTestFixtures.createMarketplaceDirectory(
+            name: "sorted-market",
+            plugins: [
+                "zebra-plugin": ["info.json"],
+                "alpha-plugin": ["info.json"],
+                "middle-plugin": ["info.json"],
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: marketDir) }
+
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "sorted-market",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: marketDir.path
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: marketDir.path)
+
+        #expect(result.count == 3)
+        #expect(result[0].name == "alpha-plugin")
+        #expect(result[1].name == "middle-plugin")
+        #expect(result[2].name == "zebra-plugin")
+    }
+
+    @Test("Sets correct marketplace name on plugins")
+    func setsCorrectMarketplaceName() async {
+        let marketDir = ScanPluginsTestFixtures.createMarketplaceDirectory(
+            name: "name-test-market",
+            plugins: [
+                "test-plugin": ["info.json"],
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: marketDir) }
+
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "MySpecialMarket",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: marketDir.path
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: marketDir.path)
+
+        #expect(result.count == 1)
+        #expect(result[0].marketplace == "MySpecialMarket")
+    }
+
+    @Test("Skips directories without plugin markers")
+    func skipsNonPluginDirectories() async {
+        let marketDir = ScanPluginsTestFixtures.tempDir.appendingPathComponent("mixed-market")
+        try? FileManager.default.createDirectory(at: marketDir, withIntermediateDirectories: true)
+
+        // Real plugin
+        let pluginDir = marketDir.appendingPathComponent("real-plugin")
+        try? FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+        try? "{}".write(to: pluginDir.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+
+        // Not a plugin (no markers)
+        let notPluginDir = marketDir.appendingPathComponent("not-a-plugin")
+        try? FileManager.default.createDirectory(at: notPluginDir, withIntermediateDirectories: true)
+        try? "readme".write(to: notPluginDir.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+
+        defer { try? FileManager.default.removeItem(at: marketDir) }
+
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "mixed-market",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: marketDir.path
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: marketDir.path)
+
+        #expect(result.count == 1)
+        #expect(result[0].name == "real-plugin")
+    }
+
+    @Test("Deduplicates plugins found in multiple locations")
+    func deduplicatesPlugins() async {
+        let marketDir = ScanPluginsTestFixtures.tempDir.appendingPathComponent("dedup-market")
+        try? FileManager.default.createDirectory(at: marketDir, withIntermediateDirectories: true)
+
+        // Plugin in root
+        let rootPlugin = marketDir.appendingPathComponent("dup-plugin")
+        try? FileManager.default.createDirectory(at: rootPlugin, withIntermediateDirectories: true)
+        try? "{}".write(to: rootPlugin.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+
+        // Same plugin name in plugins subdirectory
+        let pluginsDir = marketDir.appendingPathComponent("plugins")
+        try? FileManager.default.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
+        let subPlugin = pluginsDir.appendingPathComponent("dup-plugin")
+        try? FileManager.default.createDirectory(at: subPlugin, withIntermediateDirectories: true)
+        try? "{}".write(to: subPlugin.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+
+        defer { try? FileManager.default.removeItem(at: marketDir) }
+
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "dedup-market",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: marketDir.path
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: marketDir.path)
+
+        // Should only have one instance of dup-plugin
+        let dupPluginCount = result.filter { $0.name == "dup-plugin" }.count
+        #expect(dupPluginCount == 1)
+    }
+
+    @Test("Detects plugins in external_plugins subdirectory")
+    func detectsPluginsInExternalPlugins() async {
+        let marketDir = ScanPluginsTestFixtures.tempDir.appendingPathComponent("external-market")
+        try? FileManager.default.createDirectory(at: marketDir, withIntermediateDirectories: true)
+
+        // Create external_plugins subdirectory
+        let externalDir = marketDir.appendingPathComponent("external_plugins")
+        try? FileManager.default.createDirectory(at: externalDir, withIntermediateDirectories: true)
+
+        let pluginDir = externalDir.appendingPathComponent("external-plugin")
+        try? FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+        try? "{}".write(to: pluginDir.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+
+        defer { try? FileManager.default.removeItem(at: marketDir) }
+
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "external-market",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: marketDir.path
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: marketDir.path)
+
+        #expect(result.contains { $0.name == "external-plugin" })
+    }
+
+    @Test("Extracts metadata from plugin")
+    func extractsMetadata() async {
+        let marketDir = ScanPluginsTestFixtures.tempDir.appendingPathComponent("metadata-market")
+        try? FileManager.default.createDirectory(at: marketDir, withIntermediateDirectories: true)
+
+        let pluginDir = marketDir.appendingPathComponent("metadata-plugin")
+        try? FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+        let infoJson = """
+        {
+            "version": "2.5.0",
+            "description": "A plugin with metadata"
+        }
+        """
+        try? infoJson.write(to: pluginDir.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+
+        defer { try? FileManager.default.removeItem(at: marketDir) }
+
+        let parser = MarketplaceParser()
+        let marketplace = KnownMarketplace(
+            name: "metadata-market",
+            source: MarketplaceSource(source: "github", repo: "test/repo"),
+            dataSource: .global,
+            installLocation: marketDir.path
+        )
+
+        let result = await parser.scanAvailablePlugins(in: marketplace, at: marketDir.path)
+
+        #expect(result.count == 1)
+        #expect(result[0].version == "2.5.0")
+        #expect(result[0].description == "A plugin with metadata")
     }
 }

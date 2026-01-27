@@ -10,7 +10,15 @@ public struct MarketplacePendingEdit: Sendable {
     public var ref: String
     public var isNew: Bool
 
-    public init(original: KnownMarketplace? = nil, name: String = "", sourceType: String = "github", repo: String = "", path: String = "", ref: String = "", isNew: Bool = false) {
+    public init(
+        original: KnownMarketplace? = nil,
+        name: String = "",
+        sourceType: String = "github",
+        repo: String = "",
+        path: String = "",
+        ref: String = "",
+        isNew: Bool = false
+    ) {
         self.original = original
         self.name = name
         self.sourceType = sourceType

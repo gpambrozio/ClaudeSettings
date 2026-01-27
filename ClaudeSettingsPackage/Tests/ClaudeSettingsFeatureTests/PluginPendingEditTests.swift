@@ -72,3 +72,101 @@ struct PluginPendingEditValidationTests {
         #expect(recreatedPlugin.installedAt == originalDate)
     }
 }
+
+// MARK: - Edge Cases
+
+@Suite("PluginPendingEdit Edge Cases")
+struct PluginPendingEditEdgeCaseTests {
+    @Test("Whitespace-only name is invalid")
+    func whitespaceOnlyNameInvalid() {
+        let edit = PluginPendingEdit(name: "   \t\n  ", marketplace: "TestMarket")
+
+        #expect(edit.validationError != nil)
+        #expect(edit.validationError?.contains("Name") == true)
+    }
+
+    @Test("Whitespace-only marketplace is invalid")
+    func whitespaceOnlyMarketplaceInvalid() {
+        let edit = PluginPendingEdit(name: "test-plugin", marketplace: "   \n  ")
+
+        #expect(edit.validationError != nil)
+        #expect(edit.validationError?.contains("Marketplace") == true)
+    }
+
+    @Test("toPlugin generates new installedAt for new plugins")
+    func toPluginGeneratesNewInstalledAt() {
+        let edit = PluginPendingEdit(name: "new-plugin", marketplace: "Market", isNew: true)
+
+        let plugin = edit.toPlugin()
+
+        // Should have a valid ISO 8601 date
+        #expect(plugin.installedAt != nil)
+        #expect(plugin.installedAt?.contains("T") == true)
+    }
+
+    @Test("toPlugin handles nil original installedAt")
+    func toPluginHandlesNilInstalledAt() {
+        let original = InstalledPlugin(
+            name: "no-date-plugin",
+            marketplace: "Market",
+            installedAt: nil
+        )
+
+        let edit = PluginPendingEdit(from: original)
+        let plugin = edit.toPlugin()
+
+        // Should generate new date when original had nil
+        #expect(plugin.installedAt != nil)
+    }
+
+    @Test("Name with special characters is valid")
+    func nameWithSpecialCharsValid() {
+        let edit = PluginPendingEdit(name: "my-plugin_v2.0", marketplace: "TestMarket")
+
+        #expect(edit.validationError == nil)
+    }
+
+    @Test("Name with @ symbol is valid")
+    func nameWithAtSymbolValid() {
+        let edit = PluginPendingEdit(name: "scoped@plugin", marketplace: "TestMarket")
+
+        #expect(edit.validationError == nil)
+    }
+
+    @Test("toPlugin correctly computes plugin id")
+    func toPluginComputesId() {
+        let edit = PluginPendingEdit(name: "test-plugin", marketplace: "TestMarket")
+
+        let plugin = edit.toPlugin()
+
+        #expect(plugin.id == "test-plugin@TestMarket")
+    }
+
+    @Test("Creates from plugin with all fields set")
+    func createsFromFullPlugin() {
+        let plugin = InstalledPlugin(
+            name: "full-plugin",
+            marketplace: "FullMarket",
+            installedAt: "2026-01-24T00:00:00Z",
+            dataSource: .both,
+            projectFileLocation: .local,
+            installPath: "/path/to/plugin",
+            version: "2.0.0"
+        )
+
+        let edit = PluginPendingEdit(from: plugin)
+
+        #expect(edit.name == "full-plugin")
+        #expect(edit.marketplace == "FullMarket")
+        #expect(edit.isNew == false)
+        #expect(edit.original?.installPath == "/path/to/plugin")
+    }
+
+    @Test("Default initializer creates new plugin")
+    func defaultInitializerCreatesNew() {
+        let edit = PluginPendingEdit(name: "default-plugin", marketplace: "DefaultMarket", isNew: true)
+
+        #expect(edit.isNew == true)
+        #expect(edit.original == nil)
+    }
+}
