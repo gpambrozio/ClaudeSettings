@@ -333,9 +333,8 @@ public actor MarketplaceParser {
             // Find version directories
             var versionDirs: [URL] = []
             for url in contents {
-                if await fileSystemManager.isDirectory(at: url) {
-                    versionDirs.append(url)
-                }
+                guard await fileSystemManager.isDirectory(at: url) else { continue }
+                versionDirs.append(url)
             }
 
             // Sort using semantic version comparison (descending)
