@@ -506,9 +506,52 @@ final public class MarketplaceViewModel {
         availablePluginsCache[marketplaceName] ?? []
     }
 
+    /// Get all plugins for display, merging available plugins with installed-only plugins
+    /// This ensures plugins that exist only in cache (not in marketplace directory) are shown
+    /// - Parameter marketplaceName: The marketplace to get plugins for
+    /// - Returns: Merged array of AvailablePlugin objects for display
+    public func allPluginsForDisplay(from marketplaceName: String) -> [AvailablePlugin] {
+        var result = availablePlugins(for: marketplaceName)
+        let availableNames = Set(result.map(\.name))
+
+        // Add any installed plugins not in available list (e.g., cache-only plugins)
+        for installed in plugins(from: marketplaceName) {
+            guard !availableNames.contains(installed.name) else { continue }
+
+            // Create AvailablePlugin from InstalledPlugin
+            // Description will be looked up from cache in the view if available
+            let available = AvailablePlugin(
+                name: installed.name,
+                marketplace: installed.marketplace,
+                version: installed.version,
+                description: nil,
+                skills: [],
+                path: URL(fileURLWithPath: installed.installPath ?? "/unknown")
+            )
+            result.append(available)
+        }
+
+        return result.sorted { $0.name < $1.name }
+    }
+
     /// Check if available plugins are loading for a marketplace
     public func isLoadingAvailablePlugins(for marketplaceName: String) -> Bool {
         loadingAvailablePlugins.contains(marketplaceName)
+    }
+
+    /// Look up description from cache for a plugin that doesn't have one in available plugins
+    /// - Parameters:
+    ///   - pluginName: The plugin name
+    ///   - marketplace: The marketplace the plugin belongs to
+    /// - Returns: The description if found in cache, nil otherwise
+    public func descriptionFromCache(for pluginName: String, marketplace: String) -> String? {
+        let metadataDiscovery = PluginMetadataDiscovery()
+        let metadata = metadataDiscovery.discoverMetadataFromCache(
+            pluginName: pluginName,
+            marketplace: marketplace,
+            cacheDirectory: pathProvider.pluginsCacheDirectory
+        )
+        return metadata?.description
     }
 
     /// Queue a plugin for installation

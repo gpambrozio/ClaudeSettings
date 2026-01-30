@@ -48,7 +48,6 @@ public struct InspectorView: View {
         }
     }
 
-    @ViewBuilder
     private func leafNodeDetails(item: SettingItem) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -173,7 +172,6 @@ public struct InspectorView: View {
 
     // MARK: - Contribution Row
 
-    @ViewBuilder
     private func contributionRow(
         contribution: SourceContribution,
         item: SettingItem,
@@ -251,7 +249,6 @@ public struct InspectorView: View {
         }
     }
 
-    @ViewBuilder
     private func contributionHeaderNormal(contribution: SourceContribution, isOverridden: Bool) -> some View {
         HStack {
             Circle()
@@ -271,7 +268,6 @@ public struct InspectorView: View {
         }
     }
 
-    @ViewBuilder
     private func parentNodeDetails(key: String, documentation: SettingDocumentation) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -357,7 +353,6 @@ public struct InspectorView: View {
         ))
     }
 
-    @ViewBuilder
     private func parentNodeWithoutDocumentation(key: String, viewModel: SettingsViewModel) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -677,7 +672,6 @@ public struct InspectorView: View {
         }
     }
 
-    @ViewBuilder
     private func marketplaceReadOnlyInfo(marketplace: KnownMarketplace, viewModel: SettingsViewModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             LabeledContent("Type", value: marketplace.source.source)
@@ -715,13 +709,23 @@ public struct InspectorView: View {
     @ViewBuilder
     private func pluginManagementSection(for marketplace: KnownMarketplace, viewModel: SettingsViewModel) -> some View {
         let marketplaceVM = viewModel.marketplaceViewModel
-        let plugins = marketplaceVM.plugins(from: marketplace.name)
+
+        // Use allPluginsForDisplay to show ALL available plugins, not just installed ones
+        let availablePlugins = marketplaceVM.allPluginsForDisplay(from: marketplace.name)
 
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(text: "Plugins (\(plugins.count))")
+            SectionHeader(text: "Plugins (\(availablePlugins.count))")
 
-            if plugins.isEmpty {
-                Text("No plugins found for this marketplace")
+            if marketplaceVM.isLoadingAvailablePlugins(for: marketplace.name) {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading plugins...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if availablePlugins.isEmpty {
+                Text("No plugins available in this marketplace")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .italic()
@@ -729,9 +733,9 @@ public struct InspectorView: View {
                 // Column headers
                 pluginToggleHeaders(showProjectColumn: viewModel.isProjectView)
 
-                ForEach(plugins, id: \.id) { plugin in
-                    pluginToggleRow(
-                        plugin: plugin,
+                ForEach(availablePlugins, id: \.id) { availablePlugin in
+                    PluginToggleRowView(
+                        availablePlugin: availablePlugin,
                         marketplaceVM: marketplaceVM,
                         settingsVM: viewModel
                     )
@@ -747,7 +751,6 @@ public struct InspectorView: View {
     }
 
     /// Column headers for the dual-toggle table
-    @ViewBuilder
     private func pluginToggleHeaders(showProjectColumn: Bool) -> some View {
         HStack {
             Text("Plugin")
@@ -775,36 +778,6 @@ public struct InspectorView: View {
             }
         }
         .padding(.bottom, 4)
-    }
-
-    /// A single row with plugin name, description, global toggle, and project picker
-    /// Now uses a dedicated View struct for proper @Observable observation
-    @ViewBuilder
-    private func pluginToggleRow(
-        plugin: InstalledPlugin,
-        marketplaceVM: MarketplaceViewModel,
-        settingsVM: SettingsViewModel
-    ) -> some View {
-        PluginToggleRowView(
-            pluginId: plugin.id,
-            pluginName: plugin.name,
-            pluginMarketplace: plugin.marketplace,
-            marketplaceVM: marketplaceVM,
-            settingsVM: settingsVM
-        )
-    }
-
-    /// Get the label for the project location picker
-    private func projectLocationLabel(isInProject: Bool, location: ProjectFileLocation?) -> String {
-        guard isInProject else { return "None" }
-        switch location {
-        case .shared:
-            return "Shared"
-        case .local:
-            return "Local"
-        case nil:
-            return "Project"
-        }
     }
 
     @ViewBuilder
@@ -970,7 +943,6 @@ public struct InspectorView: View {
         }
     }
 
-    @ViewBuilder
     private var emptyState: some View {
         ContentUnavailableView {
             Label("No Selection", symbol: .listBullet)
@@ -1291,25 +1263,37 @@ private struct CopyMarketplaceToProjectSheet: View {
 /// A dedicated View struct for plugin toggle rows that properly observes @Observable
 /// This is necessary because SwiftUI's observation tracking doesn't work correctly
 /// with helper functions - it needs a proper View struct to establish the observation context.
+///
+/// Now accepts AvailablePlugin directly (which has the description from marketplace scan)
+/// and looks up installation state from marketplaceVM.plugins.
 private struct PluginToggleRowView: View {
-    let pluginId: String
-    let pluginName: String
-    let pluginMarketplace: String
+    let availablePlugin: AvailablePlugin
     let marketplaceVM: MarketplaceViewModel
     let settingsVM: SettingsViewModel
 
+    private var pluginId: String {
+        availablePlugin.id
+    }
+
+    private var pluginName: String {
+        availablePlugin.name
+    }
+
+    private var pluginMarketplace: String {
+        availablePlugin.marketplace
+    }
+
     var body: some View {
-        // Look up current state from viewmodel - this creates proper observation
+        // Look up current installation state from viewmodel - this creates proper observation
         // because we're accessing the @Observable property inside a View's body
         let currentPlugin = marketplaceVM.plugins.first { $0.id == pluginId }
         let isInstalled = currentPlugin.map { $0.dataSource == .global || $0.dataSource == .both } ?? false
         let isInProject = currentPlugin.map { $0.dataSource == .project || $0.dataSource == .both } ?? false
         let projectLocation = currentPlugin?.projectFileLocation
 
-        // Look up description from available plugins cache
-        let availablePlugin = marketplaceVM.availablePlugins(for: pluginMarketplace)
-            .first { $0.name == pluginName }
-        let description = availablePlugin?.description
+        // Use description from AvailablePlugin first, fall back to cache lookup if nil
+        let description: String? = availablePlugin.description
+            ?? marketplaceVM.descriptionFromCache(for: pluginName, marketplace: pluginMarketplace)
 
         HStack(alignment: .top, spacing: 8) {
             Symbols.puzzlepiece.image

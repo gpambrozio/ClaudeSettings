@@ -230,6 +230,67 @@ public struct PluginMetadataDiscovery: Sendable {
         return metadata
     }
 
+    /// Discover metadata from cache directory for an installed plugin
+    /// This is used when the marketplace scan doesn't find the plugin but it's installed in cache
+    /// - Parameters:
+    ///   - pluginName: The name of the plugin
+    ///   - marketplace: The marketplace the plugin belongs to
+    ///   - cacheDirectory: The root cache directory (~/.claude/plugins/cache/)
+    /// - Returns: Discovered metadata, or nil if not found
+    public func discoverMetadataFromCache(
+        pluginName: String,
+        marketplace: String,
+        cacheDirectory: URL
+    ) -> PluginMetadata? {
+        let fm = FileManager.default
+        let pluginCacheDir = cacheDirectory
+            .appendingPathComponent(marketplace)
+            .appendingPathComponent(pluginName)
+
+        guard fm.fileExists(atPath: pluginCacheDir.path) else {
+            return nil
+        }
+
+        // Find the latest version directory
+        guard
+            let versionDirs = try? fm.contentsOfDirectory(
+                at: pluginCacheDir,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ).filter({ url in
+                var isDir: ObjCBool = false
+                return fm.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+            }).sorted(by: { compareVersions($0.lastPathComponent, $1.lastPathComponent) }),
+            let latestVersionDir = versionDirs.first
+        else {
+            return nil
+        }
+
+        // Discover metadata from the version directory
+        return discoverPluginMetadata(
+            pluginDirectory: latestVersionDir,
+            pluginName: pluginName,
+            marketplaceManifest: loadMarketplaceManifest(from: latestVersionDir)
+        )
+    }
+
+    /// Compare two version strings using semantic versioning
+    /// Returns true if v1 > v2 (for descending sort)
+    private func compareVersions(_ v1: String, _ v2: String) -> Bool {
+        let components1 = v1.split(separator: ".").compactMap { Int($0) }
+        let components2 = v2.split(separator: ".").compactMap { Int($0) }
+
+        let maxLength = max(components1.count, components2.count)
+        for i in 0..<maxLength {
+            let c1 = i < components1.count ? components1[i] : 0
+            let c2 = i < components2.count ? components2[i] : 0
+            if c1 != c2 {
+                return c1 > c2
+            }
+        }
+        return false
+    }
+
     /// Extract description from README (first meaningful paragraph)
     /// Finds any file matching "readme" case-insensitively with any extension
     /// - Parameter directory: The directory to search
