@@ -154,8 +154,8 @@ public struct PluginMetadataDiscovery: Sendable {
 
         collectJSONFiles(in: directory, depth: 0)
 
-        // Prioritize certain files
-        let priorityOrder = ["plugin.json", "claude-code.json", "info.json", "package.json"]
+        // Prioritize certain files (only standard plugin manifest files)
+        let priorityOrder = ["plugin.json", "package.json"]
         jsonFiles.sort { a, b in
             let aIndex = priorityOrder.firstIndex(of: a.lastPathComponent) ?? priorityOrder.count
             let bIndex = priorityOrder.firstIndex(of: b.lastPathComponent) ?? priorityOrder.count

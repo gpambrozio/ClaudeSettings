@@ -192,10 +192,10 @@ struct JSONMetadataSearchTests {
                 "description": "From plugin.json"
             }
             """,
-            "info.json": """
+            "package.json": """
             {
                 "version": "2.0.0",
-                "description": "From info.json"
+                "description": "From package.json"
             }
             """,
         ])
@@ -375,7 +375,7 @@ struct ReadmeExtractionTests {
     }
 
     @Test("Truncates long descriptions to 200 characters")
-    func truncatesLongDescription() {
+    func truncatesLongDescription() throws {
         let longText = String(repeating: "This is a very long description. ", count: 20)
         let dir = MetadataTestFixtures.createPluginDirectory(name: "long-plugin", files: [
             "README.md": """
@@ -391,8 +391,8 @@ struct ReadmeExtractionTests {
         let description = discovery.extractDescriptionFromReadme(in: dir)
 
         #expect(description != nil)
-        #expect(description!.count <= 200)
-        #expect(description!.hasSuffix("..."))
+        #expect(try #require(description?.count) <= 200)
+        #expect(try #require(description?.hasSuffix("...")))
     }
 
     @Test("Returns nil for missing README")
