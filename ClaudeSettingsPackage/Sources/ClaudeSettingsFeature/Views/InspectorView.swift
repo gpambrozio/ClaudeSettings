@@ -1175,31 +1175,36 @@ private struct CopyMarketplaceToProjectSheet: View {
                             )
                         }
                     }
-
-                    // Plugin option
-                    if globalPluginCount > 0 {
-                        Divider()
-                            .padding(.vertical, 8)
-
-                        Toggle(isOn: $includePlugins) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Also include installed plugins")
-                                    .font(.subheadline)
-                                Text("\(globalPluginCount) plugin\(globalPluginCount == 1 ? "" : "s") will be added to selected project(s)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .toggleStyle(.checkbox)
-                    }
-
-                    if let error = errorMessage {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
                 }
                 .padding()
+            }
+
+            // Plugin option
+            if globalPluginCount > 0 {
+                Divider()
+                    .padding(.vertical, 8)
+
+                HStack {
+                    Toggle(isOn: $includePlugins) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Also include installed plugins")
+                                .font(.subheadline)
+                            Text("\(globalPluginCount) plugin\(globalPluginCount == 1 ? "" : "s") will be added to selected project(s)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+
+                    Spacer()
+                }
+                .padding()
+            }
+
+            if let error = errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
 
             Divider()
