@@ -160,8 +160,8 @@ final public class MarketplaceViewModel {
         // 3. Get marketplace names for cache scanning
         let marketplaceNames = marketplaces.map { $0.name }
 
-        // 4. Merge all sources (synchronous operation, but on background to avoid blocking)
-        plugins = parser.loadMergedPlugins(
+        // 4. Merge all sources
+        plugins = await parser.loadMergedPlugins(
             globalPlugins: globalPlugins,
             projectPluginKeys: projectPluginKeys,
             cacheDirectory: pathProvider.pluginsCacheDirectory,
@@ -224,19 +224,6 @@ final public class MarketplaceViewModel {
 
     /// Get all plugins from a specific marketplace (includes all data sources)
     public func plugins(from marketplaceName: String) -> [InstalledPlugin] {
-        plugins.filter { $0.marketplace == marketplaceName }
-    }
-
-    /// Get all plugins from a marketplace (including global, project, and cache)
-    /// This method is kept for backward compatibility - the plugins array already contains
-    /// all merged plugins from loadPlugins(), so we just filter by marketplace.
-    /// - Parameters:
-    ///   - marketplaceName: The marketplace to filter by
-    ///   - enabledPluginKeys: Plugin keys from project settings (ignored - kept for backward compatibility)
-    /// - Returns: Array of plugins from this marketplace (with proper data sources set)
-    public func allPlugins(from marketplaceName: String, enabledPluginKeys: [String]) -> [InstalledPlugin] {
-        // All plugins are now merged during loadPlugins() with proper data sources
-        // Just filter by marketplace name
         plugins.filter { $0.marketplace == marketplaceName }
     }
 
@@ -327,9 +314,6 @@ final public class MarketplaceViewModel {
             updatedPlugins.append(newPlugin)
         }
 
-        // Save to files
-        try await parser.saveKnownMarketplaces(updatedMarketplaces, to: pathProvider.knownMarketplacesPath)
-
         // Read existing plugins data for preservation
         let pluginsData: Data?
         if await fileSystemManager.exists(at: pathProvider.installedPluginsPath) {
@@ -343,12 +327,45 @@ final public class MarketplaceViewModel {
         let globalPluginsToSave = updatedPlugins.filter {
             $0.dataSource == .global || $0.dataSource == .both
         }
+
+        // Save to temporary files first for atomic transaction
+        let marketplacesPath = pathProvider.knownMarketplacesPath
+        let pluginsPath = pathProvider.installedPluginsPath
+        let tempMarketplacesPath = marketplacesPath.deletingLastPathComponent()
+            .appendingPathComponent(".known_marketplaces.json.tmp")
+        let tempPluginsPath = pluginsPath.deletingLastPathComponent()
+            .appendingPathComponent(".installed_plugins.json.tmp")
+
+        // Write to temp files
+        try await parser.saveKnownMarketplaces(updatedMarketplaces, to: tempMarketplacesPath)
         try await parser.saveInstalledPlugins(
             globalPluginsToSave,
-            to: pathProvider.installedPluginsPath,
+            to: tempPluginsPath,
             existingData: pluginsData,
             cacheDirectory: pathProvider.pluginsCacheDirectory
         )
+
+        // Atomically move temp files to final locations
+        // If either move fails, we haven't corrupted the original files
+        do {
+            // Remove existing files first (if they exist)
+            if await fileSystemManager.exists(at: marketplacesPath) {
+                try await fileSystemManager.delete(at: marketplacesPath)
+            }
+            try await fileSystemManager.copy(from: tempMarketplacesPath, to: marketplacesPath)
+            try await fileSystemManager.delete(at: tempMarketplacesPath)
+
+            if await fileSystemManager.exists(at: pluginsPath) {
+                try await fileSystemManager.delete(at: pluginsPath)
+            }
+            try await fileSystemManager.copy(from: tempPluginsPath, to: pluginsPath)
+            try await fileSystemManager.delete(at: tempPluginsPath)
+        } catch {
+            // Clean up temp files on failure
+            try? await fileSystemManager.delete(at: tempMarketplacesPath)
+            try? await fileSystemManager.delete(at: tempPluginsPath)
+            throw error
+        }
 
         // Update local state
         marketplaces = updatedMarketplaces.sorted { $0.name < $1.name }

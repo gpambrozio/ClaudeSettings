@@ -715,7 +715,7 @@ public struct InspectorView: View {
     @ViewBuilder
     private func pluginManagementSection(for marketplace: KnownMarketplace, viewModel: SettingsViewModel) -> some View {
         let marketplaceVM = viewModel.marketplaceViewModel
-        let plugins = marketplaceVM.allPlugins(from: marketplace.name, enabledPluginKeys: [])
+        let plugins = marketplaceVM.plugins(from: marketplace.name)
 
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(text: "Plugins (\(plugins.count))")

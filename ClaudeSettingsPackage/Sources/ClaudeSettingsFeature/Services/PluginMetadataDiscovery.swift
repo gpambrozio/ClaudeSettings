@@ -29,16 +29,15 @@ public struct PluginMetadataDiscovery: Sendable {
     public func looksLikePluginDirectory(_ directory: URL) -> Bool {
         let fm = FileManager.default
 
-        // Common plugin markers - any of these suggests it's a plugin
+        // Standard Claude Code plugin markers - any of these suggests it's a plugin
+        // See: https://docs.anthropic.com/en/docs/claude-code/plugins
         let markers = [
-            "info.json",
-            ".claude-plugin",
-            "claude-code.json",
-            "plugin.json",
-            "SKILL.md",
-            "skills",
-            "commands",
-            "hooks",
+            ".claude-plugin", // Plugin configuration directory
+            "plugin.json", // Plugin manifest
+            "SKILL.md", // Skill definition file
+            "skills", // Skills directory
+            "commands", // Commands directory
+            "hooks", // Hooks directory
         ]
 
         for marker in markers {

@@ -27,6 +27,9 @@ public protocol FileSystemManagerProtocol: Actor, Sendable {
     /// List contents of a directory
     func contentsOfDirectory(at url: URL) throws -> [URL]
 
+    /// Check if a URL points to a directory
+    func isDirectory(at url: URL) -> Bool
+
     /// Delete a file or directory
     func delete(at url: URL) throws
 

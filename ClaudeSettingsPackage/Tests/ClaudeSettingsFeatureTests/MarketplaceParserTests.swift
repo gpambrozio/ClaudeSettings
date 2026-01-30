@@ -618,7 +618,7 @@ struct MarketplaceParserScanAvailablePluginsTests {
         let marketDir = ScanPluginsTestFixtures.createMarketplaceDirectory(
             name: "root-market",
             plugins: [
-                "plugin-a": ["info.json"],
+                "plugin-a": ["plugin.json"],
                 "plugin-b": ["SKILL.md"],
             ]
         )
@@ -651,7 +651,7 @@ struct MarketplaceParserScanAvailablePluginsTests {
         // Add plugin in subdirectory
         let pluginDir = pluginsDir.appendingPathComponent("subdir-plugin")
         try? FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
-        try? "{}".write(to: pluginDir.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+        try? "{}".write(to: pluginDir.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
 
         defer { try? FileManager.default.removeItem(at: marketDir) }
 
@@ -673,9 +673,9 @@ struct MarketplaceParserScanAvailablePluginsTests {
         let marketDir = ScanPluginsTestFixtures.createMarketplaceDirectory(
             name: "sorted-market",
             plugins: [
-                "zebra-plugin": ["info.json"],
-                "alpha-plugin": ["info.json"],
-                "middle-plugin": ["info.json"],
+                "zebra-plugin": ["plugin.json"],
+                "alpha-plugin": ["plugin.json"],
+                "middle-plugin": ["plugin.json"],
             ]
         )
         defer { try? FileManager.default.removeItem(at: marketDir) }
@@ -701,7 +701,7 @@ struct MarketplaceParserScanAvailablePluginsTests {
         let marketDir = ScanPluginsTestFixtures.createMarketplaceDirectory(
             name: "name-test-market",
             plugins: [
-                "test-plugin": ["info.json"],
+                "test-plugin": ["plugin.json"],
             ]
         )
         defer { try? FileManager.default.removeItem(at: marketDir) }
@@ -728,7 +728,7 @@ struct MarketplaceParserScanAvailablePluginsTests {
         // Real plugin
         let pluginDir = marketDir.appendingPathComponent("real-plugin")
         try? FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
-        try? "{}".write(to: pluginDir.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+        try? "{}".write(to: pluginDir.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
 
         // Not a plugin (no markers)
         let notPluginDir = marketDir.appendingPathComponent("not-a-plugin")
@@ -759,14 +759,14 @@ struct MarketplaceParserScanAvailablePluginsTests {
         // Plugin in root
         let rootPlugin = marketDir.appendingPathComponent("dup-plugin")
         try? FileManager.default.createDirectory(at: rootPlugin, withIntermediateDirectories: true)
-        try? "{}".write(to: rootPlugin.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+        try? "{}".write(to: rootPlugin.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
 
         // Same plugin name in plugins subdirectory
         let pluginsDir = marketDir.appendingPathComponent("plugins")
         try? FileManager.default.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
         let subPlugin = pluginsDir.appendingPathComponent("dup-plugin")
         try? FileManager.default.createDirectory(at: subPlugin, withIntermediateDirectories: true)
-        try? "{}".write(to: subPlugin.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+        try? "{}".write(to: subPlugin.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
 
         defer { try? FileManager.default.removeItem(at: marketDir) }
 
@@ -796,7 +796,7 @@ struct MarketplaceParserScanAvailablePluginsTests {
 
         let pluginDir = externalDir.appendingPathComponent("external-plugin")
         try? FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
-        try? "{}".write(to: pluginDir.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+        try? "{}".write(to: pluginDir.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
 
         defer { try? FileManager.default.removeItem(at: marketDir) }
 
@@ -826,7 +826,7 @@ struct MarketplaceParserScanAvailablePluginsTests {
             "description": "A plugin with metadata"
         }
         """
-        try? infoJson.write(to: pluginDir.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
+        try? infoJson.write(to: pluginDir.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
 
         defer { try? FileManager.default.removeItem(at: marketDir) }
 

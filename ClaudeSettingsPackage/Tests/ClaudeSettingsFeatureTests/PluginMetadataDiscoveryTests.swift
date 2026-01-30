@@ -49,25 +49,9 @@ struct PluginDetectionTests {
         try? FileManager.default.createDirectory(at: MetadataTestFixtures.tempDir, withIntermediateDirectories: true)
     }
 
-    @Test("Detects plugin with info.json marker")
-    func detectInfoJson() {
-        let dir = MetadataTestFixtures.createPluginDirectory(name: "plugin-info", markers: ["info.json"])
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        #expect(discovery.looksLikePluginDirectory(dir) == true)
-    }
-
     @Test("Detects plugin with .claude-plugin marker")
     func detectClaudePluginMarker() {
         let dir = MetadataTestFixtures.createPluginDirectory(name: "plugin-claude", markers: [".claude-plugin"])
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        #expect(discovery.looksLikePluginDirectory(dir) == true)
-    }
-
-    @Test("Detects plugin with claude-code.json marker")
-    func detectClaudeCodeJson() {
-        let dir = MetadataTestFixtures.createPluginDirectory(name: "plugin-code", markers: ["claude-code.json"])
         defer { try? FileManager.default.removeItem(at: dir) }
 
         #expect(discovery.looksLikePluginDirectory(dir) == true)

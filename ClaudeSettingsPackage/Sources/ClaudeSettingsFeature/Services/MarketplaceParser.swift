@@ -1,6 +1,18 @@
 import Foundation
 import Logging
 
+/// Errors that can occur during marketplace parsing
+public enum MarketplaceParserError: LocalizedError {
+    case invalidPluginKeyFormat(key: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .invalidPluginKeyFormat(key):
+            return "Invalid plugin key format '\(key)'. Expected format: 'PluginName@MarketplaceName'"
+        }
+    }
+}
+
 /// Service for parsing marketplace and plugin JSON files
 public actor MarketplaceParser {
     private let logger = Logger(label: "com.claudesettings.marketplace")
@@ -57,8 +69,8 @@ public actor MarketplaceParser {
             // Parse the key to extract name and marketplace
             let components = key.split(separator: "@", maxSplits: 1)
             guard components.count == 2 else {
-                logger.warning("Invalid plugin key format: \(key)")
-                continue
+                logger.error("Invalid plugin key format: \(key)")
+                throw MarketplaceParserError.invalidPluginKeyFormat(key: key)
             }
 
             let pluginName = String(components[0])
@@ -262,7 +274,7 @@ public actor MarketplaceParser {
                 // If no install path, try to find it in the cache
                 if installPath.isEmpty, let cacheDir = cacheDirectory {
                     if
-                        let (foundPath, foundVersion) = findLatestVersionInCache(
+                        let (foundPath, foundVersion) = await findLatestVersionInCache(
                             marketplace: plugin.marketplace,
                             plugin: plugin.name,
                             cacheDirectory: cacheDir
@@ -302,42 +314,59 @@ public actor MarketplaceParser {
     ///   - plugin: The plugin name
     ///   - cacheDirectory: The root cache directory
     /// - Returns: Tuple of (installPath, version) if found
-    private nonisolated func findLatestVersionInCache(
+    private func findLatestVersionInCache(
         marketplace: String,
         plugin: String,
         cacheDirectory: URL
-    ) -> (path: String, version: String)? {
+    ) async -> (path: String, version: String)? {
         let pluginCacheDir = cacheDirectory
             .appendingPathComponent(marketplace)
             .appendingPathComponent(plugin)
 
-        guard FileManager.default.fileExists(atPath: pluginCacheDir.path) else {
+        guard await fileSystemManager.exists(at: pluginCacheDir) else {
             return nil
         }
 
         do {
-            let contents = try FileManager.default.contentsOfDirectory(
-                at: pluginCacheDir,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
+            let contents = try await fileSystemManager.contentsOfDirectory(at: pluginCacheDir)
 
-            // Find version directories and sort to get the latest
-            let versionDirs = contents.filter { url in
-                var isDirectory: ObjCBool = false
-                return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-                    && isDirectory.boolValue
-            }.sorted { $0.lastPathComponent > $1.lastPathComponent } // Descending sort
+            // Find version directories
+            var versionDirs: [URL] = []
+            for url in contents {
+                if await fileSystemManager.isDirectory(at: url) {
+                    versionDirs.append(url)
+                }
+            }
+
+            // Sort using semantic version comparison (descending)
+            versionDirs.sort { compareVersions($0.lastPathComponent, $1.lastPathComponent) }
 
             if let latestVersionDir = versionDirs.first {
                 let version = latestVersionDir.lastPathComponent
                 return (latestVersionDir.path, version)
             }
         } catch {
-            // Silently fail - cache might not exist
+            logger.debug("Failed to scan cache directory for \(plugin)@\(marketplace): \(error)")
         }
 
         return nil
+    }
+
+    /// Compare two version strings using semantic versioning
+    /// Returns true if v1 > v2
+    private nonisolated func compareVersions(_ v1: String, _ v2: String) -> Bool {
+        let components1 = v1.split(separator: ".").compactMap { Int($0) }
+        let components2 = v2.split(separator: ".").compactMap { Int($0) }
+
+        let maxLength = max(components1.count, components2.count)
+        for i in 0..<maxLength {
+            let c1 = i < components1.count ? components1[i] : 0
+            let c2 = i < components2.count ? components2[i] : 0
+            if c1 != c2 {
+                return c1 > c2
+            }
+        }
+        return false
     }
 
     // MARK: - Cache Scanning
@@ -348,29 +377,21 @@ public actor MarketplaceParser {
     ///   - marketplaceName: The marketplace to scan plugins for
     ///   - cacheDirectory: The root cache directory (~/.claude/plugins/cache/)
     /// - Returns: Array of plugin names found in the cache for this marketplace
-    public nonisolated func scanPluginsInCache(for marketplaceName: String, cacheDirectory: URL) -> [String] {
+    public func scanPluginsInCache(for marketplaceName: String, cacheDirectory: URL) async -> [String] {
         let marketplaceCacheDir = cacheDirectory.appendingPathComponent(marketplaceName)
 
-        guard FileManager.default.fileExists(atPath: marketplaceCacheDir.path) else {
+        guard await fileSystemManager.exists(at: marketplaceCacheDir) else {
             return []
         }
 
         var pluginNames: [String] = []
 
         do {
-            let contents = try FileManager.default.contentsOfDirectory(
-                at: marketplaceCacheDir,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
+            let contents = try await fileSystemManager.contentsOfDirectory(at: marketplaceCacheDir)
 
             for itemURL in contents {
                 // Check if it's a directory
-                var isDirectory: ObjCBool = false
-                guard
-                    FileManager.default.fileExists(atPath: itemURL.path, isDirectory: &isDirectory),
-                    isDirectory.boolValue
-                else {
+                guard await fileSystemManager.isDirectory(at: itemURL) else {
                     continue
                 }
 
@@ -379,7 +400,7 @@ public actor MarketplaceParser {
                 pluginNames.append(itemURL.lastPathComponent)
             }
         } catch {
-            // Silently fail - the cache might not exist yet
+            logger.debug("Failed to scan cache directory for \(marketplaceName): \(error)")
         }
 
         return pluginNames.sorted()
@@ -392,12 +413,12 @@ public actor MarketplaceParser {
     ///   - cacheDirectory: The cache directory to scan
     ///   - marketplaceNames: Names of marketplaces to scan in cache
     /// - Returns: Merged array of plugins with appropriate data sources
-    public nonisolated func loadMergedPlugins(
+    public func loadMergedPlugins(
         globalPlugins: [InstalledPlugin],
         projectPluginKeys: [String: ProjectFileLocation],
         cacheDirectory: URL,
         marketplaceNames: [String]
-    ) -> [InstalledPlugin] {
+    ) async -> [InstalledPlugin] {
         var pluginsByID: [String: InstalledPlugin] = [:]
 
         // 1. Add global plugins from installed_plugins.json
@@ -436,7 +457,7 @@ public actor MarketplaceParser {
 
         // 3. Scan cache directories for plugins not tracked elsewhere
         for marketplaceName in marketplaceNames {
-            let cachedPluginNames = scanPluginsInCache(for: marketplaceName, cacheDirectory: cacheDirectory)
+            let cachedPluginNames = await scanPluginsInCache(for: marketplaceName, cacheDirectory: cacheDirectory)
 
             for pluginName in cachedPluginNames {
                 let pluginId = "\(pluginName)@\(marketplaceName)"
