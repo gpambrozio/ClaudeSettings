@@ -1,4 +1,30 @@
 {
+  "enabledPlugins": {
+    "swiftui-expert@swiftui-expert-skill": true,
+    "swift-concurrency@swift-concurrency-agent-skill": true,
+    "XcodeBuildTools@ClaudeCodePlugins": true,
+    "iOSSimulator@ClaudeCodePlugins": true
+  },
+  "extraKnownMarketplaces": {
+    "ClaudeCodePlugins": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/gustavoambrozio/Development/ClaudeCodePlugins"
+      }
+    },
+    "swift-concurrency-agent-skill": {
+      "source": {
+        "source": "github",
+        "repo": "AvdLee/Swift-Concurrency-Agent-Skill"
+      }
+    },
+    "swiftui-expert-skill": {
+      "source": {
+        "source": "github",
+        "repo": "AvdLee/SwiftUI-Agent-Skill"
+      }
+    }
+  },
   "hooks": {
     "PostToolUse": [
       {
