@@ -71,3 +71,4 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 /.claude/xcodeBuildTools.json
 /.claude/marvinOutputStyle.json
+/.claude/iOSSimulator.json
