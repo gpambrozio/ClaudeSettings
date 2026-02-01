@@ -93,6 +93,12 @@ public actor FileSystemManager {
         }
     }
 
+    /// Check if a URL points to a directory
+    public func isDirectory(at url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+    }
+
     /// Delete a file or directory
     public func delete(at url: URL) throws {
         do {
@@ -116,7 +122,6 @@ public actor FileSystemManager {
             throw FileSystemError.copyFailed(source: source, destination: destination, underlyingError: error)
         }
     }
-
 }
 
 /// Errors that can occur during file system operations

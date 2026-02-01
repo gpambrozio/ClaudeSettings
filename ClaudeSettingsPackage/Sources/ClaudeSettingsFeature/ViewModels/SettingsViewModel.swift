@@ -57,10 +57,13 @@ final public class SettingsViewModel {
     }
 
     private let settingsParser: any SettingsParserProtocol
-    private let project: ClaudeProject?
+    public let project: ClaudeProject?
     private let fileMonitor: SettingsFileMonitor
     private var observerId: UUID?
     private var consecutiveReloadFailures: [URL: Int] = [:]
+
+    /// ViewModel for marketplace and plugin data
+    public private(set) var marketplaceViewModel: MarketplaceViewModel
 
     public init(
         project: ClaudeProject? = nil,
@@ -73,6 +76,12 @@ final public class SettingsViewModel {
         self.pathProvider = pathProvider
         self.settingsParser = SettingsParser(fileSystemManager: fileSystemManager)
         self.fileMonitor = fileMonitor
+        self.marketplaceViewModel = MarketplaceViewModel(
+            project: project,
+            pathProvider: pathProvider,
+            fileSystemManager: fileSystemManager,
+            fileMonitor: fileMonitor
+        )
     }
 
     /// Internal initializer for testing with a custom settings parser
@@ -81,18 +90,36 @@ final public class SettingsViewModel {
         fileSystemManager: any FileSystemManagerProtocol,
         pathProvider: PathProvider,
         settingsParser: any SettingsParserProtocol,
-        fileMonitor: SettingsFileMonitor
+        fileMonitor: SettingsFileMonitor,
+        marketplaceViewModel: MarketplaceViewModel? = nil
     ) {
         self.project = project
         self.fileSystemManager = fileSystemManager
         self.pathProvider = pathProvider
         self.settingsParser = settingsParser
         self.fileMonitor = fileMonitor
+        self.marketplaceViewModel = marketplaceViewModel ?? MarketplaceViewModel(
+            project: project,
+            pathProvider: pathProvider,
+            fileSystemManager: fileSystemManager,
+            fileMonitor: fileMonitor
+        )
     }
 
     /// Whether this view model is for a project (vs global configuration)
     public var isProjectView: Bool {
         project != nil
+    }
+
+    /// Whether the global settings.json contains legacy marketplace/plugin entries
+    /// These should be in dedicated files, not in settings.json
+    public var hasLegacyGlobalEntries: Bool {
+        guard let globalSettingsFile = settingsFiles.first(where: { $0.type == .globalSettings }) else {
+            return false
+        }
+        let hasExtraMarketplaces = globalSettingsFile.content["extraKnownMarketplaces"] != nil
+        let hasEnabledPlugins = globalSettingsFile.content["enabledPlugins"] != nil
+        return hasExtraMarketplaces || hasEnabledPlugins
     }
 
     /// Hierarchical settings filtered based on hideGlobalSettings preference
@@ -139,6 +166,9 @@ final public class SettingsViewModel {
     /// Load all settings files for the current project
     public func loadSettings() async {
         await loadSettingsFiles(includeProject: project != nil, projectPath: project?.path)
+
+        // Also load marketplace/plugin data
+        await marketplaceViewModel.loadAll()
     }
 
     /// Load settings files with optional project scope
@@ -253,6 +283,9 @@ final public class SettingsViewModel {
             self.observerId = nil
         }
         consecutiveReloadFailures.removeAll()
+
+        // Also stop marketplace file watcher
+        await marketplaceViewModel.stopFileWatcher()
     }
 
     /// Handle file system changes
@@ -920,6 +953,12 @@ final public class SettingsViewModel {
         hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
 
         logger.info("Successfully updated setting '\(key)' in \(fileType.displayName)")
+
+        // If this was a plugin-related setting (and not part of a batch), reload marketplace data
+        if !skipBackup && isPluginRelatedKey(key) {
+            logger.info("Plugin/marketplace setting changed, reloading marketplace data")
+            await marketplaceViewModel.loadAll()
+        }
     }
 
     /// Batch update multiple settings to a specific file with a single backup
@@ -948,6 +987,12 @@ final public class SettingsViewModel {
             }
 
             logger.info("Successfully batch updated \(updates.count) settings in \(fileType.displayName)")
+
+            // If any keys were plugin-related, reload marketplace data once at the end
+            if updates.contains(where: { isPluginRelatedKey($0.key) }) {
+                logger.info("Plugin/marketplace settings changed, reloading marketplace data")
+                await marketplaceViewModel.loadAll()
+            }
         } catch {
             // Rollback on failure: restore file from snapshot
             if let originalFile = originalFile, let index = fileIndex {
@@ -990,6 +1035,12 @@ final public class SettingsViewModel {
             }
 
             logger.info("Successfully batch deleted \(keys.count) settings from \(fileType.displayName)")
+
+            // If any keys were plugin-related, reload marketplace data once at the end
+            if keys.contains(where: isPluginRelatedKey) {
+                logger.info("Plugin/marketplace settings changed, reloading marketplace data")
+                await marketplaceViewModel.loadAll()
+            }
         } catch {
             // Rollback on failure: restore file from snapshot
             if let originalFile = originalFile, let index = fileIndex {
@@ -1046,6 +1097,12 @@ final public class SettingsViewModel {
         hierarchicalSettings = computeHierarchicalSettings(from: settingItems)
 
         logger.info("Successfully deleted setting '\(key)' from \(fileType.displayName)")
+
+        // If this was a plugin-related setting (and not part of a batch), reload marketplace data
+        if !skipBackup && isPluginRelatedKey(key) {
+            logger.info("Plugin/marketplace setting changed, reloading marketplace data")
+            await marketplaceViewModel.loadAll()
+        }
     }
 
     /// Copy a setting from one file to another
@@ -1221,6 +1278,12 @@ final public class SettingsViewModel {
 
     // MARK: - Helper Methods
 
+    /// Check if a key is related to plugins or marketplaces
+    /// These keys require MarketplaceViewModel to reload when changed
+    private func isPluginRelatedKey(_ key: String) -> Bool {
+        key.hasPrefix("enabledPlugins") || key.hasPrefix("extraKnownMarketplaces")
+    }
+
     /// Set a nested value in a dictionary using dot notation
     /// - Throws: SettingsError.typeMismatch if an existing value is not an object when we need to traverse through it
     /// - Note: For objects, new keys are merged into existing objects. For arrays, new items are appended.
@@ -1232,7 +1295,7 @@ final public class SettingsViewModel {
             // Check for merge scenarios when an existing value exists
             if let existingValue = dict[simpleKey] {
                 switch (existingValue, value) {
-                case (.object(let existingDict), .object(let newDict)):
+                case let (.object(existingDict), .object(newDict)):
                     // Merge dictionaries: new keys override existing keys
                     var merged = existingDict
                     for (newKey, newVal) in newDict {
@@ -1241,7 +1304,7 @@ final public class SettingsViewModel {
                     dict[simpleKey] = .object(merged)
                     return
 
-                case (.array(let existingArray), .array(let newArray)):
+                case let (.array(existingArray), .array(newArray)):
                     // Append new array items to existing array
                     dict[simpleKey] = .array(existingArray + newArray)
                     return

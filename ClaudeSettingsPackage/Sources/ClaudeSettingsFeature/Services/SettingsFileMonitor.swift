@@ -9,6 +9,10 @@ public enum SettingsScope {
     case projects([ClaudeProject])
     /// Global + specific projects
     case globalAndProjects([ClaudeProject])
+    /// Plugin files only (~/.claude/plugins/)
+    case plugins
+    /// Global + plugins
+    case globalAndPlugins
 }
 
 /// Centralized file monitoring service for settings files
@@ -54,6 +58,11 @@ public actor SettingsFileMonitor {
 
         // Include .claude.json for project discovery
         allFilePaths.insert(homeDirectory.appendingPathComponent(".claude.json"))
+
+        // Include plugin files
+        let pluginsDirectory = homeDirectory.appendingPathComponent(".claude/plugins")
+        allFilePaths.insert(pluginsDirectory.appendingPathComponent("known_marketplaces.json"))
+        allFilePaths.insert(pluginsDirectory.appendingPathComponent("installed_plugins.json"))
 
         // Include all project settings
         for project in projects {
@@ -146,6 +155,7 @@ public actor SettingsFileMonitor {
     private func resolveFilePaths(for scope: SettingsScope) -> Set<URL> {
         var filePaths = Set<URL>()
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+        let pluginsDirectory = homeDirectory.appendingPathComponent(".claude/plugins")
 
         switch scope {
         case .global:
@@ -177,6 +187,20 @@ public actor SettingsFileMonitor {
                     filePaths.insert(fileType.path(in: project.path))
                 }
             }
+
+        case .plugins:
+            // Plugin files only
+            filePaths.insert(pluginsDirectory.appendingPathComponent("known_marketplaces.json"))
+            filePaths.insert(pluginsDirectory.appendingPathComponent("installed_plugins.json"))
+
+        case .globalAndPlugins:
+            // Global settings
+            for fileType: SettingsFileType in [.globalSettings, .globalLocal] {
+                filePaths.insert(fileType.path(in: homeDirectory))
+            }
+            // Plugin files
+            filePaths.insert(pluginsDirectory.appendingPathComponent("known_marketplaces.json"))
+            filePaths.insert(pluginsDirectory.appendingPathComponent("installed_plugins.json"))
         }
 
         return filePaths

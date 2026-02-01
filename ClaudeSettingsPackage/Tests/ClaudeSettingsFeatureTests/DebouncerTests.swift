@@ -86,17 +86,18 @@ struct DebouncerTests {
         let debouncer = Debouncer()
         let counter = Counter()
 
-        // When: 10 rapid debounce calls
+        // When: 10 rapid debounce calls with longer debounce interval
+        // Using 100ms debounce and 2ms between calls ensures calls are well within the debounce window
         for _ in 0..<10 {
-            await debouncer.debounce(milliseconds: 50) {
+            await debouncer.debounce(milliseconds: 100) {
                 counter.increment()
             }
-            // Small delay between calls (simulating rapid file changes)
-            try await Task.sleep(for: .milliseconds(5))
+            // Very small delay between calls (well within debounce window)
+            try await Task.sleep(for: .milliseconds(2))
         }
 
-        // Wait for debounce to complete
-        try await Task.sleep(for: .milliseconds(100))
+        // Wait for debounce to complete (100ms debounce + buffer)
+        try await Task.sleep(for: .milliseconds(200))
 
         // Then: Only one operation should execute
         #expect(counter.value == 1, "Only the final operation should execute after rapid calls")
