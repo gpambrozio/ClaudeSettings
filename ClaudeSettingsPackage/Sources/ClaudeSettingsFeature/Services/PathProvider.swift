@@ -15,6 +15,9 @@ public protocol PathProvider: Sendable {
     /// The global .claude directory (~/.claude/)
     var globalClaudeDirectory: URL { get }
 
+    /// The global settings file (~/.claude/settings.json)
+    var globalSettingsPath: URL { get }
+
     /// All possible enterprise managed settings paths, in priority order
     var enterpriseManagedPaths: [URL] { get }
 
@@ -54,6 +57,10 @@ public struct DefaultPathProvider: PathProvider {
         homeDirectory.appendingPathComponent(".claude")
     }
 
+    public var globalSettingsPath: URL {
+        globalClaudeDirectory.appendingPathComponent("settings.json")
+    }
+
     public var enterpriseManagedPaths: [URL] {
         [
             URL(fileURLWithPath: "/Library/Application Support/Claude/managed-settings.json"),
@@ -88,6 +95,7 @@ public struct MockPathProvider: PathProvider {
     public let backupDirectory: URL
     public let claudeConfigPath: URL
     public let globalClaudeDirectory: URL
+    public let globalSettingsPath: URL
     public let enterpriseManagedPaths: [URL]
     public let pluginsDirectory: URL
     public let knownMarketplacesPath: URL
@@ -102,6 +110,7 @@ public struct MockPathProvider: PathProvider {
         self.backupDirectory = homeDirectory.appendingPathComponent("Backups")
         self.claudeConfigPath = homeDirectory.appendingPathComponent(".claude.json")
         self.globalClaudeDirectory = homeDirectory.appendingPathComponent(".claude")
+        self.globalSettingsPath = homeDirectory.appendingPathComponent(".claude/settings.json")
         self.enterpriseManagedPaths = [
             homeDirectory.appendingPathComponent(".claude/managed-settings.json"),
         ]
@@ -119,6 +128,7 @@ public struct MockPathProvider: PathProvider {
         claudeConfigPath: URL,
         globalClaudeDirectory: URL,
         enterpriseManagedPaths: [URL],
+        globalSettingsPath: URL? = nil,
         pluginsDirectory: URL? = nil,
         knownMarketplacesPath: URL? = nil,
         installedPluginsPath: URL? = nil,
@@ -129,6 +139,7 @@ public struct MockPathProvider: PathProvider {
         self.backupDirectory = backupDirectory
         self.claudeConfigPath = claudeConfigPath
         self.globalClaudeDirectory = globalClaudeDirectory
+        self.globalSettingsPath = globalSettingsPath ?? globalClaudeDirectory.appendingPathComponent("settings.json")
         self.enterpriseManagedPaths = enterpriseManagedPaths
 
         // Default to derived paths if not provided

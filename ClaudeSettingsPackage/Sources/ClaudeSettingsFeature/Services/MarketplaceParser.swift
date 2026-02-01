@@ -82,7 +82,7 @@ public actor MarketplaceParser {
                     name: pluginName,
                     marketplace: marketplaceName,
                     installedAt: installation.installedAt,
-                    dataSource: .global,
+                    dataSource: .cache, // Default to cache - actual source determined by merge logic
                     installPath: installation.installPath.isEmpty ? nil : installation.installPath,
                     version: installation.version
                 ))
@@ -407,54 +407,29 @@ public actor MarketplaceParser {
 
     /// Load plugins from multiple sources and merge them
     /// - Parameters:
-    ///   - globalPlugins: Plugins from installed_plugins.json
+    ///   - installedPlugins: Plugins from installed_plugins.json (cached/installed on disk)
+    ///   - globalEnabledPluginKeys: Plugin keys enabled in global ~/.claude/settings.json
     ///   - projectPluginKeys: Dictionary mapping plugin keys to their project file location
     ///   - cacheDirectory: The cache directory to scan
     ///   - marketplaceNames: Names of marketplaces to scan in cache
     /// - Returns: Merged array of plugins with appropriate data sources
     public func loadMergedPlugins(
-        globalPlugins: [InstalledPlugin],
+        installedPlugins: [InstalledPlugin],
+        globalEnabledPluginKeys: Set<String>,
         projectPluginKeys: [String: ProjectFileLocation],
         cacheDirectory: URL,
         marketplaceNames: [String]
     ) async -> [InstalledPlugin] {
         var pluginsByID: [String: InstalledPlugin] = [:]
 
-        // 1. Add global plugins from installed_plugins.json
-        for plugin in globalPlugins {
+        // 1. Add installed plugins from installed_plugins.json (start as .cache)
+        for plugin in installedPlugins {
             var mutablePlugin = plugin
-            mutablePlugin.dataSource = .global
+            mutablePlugin.dataSource = .cache
             pluginsByID[plugin.id] = mutablePlugin
         }
 
-        // 2. Add project-enabled plugins (with file location tracking)
-        for (key, fileLocation) in projectPluginKeys {
-            let components = key.split(separator: "@", maxSplits: 1)
-            guard components.count == 2 else { continue }
-
-            let pluginName = String(components[0])
-            let marketplace = String(components[1])
-            let pluginId = "\(pluginName)@\(marketplace)"
-
-            if var existing = pluginsByID[pluginId] {
-                // Already exists globally, mark as both
-                existing.dataSource = .both
-                existing.projectFileLocation = fileLocation
-                pluginsByID[pluginId] = existing
-            } else {
-                // Project-only plugin
-                let plugin = InstalledPlugin(
-                    name: pluginName,
-                    marketplace: marketplace,
-                    installedAt: nil,
-                    dataSource: .project,
-                    projectFileLocation: fileLocation
-                )
-                pluginsByID[pluginId] = plugin
-            }
-        }
-
-        // 3. Scan cache directories for plugins not tracked elsewhere
+        // 2. Scan cache directories for plugins not in installed_plugins.json
         for marketplaceName in marketplaceNames {
             let cachedPluginNames = await scanPluginsInCache(for: marketplaceName, cacheDirectory: cacheDirectory)
 
@@ -471,6 +446,57 @@ public actor MarketplaceParser {
                     )
                     pluginsByID[pluginId] = plugin
                 }
+            }
+        }
+
+        // 3. Mark plugins that are globally enabled (in ~/.claude/settings.json)
+        for pluginId in globalEnabledPluginKeys {
+            if var existing = pluginsByID[pluginId] {
+                existing.dataSource = .global
+                pluginsByID[pluginId] = existing
+            } else {
+                // Globally enabled but not installed - create entry
+                let components = pluginId.split(separator: "@", maxSplits: 1)
+                guard components.count == 2 else { continue }
+
+                let plugin = InstalledPlugin(
+                    name: String(components[0]),
+                    marketplace: String(components[1]),
+                    installedAt: nil,
+                    dataSource: .global
+                )
+                pluginsByID[pluginId] = plugin
+            }
+        }
+
+        // 4. Mark plugins that are project-enabled (with file location tracking)
+        for (key, fileLocation) in projectPluginKeys {
+            let components = key.split(separator: "@", maxSplits: 1)
+            guard components.count == 2 else { continue }
+
+            let pluginName = String(components[0])
+            let marketplace = String(components[1])
+            let pluginId = "\(pluginName)@\(marketplace)"
+
+            if var existing = pluginsByID[pluginId] {
+                // Check if already globally enabled
+                if existing.dataSource == .global {
+                    existing.dataSource = .both
+                } else {
+                    existing.dataSource = .project
+                }
+                existing.projectFileLocation = fileLocation
+                pluginsByID[pluginId] = existing
+            } else {
+                // Project-only plugin (not installed)
+                let plugin = InstalledPlugin(
+                    name: pluginName,
+                    marketplace: marketplace,
+                    installedAt: nil,
+                    dataSource: .project,
+                    projectFileLocation: fileLocation
+                )
+                pluginsByID[pluginId] = plugin
             }
         }
 

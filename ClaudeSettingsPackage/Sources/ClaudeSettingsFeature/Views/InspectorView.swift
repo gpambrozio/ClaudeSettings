@@ -1327,7 +1327,7 @@ private struct PluginToggleRowView: View {
 
             Spacer()
 
-            // Global toggle - controls installed_plugins.json
+            // Global toggle - controls enabledPlugins in ~/.claude/settings.json
             Toggle("", isOn: Binding(
                 get: { isInstalled },
                 set: { newValue in
@@ -1336,10 +1336,14 @@ private struct PluginToggleRowView: View {
                             if newValue {
                                 try await marketplaceVM.installPluginGlobally(
                                     name: pluginName,
-                                    marketplace: pluginMarketplace
+                                    marketplace: pluginMarketplace,
+                                    settingsViewModel: settingsVM
                                 )
                             } else {
-                                try await marketplaceVM.uninstallPluginGlobally(pluginId: pluginId)
+                                try await marketplaceVM.uninstallPluginGlobally(
+                                    pluginId: pluginId,
+                                    settingsViewModel: settingsVM
+                                )
                             }
                         } catch {
                             settingsVM.errorMessage = "Failed to update plugin: \(error.localizedDescription)"

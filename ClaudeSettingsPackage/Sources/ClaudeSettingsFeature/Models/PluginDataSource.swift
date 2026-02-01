@@ -2,7 +2,7 @@ import Foundation
 
 /// Indicates where plugin data came from
 public enum PluginDataSource: Sendable, Hashable, Codable {
-    /// In global installed_plugins.json
+    /// Enabled in global ~/.claude/settings.json's enabledPlugins
     case global
 
     /// In project's enabledPlugins setting only

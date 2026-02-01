@@ -53,7 +53,7 @@ public struct InstalledPlugin: Plugin, Codable {
         self.name = try container.decode(String.self, forKey: .name)
         self.marketplace = try container.decode(String.self, forKey: .marketplace)
         self.installedAt = try container.decodeIfPresent(String.self, forKey: .installedAt)
-        self.dataSource = .global // Default when decoding from JSON
+        self.dataSource = .cache // Default when decoding - actual source determined by merge logic
         self.projectFileLocation = nil
         self.installPath = nil
         self.version = nil

@@ -71,6 +71,35 @@ private enum TestFixtures {
         }
         """.data(using: .utf8)!
     }
+
+    static func makeGlobalSettingsWithPlugins() -> Data {
+        """
+        {
+            "enabledPlugins": {
+                "plugin-a@TestMarketplace": true,
+                "plugin-b@TestMarketplace": true
+            }
+        }
+        """.data(using: .utf8)!
+    }
+
+    static func makeEmptyGlobalSettings() -> Data {
+        """
+        {}
+        """.data(using: .utf8)!
+    }
+
+    @MainActor
+    static func makeSettingsViewModel(
+        pathProvider: MockPathProvider,
+        fileSystemManager: MockFileSystemManager
+    ) -> SettingsViewModel {
+        SettingsViewModel(
+            project: nil,
+            fileSystemManager: fileSystemManager,
+            pathProvider: pathProvider
+        )
+    }
 }
 
 // MARK: - Data Loading Tests
@@ -919,37 +948,45 @@ struct MarketplaceViewModelSaveTests {
 
 @Suite("MarketplaceViewModel Atomic Plugin Operations")
 struct MarketplaceViewModelAtomicOperationsTests {
-    @Test("installPluginGlobally adds plugin to installed_plugins.json")
+    @Test("installPluginGlobally adds plugin to global settings enabledPlugins")
     @MainActor
     func installPluginGlobally() async throws {
         let pathProvider = TestFixtures.makePathProvider()
         let mockFS = MockFileSystemManager()
 
         await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
-        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeEmptyPluginsJSON())
+        await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+        await mockFS.addFile(at: pathProvider.globalSettingsPath, content: TestFixtures.makeEmptyGlobalSettings())
 
         let viewModel = MarketplaceViewModel(
             pathProvider: pathProvider,
             fileSystemManager: mockFS
         )
+        let settingsVM = TestFixtures.makeSettingsViewModel(pathProvider: pathProvider, fileSystemManager: mockFS)
 
         await viewModel.loadAll()
+        await settingsVM.loadSettings()
 
-        try await viewModel.installPluginGlobally(name: "new-global-plugin", marketplace: "TestMarketplace")
+        try await viewModel.installPluginGlobally(
+            name: "plugin-a",
+            marketplace: "TestMarketplace",
+            settingsViewModel: settingsVM
+        )
 
-        // Verify plugin was added
-        #expect(viewModel.plugins.contains { $0.name == "new-global-plugin" })
+        // Verify plugin is now globally enabled
+        #expect(viewModel.plugins.contains { $0.name == "plugin-a" && $0.dataSource == .global })
 
-        // Verify file was written
-        let writtenData = await mockFS.getFileData(at: pathProvider.installedPluginsPath)
+        // Verify global settings was written with enabledPlugins
+        let writtenData = await mockFS.getFileData(at: pathProvider.globalSettingsPath)
         #expect(writtenData != nil)
         if let data = writtenData {
             let content = String(data: data, encoding: .utf8) ?? ""
-            #expect(content.contains("new-global-plugin@TestMarketplace"))
+            #expect(content.contains("enabledPlugins"))
+            #expect(content.contains("plugin-a@TestMarketplace"))
         }
     }
 
-    @Test("installPluginGlobally skips already-installed plugin")
+    @Test("installPluginGlobally skips already-enabled plugin")
     @MainActor
     func installPluginGloballySkipsInstalled() async throws {
         let pathProvider = TestFixtures.makePathProvider()
@@ -957,23 +994,30 @@ struct MarketplaceViewModelAtomicOperationsTests {
 
         await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
         await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+        await mockFS.addFile(at: pathProvider.globalSettingsPath, content: TestFixtures.makeGlobalSettingsWithPlugins())
 
         let viewModel = MarketplaceViewModel(
             pathProvider: pathProvider,
             fileSystemManager: mockFS
         )
+        let settingsVM = TestFixtures.makeSettingsViewModel(pathProvider: pathProvider, fileSystemManager: mockFS)
 
         await viewModel.loadAll()
+        await settingsVM.loadSettings()
         let countBefore = viewModel.plugins.count
 
-        // Try to install already-installed plugin
-        try await viewModel.installPluginGlobally(name: "plugin-a", marketplace: "TestMarketplace")
+        // Try to install already-enabled plugin
+        try await viewModel.installPluginGlobally(
+            name: "plugin-a",
+            marketplace: "TestMarketplace",
+            settingsViewModel: settingsVM
+        )
 
         // Count should remain the same
         #expect(viewModel.plugins.count == countBefore)
     }
 
-    @Test("uninstallPluginGlobally removes plugin from installed_plugins.json")
+    @Test("uninstallPluginGlobally removes plugin from global settings enabledPlugins")
     @MainActor
     func uninstallPluginGlobally() async throws {
         let pathProvider = TestFixtures.makePathProvider()
@@ -981,22 +1025,28 @@ struct MarketplaceViewModelAtomicOperationsTests {
 
         await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
         await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+        await mockFS.addFile(at: pathProvider.globalSettingsPath, content: TestFixtures.makeGlobalSettingsWithPlugins())
 
         let viewModel = MarketplaceViewModel(
             pathProvider: pathProvider,
             fileSystemManager: mockFS
         )
+        let settingsVM = TestFixtures.makeSettingsViewModel(pathProvider: pathProvider, fileSystemManager: mockFS)
 
         await viewModel.loadAll()
-        #expect(viewModel.plugins.contains { $0.name == "plugin-a" })
+        await settingsVM.loadSettings()
+        #expect(viewModel.plugins.contains { $0.name == "plugin-a" && $0.dataSource == .global })
 
-        try await viewModel.uninstallPluginGlobally(pluginId: "plugin-a@TestMarketplace")
+        try await viewModel.uninstallPluginGlobally(
+            pluginId: "plugin-a@TestMarketplace",
+            settingsViewModel: settingsVM
+        )
 
-        // Verify plugin was removed
+        // Verify plugin is no longer globally enabled
         #expect(!viewModel.plugins.contains { $0.id == "plugin-a@TestMarketplace" && $0.dataSource == .global })
     }
 
-    @Test("uninstallPluginGlobally handles non-existent plugin gracefully")
+    @Test("uninstallPluginGlobally handles non-enabled plugin gracefully")
     @MainActor
     func uninstallPluginGloballyHandlesNonExistent() async throws {
         let pathProvider = TestFixtures.makePathProvider()
@@ -1004,17 +1054,23 @@ struct MarketplaceViewModelAtomicOperationsTests {
 
         await mockFS.addFile(at: pathProvider.knownMarketplacesPath, content: TestFixtures.makeKnownMarketplacesJSON())
         await mockFS.addFile(at: pathProvider.installedPluginsPath, content: TestFixtures.makeInstalledPluginsJSON())
+        await mockFS.addFile(at: pathProvider.globalSettingsPath, content: TestFixtures.makeEmptyGlobalSettings())
 
         let viewModel = MarketplaceViewModel(
             pathProvider: pathProvider,
             fileSystemManager: mockFS
         )
+        let settingsVM = TestFixtures.makeSettingsViewModel(pathProvider: pathProvider, fileSystemManager: mockFS)
 
         await viewModel.loadAll()
+        await settingsVM.loadSettings()
         let countBefore = viewModel.plugins.count
 
-        // Try to uninstall non-existent plugin (should not throw)
-        try await viewModel.uninstallPluginGlobally(pluginId: "nonexistent@TestMarketplace")
+        // Try to uninstall non-enabled plugin (should not throw)
+        try await viewModel.uninstallPluginGlobally(
+            pluginId: "nonexistent@TestMarketplace",
+            settingsViewModel: settingsVM
+        )
 
         // Count should remain the same
         #expect(viewModel.plugins.count == countBefore)

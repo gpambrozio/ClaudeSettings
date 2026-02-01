@@ -65,6 +65,20 @@ final public class MarketplaceViewModel {
         self.parser = MarketplaceParser(fileSystemManager: fileSystemManager)
     }
 
+    // MARK: - Backup Helper
+
+    /// Create a backup of a file before modifying it
+    /// - Parameter url: The file to backup
+    private func createBackupIfExists(at url: URL) async {
+        guard await fileSystemManager.exists(at: url) else { return }
+        do {
+            _ = try await fileSystemManager.createBackup(of: url, to: pathProvider.backupDirectory)
+            logger.debug("Created backup for \(url.lastPathComponent)")
+        } catch {
+            logger.warning("Failed to create backup for \(url.lastPathComponent): \(error)")
+        }
+    }
+
     /// Load all marketplace and plugin data
     public func loadAll() async {
         isLoading = true
@@ -111,14 +125,31 @@ final public class MarketplaceViewModel {
     }
 
     /// Load plugins from multiple sources:
-    /// 1. Global: installed_plugins.json
-    /// 2. Project: enabledPlugins in project settings
-    /// 3. Cache: Plugins that exist in cache but aren't tracked
+    /// 1. Installed: installed_plugins.json (cached/installed on disk)
+    /// 2. Global enabled: enabledPlugins in ~/.claude/settings.json
+    /// 3. Project enabled: enabledPlugins in project settings
+    /// 4. Cache: Plugins that exist in cache directory
     private func loadPlugins() async throws {
-        // 1. Parse global plugins from installed_plugins.json
-        let globalPlugins = try await parser.parseInstalledPlugins(at: pathProvider.installedPluginsPath)
+        // 1. Parse installed plugins from installed_plugins.json
+        let installedPlugins = try await parser.parseInstalledPlugins(at: pathProvider.installedPluginsPath)
 
-        // 2. Get project-enabled plugin keys from both project files
+        // 2. Get globally enabled plugin keys from ~/.claude/settings.json
+        var globalEnabledPluginKeys: Set<String> = []
+        let globalSettingsPath = pathProvider.globalSettingsPath
+        if await fileSystemManager.exists(at: globalSettingsPath) {
+            do {
+                let data = try await fileSystemManager.readFile(at: globalSettingsPath)
+                if
+                    let content = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    let enabledPlugins = content["enabledPlugins"] as? [String: Any] {
+                    globalEnabledPluginKeys = Set(enabledPlugins.keys)
+                }
+            } catch {
+                logger.warning("Failed to parse global settings for enabledPlugins: \(error)")
+            }
+        }
+
+        // 3. Get project-enabled plugin keys from both project files
         var projectPluginKeys: [String: ProjectFileLocation] = [:]
         if let project = project {
             // Read from projectSettings (shared, git-committed)
@@ -157,18 +188,21 @@ final public class MarketplaceViewModel {
             }
         }
 
-        // 3. Get marketplace names for cache scanning
+        // 4. Get marketplace names for cache scanning
         let marketplaceNames = marketplaces.map { $0.name }
 
-        // 4. Merge all sources
+        // 5. Merge all sources
         plugins = await parser.loadMergedPlugins(
-            globalPlugins: globalPlugins,
+            installedPlugins: installedPlugins,
+            globalEnabledPluginKeys: globalEnabledPluginKeys,
             projectPluginKeys: projectPluginKeys,
             cacheDirectory: pathProvider.pluginsCacheDirectory,
             marketplaceNames: marketplaceNames
         )
 
-        logger.info("Loaded \(plugins.count) plugins (global: \(globalPlugins.count), project keys: \(projectPluginKeys.count), from cache scan)")
+        logger.info(
+            "Loaded \(plugins.count) plugins (installed: \(installedPlugins.count), global enabled: \(globalEnabledPluginKeys.count), project keys: \(projectPluginKeys.count))"
+        )
     }
 
     /// Set up file watching for marketplace files
@@ -335,6 +369,10 @@ final public class MarketplaceViewModel {
             .appendingPathComponent(".known_marketplaces.json.tmp")
         let tempPluginsPath = pluginsPath.deletingLastPathComponent()
             .appendingPathComponent(".installed_plugins.json.tmp")
+
+        // Create backups before modifying
+        await createBackupIfExists(at: marketplacesPath)
+        await createBackupIfExists(at: pluginsPath)
 
         // Write to temp files
         try await parser.saveKnownMarketplaces(updatedMarketplaces, to: tempMarketplacesPath)
@@ -646,6 +684,9 @@ final public class MarketplaceViewModel {
     /// Also removes any installed plugins from that marketplace
     /// - Parameter marketplace: The marketplace to remove
     public func removeMarketplaceFromGlobal(marketplace: KnownMarketplace) async throws {
+        // Create backup before modifying
+        await createBackupIfExists(at: pathProvider.knownMarketplacesPath)
+
         // Remove marketplace from known_marketplaces.json
         let remainingMarketplaces = marketplaces.filter { $0.name != marketplace.name }
         try await parser.saveKnownMarketplaces(remainingMarketplaces, to: pathProvider.knownMarketplacesPath)
@@ -661,6 +702,9 @@ final public class MarketplaceViewModel {
         let removedPluginCount = globalPluginsToRemove.count
 
         if removedPluginCount > 0 {
+            // Create backup before modifying
+            await createBackupIfExists(at: pathProvider.installedPluginsPath)
+
             // Get existing data for preserving unknown fields
             var pluginsData: Data?
             if await fileSystemManager.exists(at: pathProvider.installedPluginsPath) {
@@ -737,6 +781,9 @@ final public class MarketplaceViewModel {
             lastUpdated: Date()
         )
 
+        // Create backup before modifying
+        await createBackupIfExists(at: pathProvider.knownMarketplacesPath)
+
         // Add to global known_marketplaces.json
         var updatedMarketplaces = marketplaces.filter { $0.dataSource == .global || ($0.dataSource == .both && $0.name != marketplace.name) }
         updatedMarketplaces.append(globalMarketplace)
@@ -760,88 +807,53 @@ final public class MarketplaceViewModel {
     /// - Parameters:
     ///   - name: The plugin name
     ///   - marketplace: The marketplace the plugin belongs to
-    public func installPluginGlobally(name: String, marketplace: String) async throws {
+    ///   - settingsViewModel: The settings view model to write global settings
+    public func installPluginGlobally(
+        name: String,
+        marketplace: String,
+        settingsViewModel: SettingsViewModel
+    ) async throws {
         let pluginId = "\(name)@\(marketplace)"
 
-        // Check if already globally installed
+        // Check if already globally enabled
         let isAlreadyGlobal = plugins.contains {
             $0.id == pluginId && ($0.dataSource == .global || $0.dataSource == .both)
         }
         if isAlreadyGlobal {
-            logger.info("Plugin '\(name)' is already installed globally")
+            logger.info("Plugin '\(name)' is already enabled globally")
             return
         }
 
-        // Find install path from cache if available
-        let cachePlugin = plugins.first { $0.id == pluginId }
-        let installPath = cachePlugin?.installPath
-
-        let newPlugin = InstalledPlugin(
-            name: name,
-            marketplace: marketplace,
-            installedAt: ISO8601DateFormatter().string(from: Date()),
-            dataSource: .global,
-            installPath: installPath
-        )
-
-        // Get existing data for preservation
-        let pluginsData: Data?
-        if await fileSystemManager.exists(at: pathProvider.installedPluginsPath) {
-            pluginsData = try? await fileSystemManager.readFile(at: pathProvider.installedPluginsPath)
-        } else {
-            pluginsData = nil
-        }
-
-        // Build updated list
-        var updatedPlugins = plugins.filter {
-            $0.dataSource == .global || $0.dataSource == .both
-        }
-        updatedPlugins.append(newPlugin)
-
-        try await parser.saveInstalledPlugins(
-            updatedPlugins,
-            to: pathProvider.installedPluginsPath,
-            existingData: pluginsData,
-            cacheDirectory: pathProvider.pluginsCacheDirectory
-        )
+        // Add to enabledPlugins in global settings.json
+        let key = "enabledPlugins.\(name)@\(marketplace)"
+        try await settingsViewModel.updateSetting(key: key, value: .bool(true), in: .globalSettings)
 
         // Reload data
         await loadAll()
-        logger.info("Installed plugin '\(name)' globally")
+        logger.info("Enabled plugin '\(name)' globally")
     }
 
-    /// Uninstall a plugin globally (remove from installed_plugins.json)
-    /// - Parameter pluginId: The plugin ID (format: name@marketplace)
-    public func uninstallPluginGlobally(pluginId: String) async throws {
-        // Check if plugin exists globally
+    /// Disable a plugin globally (remove from enabledPlugins in ~/.claude/settings.json)
+    /// - Parameters:
+    ///   - pluginId: The plugin ID (format: name@marketplace)
+    ///   - settingsViewModel: The settings view model to write global settings
+    public func uninstallPluginGlobally(
+        pluginId: String,
+        settingsViewModel: SettingsViewModel
+    ) async throws {
+        // Check if plugin is globally enabled
         guard plugins.contains(where: { $0.id == pluginId && ($0.dataSource == .global || $0.dataSource == .both) }) else {
-            logger.info("Plugin '\(pluginId)' is not installed globally")
+            logger.info("Plugin '\(pluginId)' is not enabled globally")
             return
         }
 
-        // Get existing data for preservation
-        let pluginsData: Data?
-        if await fileSystemManager.exists(at: pathProvider.installedPluginsPath) {
-            pluginsData = try? await fileSystemManager.readFile(at: pathProvider.installedPluginsPath)
-        } else {
-            pluginsData = nil
-        }
-
-        // Filter out the plugin being uninstalled
-        let updatedPlugins = plugins.filter {
-            ($0.dataSource == .global || $0.dataSource == .both) && $0.id != pluginId
-        }
-
-        try await parser.saveInstalledPlugins(
-            updatedPlugins,
-            to: pathProvider.installedPluginsPath,
-            existingData: pluginsData,
-            cacheDirectory: pathProvider.pluginsCacheDirectory
-        )
+        // Remove from enabledPlugins in global settings.json
+        let key = "enabledPlugins.\(pluginId)"
+        try await settingsViewModel.deleteSetting(key: key, from: .globalSettings)
 
         // Reload data
         await loadAll()
-        logger.info("Uninstalled plugin '\(pluginId)' globally")
+        logger.info("Disabled plugin '\(pluginId)' globally")
     }
 
     /// Add a plugin to a project's enabledPlugins

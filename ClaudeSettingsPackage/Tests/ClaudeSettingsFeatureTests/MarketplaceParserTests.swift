@@ -459,17 +459,24 @@ struct MarketplaceParserCacheScanningTests {
         #expect(result.isEmpty)
     }
 
-    @Test("loadMergedPlugins merges global plugins")
+    @Test("loadMergedPlugins marks globally enabled plugins as global")
     func loadMergedPluginsMergesGlobal() async {
         let parser = MarketplaceParser()
 
-        let globalPlugins = [
-            InstalledPlugin(name: "plugin-a", marketplace: "TestMarket", dataSource: .global),
-            InstalledPlugin(name: "plugin-b", marketplace: "TestMarket", dataSource: .global),
+        let installedPlugins = [
+            InstalledPlugin(name: "plugin-a", marketplace: "TestMarket"),
+            InstalledPlugin(name: "plugin-b", marketplace: "TestMarket"),
+        ]
+
+        // Both plugins are globally enabled
+        let globalEnabledPluginKeys: Set<String> = [
+            "plugin-a@TestMarket",
+            "plugin-b@TestMarket",
         ]
 
         let result = await parser.loadMergedPlugins(
-            globalPlugins: globalPlugins,
+            installedPlugins: installedPlugins,
+            globalEnabledPluginKeys: globalEnabledPluginKeys,
             projectPluginKeys: [:],
             cacheDirectory: FileIOTestFixtures.testHomeDirectory,
             marketplaceNames: []
@@ -479,20 +486,45 @@ struct MarketplaceParserCacheScanningTests {
         #expect(result.allSatisfy { $0.dataSource == .global })
     }
 
-    @Test("loadMergedPlugins marks plugins in both as both")
+    @Test("loadMergedPlugins marks installed but not enabled plugins as cache")
+    func loadMergedPluginsMarksCache() async {
+        let parser = MarketplaceParser()
+
+        let installedPlugins = [
+            InstalledPlugin(name: "plugin-a", marketplace: "TestMarket"),
+            InstalledPlugin(name: "plugin-b", marketplace: "TestMarket"),
+        ]
+
+        // No plugins are globally enabled
+        let result = await parser.loadMergedPlugins(
+            installedPlugins: installedPlugins,
+            globalEnabledPluginKeys: [],
+            projectPluginKeys: [:],
+            cacheDirectory: FileIOTestFixtures.testHomeDirectory,
+            marketplaceNames: []
+        )
+
+        #expect(result.count == 2)
+        #expect(result.allSatisfy { $0.dataSource == .cache })
+    }
+
+    @Test("loadMergedPlugins marks plugins in both global and project as both")
     func loadMergedPluginsMarksBoth() async {
         let parser = MarketplaceParser()
 
-        let globalPlugins = [
-            InstalledPlugin(name: "plugin-a", marketplace: "TestMarket", dataSource: .global),
+        let installedPlugins = [
+            InstalledPlugin(name: "plugin-a", marketplace: "TestMarket"),
         ]
 
+        // Plugin is both globally enabled and in project
+        let globalEnabledPluginKeys: Set<String> = ["plugin-a@TestMarket"]
         let projectPluginKeys: [String: ProjectFileLocation] = [
             "plugin-a@TestMarket": .shared,
         ]
 
         let result = await parser.loadMergedPlugins(
-            globalPlugins: globalPlugins,
+            installedPlugins: installedPlugins,
+            globalEnabledPluginKeys: globalEnabledPluginKeys,
             projectPluginKeys: projectPluginKeys,
             cacheDirectory: FileIOTestFixtures.testHomeDirectory,
             marketplaceNames: []
@@ -512,7 +544,8 @@ struct MarketplaceParserCacheScanningTests {
         ]
 
         let result = await parser.loadMergedPlugins(
-            globalPlugins: [],
+            installedPlugins: [],
+            globalEnabledPluginKeys: [],
             projectPluginKeys: projectPluginKeys,
             cacheDirectory: FileIOTestFixtures.testHomeDirectory,
             marketplaceNames: []
@@ -528,13 +561,14 @@ struct MarketplaceParserCacheScanningTests {
     func loadMergedPluginsReturnsSorted() async {
         let parser = MarketplaceParser()
 
-        let globalPlugins = [
-            InstalledPlugin(name: "zebra", marketplace: "Market", dataSource: .global),
-            InstalledPlugin(name: "alpha", marketplace: "Market", dataSource: .global),
+        let installedPlugins = [
+            InstalledPlugin(name: "zebra", marketplace: "Market"),
+            InstalledPlugin(name: "alpha", marketplace: "Market"),
         ]
 
         let result = await parser.loadMergedPlugins(
-            globalPlugins: globalPlugins,
+            installedPlugins: installedPlugins,
+            globalEnabledPluginKeys: [],
             projectPluginKeys: [:],
             cacheDirectory: FileIOTestFixtures.testHomeDirectory,
             marketplaceNames: []
