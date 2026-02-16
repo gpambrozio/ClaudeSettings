@@ -16,7 +16,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", from: "0.57.0"),
         .package(url: "https://github.com/nicklockwood/SwiftFormat", from: "0.53.0"),
-        .package(url: "https://github.com/lukepistrol/SFSymbolsMacro.git", from: "0.5.4"),
+        .package(url: "https://github.com/gpambrozio/SFSymbolsMacro", branch: "swift-syntax-602"),
         .package(url: "https://github.com/apple/swift-log", from: "1.6.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
