@@ -193,7 +193,78 @@ public struct SettingsListView: View {
                     }
                 }
             }
+
+            // Marketplaces Section (plugins are shown within each marketplace's details)
+            marketplacesSection
         }
+    }
+
+    // MARK: - Marketplaces Section
+
+    @ViewBuilder
+    private var marketplacesSection: some View {
+        let marketplaceVM = settingsViewModel.marketplaceViewModel
+        // Filter out global-only marketplaces when hideGlobalSettings is enabled
+        // But only in project view - in global settings, always show all marketplaces
+        let marketplaces = settingsViewModel.hideGlobalSettings && settingsViewModel.isProjectView
+            ? marketplaceVM.marketplaces.filter { $0.dataSource != .global }
+            : marketplaceVM.marketplaces
+
+        if !marketplaces.isEmpty || marketplaceVM.isEditingMode {
+            Section {
+                ForEach(marketplaces) { marketplace in
+                    let key = marketplaceKeyPrefix + marketplace.name
+                    MarketplaceRow(
+                        marketplace: marketplace,
+                        isSelected: selectedKey == key,
+                        isMarkedForDeletion: marketplaceVM.isMarkedForDeletion(marketplace: marketplace.name),
+                        isEditingMode: marketplaceVM.isEditingMode
+                    )
+                }
+
+                // Show pending new marketplaces
+                ForEach(Array(marketplaceVM.pendingMarketplaceEdits.values.filter { $0.isNew }), id: \.name) { edit in
+                    newMarketplaceRow(edit: edit)
+                }
+            } header: {
+                HStack {
+                    Label("Known Marketplaces", symbol: .shippingbox)
+                    Spacer()
+
+                    if marketplaceVM.isEditingMode {
+                        Button {
+                            let newEdit = marketplaceVM.createNewMarketplace()
+                            marketplaceVM.addNewMarketplace(newEdit)
+                        } label: {
+                            Label("Add", symbol: .plus)
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+
+                    Text("\(marketplaces.count) marketplaces")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func newMarketplaceRow(edit: MarketplacePendingEdit) -> some View {
+        HStack {
+            Symbols.plusCircle.image
+                .foregroundStyle(.green)
+            Text(edit.name)
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(.green)
+            Text("(new)")
+                .font(.caption)
+                .foregroundStyle(.green)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+        .tag(marketplaceKeyPrefix + edit.name)
     }
 
     /// Settings filtered by search text
@@ -568,6 +639,119 @@ struct SettingItemRow: View {
             .padding(.vertical, 2)
             .background(item.value.typeDisplayColor.opacity(0.2))
             .foregroundStyle(item.value.typeDisplayColor)
+            .cornerRadius(4)
+    }
+}
+
+// MARK: - Selection Key Helpers
+
+/// Prefix for marketplace selection keys
+let marketplaceKeyPrefix = "marketplace:"
+
+/// Check if a selection key is a marketplace
+func isMarketplaceKey(_ key: String?) -> Bool {
+    key?.hasPrefix(marketplaceKeyPrefix) ?? false
+}
+
+/// Extract marketplace name from selection key
+func marketplaceName(from key: String) -> String? {
+    guard key.hasPrefix(marketplaceKeyPrefix) else { return nil }
+    return String(key.dropFirst(marketplaceKeyPrefix.count))
+}
+
+// MARK: - Marketplace Row
+
+/// Row displaying a known marketplace
+struct MarketplaceRow: View {
+    let marketplace: KnownMarketplace
+    let isSelected: Bool
+    let isMarkedForDeletion: Bool
+    let isEditingMode: Bool
+
+    /// Selection key for this marketplace
+    var selectionKey: String {
+        marketplaceKeyPrefix + marketplace.name
+    }
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(marketplace.name)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(isMarkedForDeletion ? .red : (isSelected ? .primary : .secondary))
+                        .strikethrough(isMarkedForDeletion)
+
+                    dataSourceBadge
+
+                    if isMarkedForDeletion {
+                        Text("will be deleted")
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    // Source type badge
+                    Text(marketplace.source.source)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.2))
+                        .foregroundStyle(.blue)
+                        .cornerRadius(4)
+
+                    // Repo or path
+                    if let repo = marketplace.source.repo {
+                        Text(repo)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else if let path = marketplace.source.path {
+                        Text(path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                // Last updated if available
+                if let lastUpdated = marketplace.lastUpdated {
+                    HStack(spacing: 4) {
+                        Symbols.clockArrowCirclepath.image
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(lastUpdated, style: .relative)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+        .opacity(isMarkedForDeletion ? 0.5 : 1)
+        .tag(selectionKey)
+    }
+
+    @ViewBuilder
+    private var dataSourceBadge: some View {
+        let (color, text): (Color, String) = switch marketplace.dataSource {
+        case .global:
+            (.blue, "global")
+        case .project:
+            (.purple, "project")
+        case .both:
+            (.green, "both")
+        }
+
+        Text(text)
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.2))
+            .foregroundStyle(color)
             .cornerRadius(4)
     }
 }

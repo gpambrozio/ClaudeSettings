@@ -175,6 +175,10 @@ public actor MockFileSystemManager: FileSystemManagerProtocol {
         return contents
     }
 
+    public func isDirectory(at url: URL) -> Bool {
+        directories.contains(url.path)
+    }
+
     public func delete(at url: URL) throws {
         deleteCalls.append(url)
 

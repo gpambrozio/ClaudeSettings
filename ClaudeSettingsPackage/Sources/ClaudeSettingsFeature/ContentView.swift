@@ -30,7 +30,8 @@ public struct ContentView: View {
             InspectorView(
                 selectedKey: selectedSettingKey,
                 settingsViewModel: settingsViewModel,
-                documentationLoader: documentationLoader
+                documentationLoader: documentationLoader,
+                availableProjects: projectListViewModel.projects
             )
         }
         .navigationSplitViewStyle(.balanced)

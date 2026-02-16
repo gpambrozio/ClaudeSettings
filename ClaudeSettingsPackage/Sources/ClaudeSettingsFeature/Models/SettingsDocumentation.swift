@@ -78,7 +78,7 @@ public struct SettingDocumentation: Codable, Sendable, Identifiable, Hashable {
     public let itemType: String?
     public let platformNote: String?
     public let relatedEnvVars: [String]?
-    public let hookTypes: [String]?
+    public let hookTypes: [String: String]?
     public let patterns: [String]?
     public let examples: [SettingExample]
 
