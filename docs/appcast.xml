@@ -6,6 +6,40 @@
       <description>Most recent changes with links to updates.</description>
       <language>en</language>
       <item>
+         <title>Version 1.7</title>
+         <sparkle:version>8</sparkle:version>
+         <sparkle:shortVersionString>1.7</sparkle:shortVersionString>
+         <pubDate>Mon, 16 Feb 2026 10:54:10 -1000</pubDate>
+         <description><![CDATA[
+# ClaudeSettings v1.7 Release Notes
+
+<h2>Features</h2>
+
+<h3>Plugin Marketplace</h3>
+Browse, discover, and manage plugins directly within ClaudeSettings. The new marketplace infrastructure provides a centralized way to find and install plugins that extend Claude Code's capabilities.
+
+<h2>Improvements</h2>
+
+<h3>Settings Schema Sync</h3>
+The settings documentation has been updated to reflect the latest official Claude Code settings schema, ensuring all available configuration options are accurately represented.
+
+<h3>Package Updates</h3>
+Dependencies have been updated to their latest compatible versions.
+
+<h2>Bug Fixes</h2>
+
+<h3>Auto-Update Version Comparison</h3>
+Fixed an issue where the Sparkle auto-update framework could incorrectly compare version numbers, potentially causing update notifications to behave unexpectedly.
+
+<h3>Plugin Configuration</h3>
+Resolved issues with plugin configuration handling to ensure plugins are properly recognized and loaded.
+         ]]></description>
+         <enclosure url="https://github.com/gpambrozio/ClaudeSettings/releases/download/v1.7/ClaudeSettings-1.7.dmg"
+                    sparkle:edSignature="SDB3k16IioENpkhYM1JCK+S4jyEy/tcj+ycr0Ko0UyM7rKZ28d6KMSLxlCtzB29jMl9ZI5FPKvJOGlGopPeiAg=="
+                    length="2864142"
+                    type="application/octet-stream"/>
+      </item>
+      <item>
          <title>Version 1.5</title>
          <sparkle:version>6</sparkle:version>
          <sparkle:shortVersionString>1.5</sparkle:shortVersionString>
